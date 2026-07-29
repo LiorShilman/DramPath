@@ -1,0 +1,81 @@
+/* Design tokens — DrumPath SPEC.md §31 */
+:root {
+  color-scheme: light;
+
+  /* Fill tones — buttons, filled badges, active nav state. Always paired
+     with white text, so these stay constant across themes (self-contained
+     contrast, independent of page background). */
+  --color-primary: #0b6e75;
+  --color-primary-dark: #143b5d;
+  --color-success: #1f7a34;
+  --color-warning: #a35a00;
+  --color-danger: #b3261e;
+
+  /* Text/icon/border tones — used directly on the page background (links,
+     headings, outline buttons, status text). Redefined per theme below;
+     the light-theme values equal the fill tones above because they already
+     clear 4.5:1 against a white page. Introduced in the Stage 9→design-pass
+     fix for a measured Lighthouse contrast failure: the header title used
+     --color-primary as text color against the dark theme's near-black
+     background at only 3.09:1 (fails AA's 4.5:1). */
+  --color-primary-text: #0b6e75;
+  --color-success-text: #1f7a34;
+  --color-warning-text: #a35a00;
+  --color-danger-text: #b3261e;
+
+  --color-bg: #ffffff;
+  --color-surface: #f5f7f8;
+  --color-surface-raised: #ffffff;
+  --color-text: #131a1c;
+  --color-text-muted: #5a6a6d;
+  --color-border: #dde3e4;
+
+  --shadow-card:
+    0 1px 2px rgba(15, 23, 24, 0.04),
+    0 6px 16px rgba(15, 23, 24, 0.06);
+
+  --radius-card: 16px;
+  --space-unit: 4px;
+  --font-ui:
+    'Noto Sans Hebrew', system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --color-primary-text: #2dd4bf;
+  --color-success-text: #4ade80;
+  --color-warning-text: #fbbf24;
+  --color-danger-text: #f87171;
+
+  --color-bg: #0f1416;
+  --color-surface: #182022;
+  --color-surface-raised: #1f2a2c;
+  --color-text: #eef2f3;
+  --color-text-muted: #9fb0b3;
+  --color-border: #313f42;
+
+  --shadow-card:
+    0 1px 2px rgba(0, 0, 0, 0.5),
+    0 6px 16px rgba(0, 0, 0, 0.35);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+    --color-primary-text: #2dd4bf;
+    --color-success-text: #4ade80;
+    --color-warning-text: #fbbf24;
+    --color-danger-text: #f87171;
+
+    --color-bg: #0f1416;
+    --color-surface: #182022;
+    --color-surface-raised: #1f2a2c;
+    --color-text: #eef2f3;
+    --color-text-muted: #9fb0b3;
+    --color-border: #313f42;
+
+    --shadow-card:
+      0 1px 2px rgba(0, 0, 0, 0.5),
+      0 6px 16px rgba(0, 0, 0, 0.35);
+  }
+}
