@@ -18,7 +18,7 @@ describe('LibraryPage', () => {
 
   it('uploads a valid image and shows it in the list', async () => {
     render(<LibraryPage />)
-    const input = await screen.findByLabelText(/העלאת קובץ/)
+    const input = await screen.findByLabelText(/העלאת קבצים/)
     const file = new File(['fake-image-bytes'], 'drawing.png', { type: 'image/png' })
 
     const user = userEvent.setup()
@@ -32,7 +32,7 @@ describe('LibraryPage', () => {
 
   it('rejects a disallowed file type', async () => {
     render(<LibraryPage />)
-    const input = await screen.findByLabelText(/העלאת קובץ/)
+    const input = await screen.findByLabelText(/העלאת קבצים/)
     const file = new File(['text'], 'notes.txt', { type: 'text/plain' })
 
     // user-event's upload() enforces the input's `accept` attribute itself
@@ -42,15 +42,30 @@ describe('LibraryPage', () => {
     fireEvent.change(input, { target: { files: [file] } })
 
     expect(
-      await screen.findByText('ניתן להעלות קובצי PDF, PNG או JPG בלבד.'),
+      await screen.findByText(/ניתן להעלות קובצי PDF, PNG או JPG בלבד\./),
     ).toBeInTheDocument()
     expect(await db.resources.count()).toBe(0)
+  })
+
+  it('uploads multiple files selected together', async () => {
+    render(<LibraryPage />)
+    const input = await screen.findByLabelText(/העלאת קבצים/)
+    const fileA = new File(['a'], 'a.png', { type: 'image/png' })
+    const fileB = new File(['b'], 'b.pdf', { type: 'application/pdf' })
+
+    fireEvent.change(input, { target: { files: [fileA, fileB] } })
+
+    expect(await screen.findByText('a.png')).toBeInTheDocument()
+    expect(await screen.findByText('b.pdf')).toBeInTheDocument()
+    await waitFor(async () => {
+      expect(await db.resources.count()).toBe(2)
+    })
   })
 
   it('rejects a file larger than the configured limit', async () => {
     await settingsRepository.updateSettings({ maxResourceFileSizeMB: 1 })
     render(<LibraryPage />)
-    const input = await screen.findByLabelText(/העלאת קובץ/)
+    const input = await screen.findByLabelText(/העלאת קבצים/)
     const bigContent = new Uint8Array(2 * 1024 * 1024)
     const file = new File([bigContent], 'big.png', { type: 'image/png' })
 
@@ -63,7 +78,7 @@ describe('LibraryPage', () => {
 
   it('edits tags and deletes a resource after confirming', async () => {
     render(<LibraryPage />)
-    const input = await screen.findByLabelText(/העלאת קובץ/)
+    const input = await screen.findByLabelText(/העלאת קבצים/)
     const file = new File(['pdf-bytes'], 'sheet.pdf', { type: 'application/pdf' })
 
     const user = userEvent.setup()

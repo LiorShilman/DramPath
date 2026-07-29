@@ -115,29 +115,32 @@ export function LibraryPage() {
   }, [])
 
   async function handleFileSelected(event: React.ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0]
+    const files = Array.from(event.target.files ?? [])
     if (fileInputRef.current) fileInputRef.current.value = ''
-    if (!file) return
+    if (files.length === 0) return
 
     setUploadError(null)
+    const errors: string[] = []
+    const saved: Resource[] = []
 
-    if (!ALLOWED_MIME_TYPES.includes(file.type)) {
-      setUploadError('ניתן להעלות קובצי PDF, PNG או JPG בלבד.')
-      return
-    }
-    if (file.size > maxSizeMB * 1024 * 1024) {
-      setUploadError(`הקובץ חורג מהגודל המותר (${maxSizeMB}MB).`)
-      return
+    for (const file of files) {
+      if (!ALLOWED_MIME_TYPES.includes(file.type)) {
+        errors.push(`${file.name}: ניתן להעלות קובצי PDF, PNG או JPG בלבד.`)
+        continue
+      }
+      if (file.size > maxSizeMB * 1024 * 1024) {
+        errors.push(`${file.name}: חורג מהגודל המותר (${maxSizeMB}MB).`)
+        continue
+      }
+      saved.push(await resourceRepository.save({ fileName: file.name, mimeType: file.type, blob: file }))
     }
 
-    const saved = await resourceRepository.save({
-      fileName: file.name,
-      mimeType: file.type,
-      blob: file,
-    })
-    setResources((prev) =>
-      prev.some((resource) => resource.id === saved.id) ? prev : [saved, ...prev],
-    )
+    if (saved.length > 0) {
+      setResources((prev) => [...saved.filter((r) => !prev.some((p) => p.id === r.id)), ...prev])
+    }
+    if (errors.length > 0) {
+      setUploadError(errors.join(' '))
+    }
   }
 
   function handleDeleted(id: string) {
@@ -159,10 +162,11 @@ export function LibraryPage() {
 
       <div>
         <label className="flex flex-col gap-1 text-sm">
-          העלאת קובץ (PDF, PNG או JPG, עד {maxSizeMB}MB)
+          העלאת קבצים (PDF, PNG או JPG, עד {maxSizeMB}MB לקובץ — ניתן לבחור כמה קבצים יחד)
           <input
             ref={fileInputRef}
             type="file"
+            multiple
             accept={ALLOWED_MIME_TYPES.join(',')}
             onChange={(event) => void handleFileSelected(event)}
             className="text-sm"
