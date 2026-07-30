@@ -73,6 +73,14 @@ export class ExercisePlaybackEngine {
     return this.schedulerId !== null
   }
 
+  /** AudioContext.currentTime the current playback's timeline is anchored
+   * to — lets a caller's own visual rAF loop (e.g. NoteHighway's render
+   * clock) stay exactly in sync with the audio, instead of separately
+   * approximating the same "+0.05" lead time. */
+  get startAudioTimeSeconds(): number {
+    return this.startAudioTime
+  }
+
   start(exercise: InteractiveExercise, options: ExercisePlaybackStartOptions = {}): void {
     this.stop()
     this.onEventScheduled = options.onEventScheduled

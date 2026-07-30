@@ -37,6 +37,51 @@ input[type='radio'] {
   outline-offset: 2px;
 }
 
+/* VISUAL_DRUM_TRAINER_SPEC.md §13: each drum kit piece bounces briefly on
+   hit; cymbals (ride/crash) additionally rotate and glow. Restarting the
+   animation on rapid repeated hits is handled by the component remounting
+   the element (a new `key`), not by this CSS alone — a class toggle can't
+   restart an animation that's already applied. */
+.drum-piece {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.drum-piece.hit {
+  animation: drum-hit 120ms ease-out;
+}
+
+.drum-piece.cymbal.hit {
+  animation: cymbal-hit 400ms ease-out;
+}
+
+@keyframes drum-hit {
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(0.94);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes cymbal-hit {
+  0% {
+    transform: scale(1) rotate(0deg);
+    filter: drop-shadow(0 0 0 transparent);
+  }
+  30% {
+    transform: scale(1.05) rotate(4deg);
+    filter: drop-shadow(0 0 6px var(--color-primary));
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+    filter: drop-shadow(0 0 0 transparent);
+  }
+}
+
 /* §30: respect prefers-reduced-motion for any transition/animation in the app. */
 @media (prefers-reduced-motion: reduce) {
   *,
