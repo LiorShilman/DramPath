@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import { FileText, Link as LinkIcon } from 'lucide-react'
 import { resourceRepository, settingsRepository } from '../../data/repositories'
 import { useDebouncedCallback } from '../../hooks/useDebouncedCallback'
 import { useObjectUrl } from '../../hooks/useObjectUrl'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
+import { ResourceThumbnail } from '../../components/ResourceThumbnail'
+import { FileTypeIcon } from '../../components/FileTypeIcon'
 import { Button, Badge, PageHeader, buttonClassName } from '../../components/ui'
 import {
   isFileSystemAccessSupported,
@@ -63,18 +64,18 @@ function ResourceCard({ resource, onDeleted }: ResourceCardProps) {
     }
   }
 
-  const isImage = resource.sourceType === 'blob' && resource.mimeType.startsWith('image/')
+  const isImage = resource.mimeType.startsWith('image/')
   const isLink = resource.sourceType === 'link'
 
   return (
     <li className="flex flex-col gap-2 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-3 [box-shadow:var(--shadow-card)]">
       <div className="flex h-32 items-center justify-center overflow-hidden rounded-[var(--radius-card)] bg-[var(--color-surface)]">
-        {isImage && objectUrl ? (
-          <img src={objectUrl} alt={resource.fileName} className="h-full w-full object-cover" />
-        ) : isLink ? (
-          <LinkIcon size={40} aria-hidden="true" className="text-[var(--color-text-muted)]" />
+        {isImage ? (
+          <ResourceThumbnail resource={resource} height={128} fluidWidth objectFit="cover" alt={resource.fileName} />
         ) : (
-          <FileText size={40} aria-hidden="true" className="text-[var(--color-text-muted)]" />
+          <span className="text-[var(--color-text-muted)]">
+            <FileTypeIcon mimeType={resource.mimeType} size={40} />
+          </span>
         )}
       </div>
 

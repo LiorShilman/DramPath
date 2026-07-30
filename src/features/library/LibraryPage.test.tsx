@@ -22,6 +22,12 @@ class FakeFileHandle {
   async getFile() {
     return new File([], 'concert.mp4', { type: 'video/mp4' })
   }
+  async queryPermission() {
+    return 'granted'
+  }
+  async requestPermission() {
+    return 'granted'
+  }
 }
 
 describe('LibraryPage', () => {
@@ -119,6 +125,12 @@ describe('LibraryPage', () => {
       name = 'cover.png'
       async getFile() {
         return new File([], 'cover.png', { type: 'image/png' })
+      }
+      async queryPermission() {
+        return 'granted'
+      }
+      async requestPermission() {
+        return 'granted'
       }
     }
     Object.defineProperty(window, 'showOpenFilePicker', {
