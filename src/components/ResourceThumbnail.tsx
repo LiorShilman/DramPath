@@ -7,7 +7,19 @@ import type { Resource } from '../domain'
 export interface ResourceThumbnailProps {
   resource: Resource | undefined
   size?: number
+  width?: number
+  height?: number
   alt?: string
+  // Width becomes 100% of the parent instead of a fixed pixel value, so a
+  // hero-sized image can grow with a flexible container — height stays
+  // fixed either way, so callers still get a bounded box to lay out around.
+  fluidWidth?: boolean
+  // 'cover' (default) fills the box and crops overflow — right for small
+  // uniform thumbnails in a grid/row. 'contain' shows the whole image
+  // letterboxed instead — right for a hero-sized preview where cropping
+  // off part of a photo or a text-heavy image (sheet music, a diagram)
+  // would hide real content.
+  objectFit?: 'cover' | 'contain'
 }
 
 // Three display states, because an image Resource isn't just "has a blob"
@@ -21,7 +33,15 @@ export interface ResourceThumbnailProps {
 // - sourceType 'link', permission not yet granted: render a clickable
 //   placeholder instead of failing or silently prompting — requestPermission
 //   only works from inside a real click.
-export function ResourceThumbnail({ resource, size = 40, alt }: ResourceThumbnailProps) {
+export function ResourceThumbnail({
+  resource,
+  size = 40,
+  width,
+  height,
+  alt,
+  fluidWidth = false,
+  objectFit = 'cover',
+}: ResourceThumbnailProps) {
   const blobUrl = useObjectUrl(resource?.sourceType === 'blob' ? resource.blob : undefined)
   const [linkUrl, setLinkUrl] = useState<string | undefined>(undefined)
   const [linkNeedsPermission, setLinkNeedsPermission] = useState(false)
@@ -70,7 +90,12 @@ export function ResourceThumbnail({ resource, size = 40, alt }: ResourceThumbnai
 
   if (!resource) return null
 
-  const style = { width: size, height: size }
+  const boxWidth = width ?? size
+  const boxHeight = height ?? size
+  const style = fluidWidth ? { width: '100%', height: boxHeight } : { width: boxWidth, height: boxHeight }
+  const iconSize = Math.round(Math.min(boxWidth, boxHeight) * 0.5)
+  const shrinkClass = fluidWidth ? 'w-full' : 'shrink-0'
+  const objectFitClass = objectFit === 'contain' ? 'object-contain' : 'object-cover'
   const src = resource.sourceType === 'blob' ? blobUrl : linkUrl
 
   if (src) {
@@ -79,7 +104,7 @@ export function ResourceThumbnail({ resource, size = 40, alt }: ResourceThumbnai
         src={src}
         alt={alt ?? resource.fileName}
         style={style}
-        className="shrink-0 rounded-[var(--radius-card)] object-cover"
+        className={`block ${shrinkClass} rounded-[var(--radius-card)] ${objectFitClass}`}
       />
     )
   }
@@ -92,9 +117,9 @@ export function ResourceThumbnail({ resource, size = 40, alt }: ResourceThumbnai
         style={style}
         aria-label={`אשר גישה לתמונה: ${resource.fileName}`}
         title="לחצו כדי לאשר גישה ולהציג את התמונה המקושרת"
-        className="flex shrink-0 items-center justify-center rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-muted)]"
+        className={`flex ${shrinkClass} items-center justify-center rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-muted)]`}
       >
-        <LinkIcon size={Math.round(size * 0.5)} aria-hidden="true" />
+        <LinkIcon size={iconSize} aria-hidden="true" />
       </button>
     )
   }
@@ -102,9 +127,9 @@ export function ResourceThumbnail({ resource, size = 40, alt }: ResourceThumbnai
   return (
     <div
       style={style}
-      className="flex shrink-0 items-center justify-center rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-muted)]"
+      className={`flex ${shrinkClass} items-center justify-center rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-muted)]`}
     >
-      <ImageIcon size={Math.round(size * 0.5)} aria-hidden="true" />
+      <ImageIcon size={iconSize} aria-hidden="true" />
     </div>
   )
 }

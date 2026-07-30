@@ -5,7 +5,7 @@ import { useDebouncedCallback } from '../../hooks/useDebouncedCallback'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { ResourceThumbnail } from '../../components/ResourceThumbnail'
 import { Badge, Button, PageHeader } from '../../components/ui'
-import { LESSON_CATEGORY_LABELS, LESSON_STATUS_LABELS } from './lesson-labels'
+import { LESSON_CATEGORY_LABELS, LESSON_STATUS_LABELS, LESSON_STATUS_BADGE_VARIANTS } from './lesson-labels'
 import type { Lesson, LessonCategory, LessonStatus, Resource, Week } from '../../domain'
 
 const ALL = 'all' as const
@@ -149,7 +149,7 @@ export function LessonsListPage() {
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex max-w-5xl flex-col gap-4">
       <PageHeader
         title="ספריית שיעורים"
         actions={
@@ -235,25 +235,41 @@ export function LessonsListPage() {
               onDragStart={() => setDraggingId(lesson.id)}
               onDragOver={(event) => reorderEnabled && event.preventDefault()}
               onDrop={() => handleDrop(lesson.id)}
-              className="flex flex-col gap-1 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-3 [box-shadow:var(--shadow-card)] sm:flex-row sm:items-center sm:justify-between"
+              className="flex flex-col gap-1 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-3 [box-shadow:var(--shadow-card)] sm:flex-row sm:items-center sm:justify-start sm:gap-4"
             >
               <Link
                 to={`/lessons/${lesson.id}`}
-                className="flex items-center gap-3 font-semibold hover:underline"
+                className="flex min-w-0 items-center gap-3 font-semibold hover:underline sm:w-[28rem] sm:shrink-0"
               >
                 <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
                   <ResourceThumbnail resource={resourceById.get(lesson.coverImageResourceId ?? '')} size={40} />
                 </span>
-                {lesson.order}. {lesson.title}
+                <span className="truncate">
+                  {lesson.order}. {lesson.title}
+                </span>
               </Link>
-              <div className="flex flex-wrap items-center gap-2 text-sm text-[var(--color-text-muted)]">
-                <span>{lesson.weekId ? weekTitleById.get(lesson.weekId) : '—'}</span>
-                <span>{LESSON_CATEGORY_LABELS[lesson.category]}</span>
-                <Badge>{LESSON_STATUS_LABELS[lesson.status]}</Badge>
-                <Button size="sm" variant="ghost" onClick={() => void handleDuplicate(lesson)}>
+              <div className="flex flex-wrap items-center gap-2 text-sm text-[var(--color-text-muted)] sm:flex-nowrap">
+                <span className="w-20 shrink-0 truncate">
+                  {lesson.weekId ? weekTitleById.get(lesson.weekId) : '—'}
+                </span>
+                <span className="w-28 shrink-0 truncate">{LESSON_CATEGORY_LABELS[lesson.category]}</span>
+                <Badge variant={LESSON_STATUS_BADGE_VARIANTS[lesson.status]} className="w-28 shrink-0 justify-center">
+                  {LESSON_STATUS_LABELS[lesson.status]}
+                </Badge>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="w-20 shrink-0"
+                  onClick={() => void handleDuplicate(lesson)}
+                >
                   שכפול
                 </Button>
-                <Button size="sm" variant="danger-outline" onClick={() => setDeleteTarget(lesson)}>
+                <Button
+                  size="sm"
+                  variant="danger-outline"
+                  className="w-20 shrink-0"
+                  onClick={() => setDeleteTarget(lesson)}
+                >
                   מחיקה
                 </Button>
               </div>
