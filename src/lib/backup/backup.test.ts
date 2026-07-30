@@ -10,7 +10,7 @@ import {
   previewImport,
   validateBackupData,
 } from './import-backup'
-import { exerciseRepository } from '../../data/repositories'
+import { exerciseRepository, resourceRepository } from '../../data/repositories'
 import { createId, nowIso } from '../../domain'
 import type { BackupData, BackupManifest } from './types'
 
@@ -122,6 +122,7 @@ describe('backup export/import round trip', () => {
         fileName: 'notes.pdf',
         mimeType: 'application/pdf',
         sizeBytes: 8,
+        sourceType: 'blob',
         checksum: 'a'.repeat(64), // deliberately wrong
         tags: [],
         createdAt: nowIso(),
@@ -137,6 +138,30 @@ describe('backup export/import round trip', () => {
 
     const parsed = await parseBackupArchive(file)
     await expect(validateBackupData(parsed)).rejects.toBeInstanceOf(BackupImportError)
+  })
+
+  it('excludes linked resources from the backup archive entirely', async () => {
+    class FakeFileHandle {
+      kind = 'file'
+      name = 'concert.mp4'
+      async getFile() {
+        return new File([], 'concert.mp4', { type: 'video/mp4' })
+      }
+    }
+    const linked = await resourceRepository.saveLink({
+      fileHandle: new FakeFileHandle() as unknown as FileSystemFileHandle,
+      fileName: 'concert.mp4',
+      mimeType: 'video/mp4',
+      sizeBytes: 300_000_000,
+    })
+
+    const archiveBlob = await buildBackupArchive()
+    const zip = await JSZip.loadAsync(archiveBlob)
+
+    const dataJsonText = await zip.file('data.json')!.async('text')
+    const data = JSON.parse(dataJsonText) as BackupData
+    expect(data.resources.some((resource) => resource.id === linked.id)).toBe(false)
+    expect(zip.file(`resources/${linked.id}`)).toBeNull()
   })
 
   it('resolves merge conflicts by updatedAt and previews the counts first', async () => {

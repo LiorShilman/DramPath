@@ -26,12 +26,18 @@ export interface BackupManifest {
   }
 }
 
-// The blob itself is a separate zip entry (resources/<id>), not embedded in data.json.
-export type ResourceMetadata = Omit<Resource, 'blob'>
+// The blob itself is a separate zip entry (resources/<id>), not embedded in
+// data.json. `fileHandle` is dropped too — a linked resource is never
+// backed up at all (see filtering in export-backup.ts), but this stays
+// defensive in case stripBlob is ever called on one directly.
+export type ResourceMetadata = Omit<Resource, 'blob' | 'fileHandle'>
 
 export function stripBlob(resource: Resource): ResourceMetadata {
-  const meta: ResourceMetadata & { blob?: Blob } = { ...resource }
+  const meta: ResourceMetadata & { blob?: Blob; fileHandle?: FileSystemFileHandle } = {
+    ...resource,
+  }
   delete meta.blob
+  delete meta.fileHandle
   return meta
 }
 

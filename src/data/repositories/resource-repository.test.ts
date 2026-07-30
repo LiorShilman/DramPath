@@ -56,6 +56,35 @@ describe('resourceRepository', () => {
     expect(updated.tags).toEqual(['תווים', 'שבוע 1'])
   })
 
+  it('saves a link resource with no blob/checksum', async () => {
+    // A real FileSystemFileHandle is a native, structured-clone-safe host
+    // object. A plain object literal with a `getFile` function property is
+    // NOT clone-safe (functions can never survive structured clone, in any
+    // environment) and fake-indexeddb enforces that just like a real
+    // browser would — so the test double puts getFile on a class prototype
+    // instead, where it's non-enumerable and never reaches the cloner.
+    class FakeFileHandle {
+      kind = 'file'
+      name = 'video.mp4'
+      async getFile() {
+        return new File([], 'video.mp4', { type: 'video/mp4' })
+      }
+    }
+    const fakeHandle = new FakeFileHandle() as unknown as FileSystemFileHandle
+
+    const saved = await resourceRepository.saveLink({
+      fileHandle: fakeHandle,
+      fileName: 'video.mp4',
+      mimeType: 'video/mp4',
+      sizeBytes: 300_000_000,
+    })
+
+    expect(saved.sourceType).toBe('link')
+    expect(saved.fileName).toBe('video.mp4')
+    expect(saved.blob).toBeUndefined()
+    expect(saved.checksum).toBeUndefined()
+  })
+
   it('removes the resource and unlinks it from lessons and exercises', async () => {
     const resource = await makeResource('shared-pdf')
 

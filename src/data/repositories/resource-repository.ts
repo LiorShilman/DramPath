@@ -1,5 +1,5 @@
 import { db } from '../db'
-import { resourceSchema, createId, nowIso, type Resource } from '../../domain'
+import { resourceSchema, resourceObjectSchema, createId, nowIso, type Resource } from '../../domain'
 import { sha256Hex } from '../../lib/checksum'
 import { createRepository } from './base-repository'
 import { lessonRepository } from './lesson-repository'
@@ -11,6 +11,14 @@ export interface SaveResourceInput {
   fileName: string
   mimeType: string
   blob: Blob
+  tags?: string[]
+}
+
+export interface SaveLinkResourceInput {
+  fileHandle: FileSystemFileHandle
+  fileName: string
+  mimeType: string
+  sizeBytes: number
   tags?: string[]
 }
 
@@ -28,8 +36,24 @@ export const resourceRepository = {
       fileName: input.fileName,
       mimeType: input.mimeType,
       sizeBytes: input.blob.size,
+      sourceType: 'blob',
       checksum,
       blob: input.blob,
+      tags: input.tags ?? [],
+      createdAt: nowIso(),
+    })
+  },
+  // No checksum/dedup here — hashing a 200-300MB video just to dedupe on
+  // link isn't worth the cost, and unlike save() we never read the full
+  // file content up front anyway.
+  async saveLink(input: SaveLinkResourceInput): Promise<Resource> {
+    return base.add({
+      id: createId(),
+      fileName: input.fileName,
+      mimeType: input.mimeType,
+      sizeBytes: input.sizeBytes,
+      sourceType: 'link',
+      fileHandle: input.fileHandle,
       tags: input.tags ?? [],
       createdAt: nowIso(),
     })
@@ -40,7 +64,7 @@ export const resourceRepository = {
   // actually a Blob instance, which would fail full-schema re-validation
   // even though nothing about the blob changed.
   async updateTags(id: string, tags: string[]): Promise<Resource> {
-    const validatedTags = resourceSchema.shape.tags.parse(tags)
+    const validatedTags = resourceObjectSchema.shape.tags.parse(tags)
     await db.resources.update(id, { tags: validatedTags })
     const updated = await base.getById(id)
     if (!updated) {

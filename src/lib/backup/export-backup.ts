@@ -38,7 +38,12 @@ export async function buildBackupArchive(): Promise<Blob> {
     db.achievements.toArray(),
   ])
 
-  const resourceMetadata: ResourceMetadata[] = resources.map(stripBlob)
+  // Linked resources (sourceType 'link') are excluded from backup entirely —
+  // a FileSystemFileHandle can't be serialized, and even a metadata-only
+  // stub would be meaningless on another device or after site data is
+  // cleared. See docs/backup-guide.md.
+  const blobResources = resources.filter((resource) => resource.sourceType !== 'link')
+  const resourceMetadata: ResourceMetadata[] = blobResources.map(stripBlob)
 
   const data: BackupData = {
     coursePlans,
@@ -57,8 +62,8 @@ export async function buildBackupArchive(): Promise<Blob> {
   const dataJsonChecksum = await sha256Hex(new Blob([dataJsonText]))
 
   const resourceChecksums: Record<string, string> = {}
-  for (const resource of resources) {
-    resourceChecksums[resource.id] = resource.checksum
+  for (const resource of blobResources) {
+    if (resource.checksum) resourceChecksums[resource.id] = resource.checksum
   }
 
   const manifest: BackupManifest = {
@@ -72,8 +77,8 @@ export async function buildBackupArchive(): Promise<Blob> {
   zip.file('manifest.json', JSON.stringify(manifest, null, 2))
   zip.file('data.json', dataJsonText)
   const resourcesFolder = zip.folder('resources')
-  for (const resource of resources) {
-    resourcesFolder?.file(resource.id, resource.blob)
+  for (const resource of blobResources) {
+    if (resource.blob) resourcesFolder?.file(resource.id, resource.blob)
   }
 
   return zip.generateAsync({ type: 'blob' })

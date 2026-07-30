@@ -8,7 +8,21 @@ import { settingsRepository } from '../../data/repositories'
 afterEach(async () => {
   await db.resources.clear()
   await db.settings.clear()
+  Reflect.deleteProperty(window, 'showOpenFilePicker')
 })
+
+// Prototype method (non-enumerable), not an own function property — a real
+// FileSystemFileHandle is a native, structured-clone-safe host object;
+// a plain object literal with a function property is not (functions can
+// never survive structured clone), and fake-indexeddb enforces that like a
+// real browser would when the resource is actually saved.
+class FakeFileHandle {
+  kind = 'file'
+  name = 'concert.mp4'
+  async getFile() {
+    return new File([], 'concert.mp4', { type: 'video/mp4' })
+  }
+}
 
 describe('LibraryPage', () => {
   it('shows an empty state when there are no resources', async () => {
@@ -30,21 +44,18 @@ describe('LibraryPage', () => {
     })
   })
 
-  it('rejects a disallowed file type', async () => {
+  it('accepts any file type, not just PDF/PNG/JPG', async () => {
     render(<LibraryPage />)
     const input = await screen.findByLabelText(/העלאת קבצים/)
     const file = new File(['text'], 'notes.txt', { type: 'text/plain' })
 
-    // user-event's upload() enforces the input's `accept` attribute itself
-    // and no-ops for a mismatched type — fireEvent bypasses that so this
-    // test actually exercises the component's own validation (defense in
-    // depth for drag-and-drop / non-picker file assignment).
-    fireEvent.change(input, { target: { files: [file] } })
+    const user = userEvent.setup()
+    await user.upload(input, file)
 
-    expect(
-      await screen.findByText(/ניתן להעלות קובצי PDF, PNG או JPG בלבד\./),
-    ).toBeInTheDocument()
-    expect(await db.resources.count()).toBe(0)
+    expect(await screen.findByText('notes.txt')).toBeInTheDocument()
+    await waitFor(async () => {
+      expect(await db.resources.count()).toBe(1)
+    })
   })
 
   it('uploads multiple files selected together', async () => {
@@ -74,6 +85,58 @@ describe('LibraryPage', () => {
 
     expect(await screen.findByText(/חורג מהגודל המותר/)).toBeInTheDocument()
     expect(await db.resources.count()).toBe(0)
+  })
+
+  it('hides the "link video" button when File System Access API is unsupported', async () => {
+    render(<LibraryPage />)
+    await screen.findByText('עדיין לא הועלו קבצים.')
+    expect(screen.queryByRole('button', { name: /קשר קובץ/ })).not.toBeInTheDocument()
+  })
+
+  it('links a video file without storing it as a blob', async () => {
+    Object.defineProperty(window, 'showOpenFilePicker', {
+      value: async () => [new FakeFileHandle()],
+      configurable: true,
+    })
+
+    render(<LibraryPage />)
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: /קשר קובץ/ }))
+
+    expect(await screen.findByText('concert.mp4')).toBeInTheDocument()
+    expect(await screen.findByText('🔗 מקושר')).toBeInTheDocument()
+
+    await waitFor(async () => {
+      const resource = (await db.resources.toArray())[0]
+      expect(resource?.sourceType).toBe('link')
+      expect(resource?.blob).toBeUndefined()
+    })
+  })
+
+  it('links multiple files picked together in one round-trip', async () => {
+    class FakeImageHandle {
+      kind = 'file'
+      name = 'cover.png'
+      async getFile() {
+        return new File([], 'cover.png', { type: 'image/png' })
+      }
+    }
+    Object.defineProperty(window, 'showOpenFilePicker', {
+      value: async () => [new FakeFileHandle(), new FakeImageHandle()],
+      configurable: true,
+    })
+
+    render(<LibraryPage />)
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: /קשר קובץ/ }))
+
+    expect(await screen.findByText('concert.mp4')).toBeInTheDocument()
+    expect(await screen.findByText('cover.png')).toBeInTheDocument()
+
+    await waitFor(async () => {
+      const resources = await db.resources.toArray()
+      expect(resources.filter((r) => r.sourceType === 'link')).toHaveLength(2)
+    })
   })
 
   it('edits tags and deletes a resource after confirming', async () => {

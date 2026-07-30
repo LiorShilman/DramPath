@@ -8,7 +8,8 @@
       "vite/client",
       "vitest/globals",
       "@testing-library/jest-dom",
-      "vite-plugin-pwa/client"
+      "vite-plugin-pwa/client",
+      "wicg-file-system-access"
     ],
     "allowArbitraryExtensions": true,
     "skipLibCheck": true,
