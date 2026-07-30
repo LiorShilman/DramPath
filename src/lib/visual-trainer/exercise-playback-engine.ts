@@ -40,6 +40,7 @@ export class ExercisePlaybackEngine {
   private readonly metronomeGain: GainNode
 
   private schedulerId: ReturnType<typeof setInterval> | null = null
+  private paused = false
   private startAudioTime = 0
   private eventQueue: QueuedEvent[] = []
   private beatQueue: number[] = []
@@ -73,6 +74,10 @@ export class ExercisePlaybackEngine {
     return this.schedulerId !== null
   }
 
+  get isPaused(): boolean {
+    return this.paused
+  }
+
   /** AudioContext.currentTime the current playback's timeline is anchored
    * to — lets a caller's own visual rAF loop (e.g. NoteHighway's render
    * clock) stay exactly in sync with the audio, instead of separately
@@ -83,6 +88,7 @@ export class ExercisePlaybackEngine {
 
   start(exercise: InteractiveExercise, options: ExercisePlaybackStartOptions = {}): void {
     this.stop()
+    this.paused = false
     this.onEventScheduled = options.onEventScheduled
 
     const countInBars = options.countInBars ?? 0
@@ -121,10 +127,31 @@ export class ExercisePlaybackEngine {
       clearInterval(this.schedulerId)
       this.schedulerId = null
     }
+    this.paused = false
   }
 
   dispose(): void {
     this.stop()
+  }
+
+  /** True pause: AudioContext.suspend() freezes currentTime itself, so
+   * every sound already scheduled (oscillator/buffer-source start times
+   * set against the audio clock) simply waits rather than needing to be
+   * rescheduled — resume() continues exactly where it left off. The JS
+   * poller is also stopped so it doesn't spin uselessly while frozen. */
+  pause(): void {
+    if (this.schedulerId === null || this.paused) return
+    this.paused = true
+    clearInterval(this.schedulerId)
+    this.schedulerId = null
+    void this.audioContext.suspend()
+  }
+
+  resumeFromPause(): void {
+    if (!this.paused) return
+    this.paused = false
+    void this.audioContext.resume()
+    this.schedulerId = setInterval(() => this.tick(), SCHEDULER_INTERVAL_MS)
   }
 
   private tick(): void {

@@ -2,16 +2,27 @@ import { forwardRef, useImperativeHandle, useMemo, useRef } from 'react'
 import { calculateEventTimeMs } from '../../domain/calculations/event-timing'
 import { calculateNoteProgress, isNoteVisible } from '../../lib/visual-trainer/note-highway-math'
 import { LANE_ORDER, INSTRUMENT_COLORS } from '../../lib/visual-trainer/drum-kit-layout'
+import { getKeyLabelForInstrument } from '../../lib/visual-trainer/keyboard-map'
+import type { DrumKeyboardMap } from '../../lib/visual-trainer/keyboard-map'
 import type { DrumNoteEvent, InteractiveExercise } from '../../domain'
+
+export type NoteHitResult = 'hit' | 'miss'
 
 export interface NoteHighwayHandle {
   render(currentTimeMs: number): void
+  /** Flashes the note itself green (hit) or red (miss) — without this, a
+   * hit/miss only shows up in the separate HitFeedback panel, which reads
+   * as "pressing into thin air" since the falling note gives no reaction
+   * of its own. */
+  markResult(eventId: string, result: NoteHitResult): void
 }
 
 export interface NoteHighwayProps {
   events: DrumNoteEvent[]
   exercise: Pick<InteractiveExercise, 'bpm' | 'timeSignature' | 'subdivision'>
   lookaheadMs?: number
+  /** Which key to label each note with — defaults to the standard mapping. */
+  keyMap?: DrumKeyboardMap
 }
 
 const DEFAULT_LOOKAHEAD_MS = 2000
@@ -20,7 +31,7 @@ const DEFAULT_LOOKAHEAD_MS = 2000
 // animation, since it skips layout, unlike `top`) keeps the per-frame math
 // a single multiplication with no DOM reads. A Stage 4 simplification —
 // fine to make this responsive later.
-const HIGHWAY_HEIGHT_PX = 400
+const HIGHWAY_HEIGHT_PX = 380
 const HIT_LINE_OFFSET_PX = 32
 
 /**
@@ -33,7 +44,7 @@ const HIT_LINE_OFFSET_PX = 32
  * highway would raise in this Hebrew-RTL app.
  */
 export const NoteHighway = forwardRef<NoteHighwayHandle, NoteHighwayProps>(function NoteHighway(
-  { events, exercise, lookaheadMs = DEFAULT_LOOKAHEAD_MS },
+  { events, exercise, lookaheadMs = DEFAULT_LOOKAHEAD_MS, keyMap },
   ref,
 ) {
   const noteRefs = useRef(new Map<string, HTMLDivElement>())
@@ -59,6 +70,13 @@ export const NoteHighway = forwardRef<NoteHighwayHandle, NoteHighwayProps>(funct
           el.style.transform = `translateY(${progress * (HIGHWAY_HEIGHT_PX - HIT_LINE_OFFSET_PX)}px)`
         }
       },
+      markResult(eventId: string, result: NoteHitResult) {
+        const el = noteRefs.current.get(eventId)
+        if (!el) return
+        el.style.boxShadow =
+          result === 'hit' ? '0 0 0 3px #22c55e, 0 0 14px 3px #22c55e' : '0 0 0 3px #ef4444, 0 0 14px 3px #ef4444'
+        el.style.opacity = result === 'miss' ? '0.55' : '1'
+      },
     }),
     [eventTimes, lookaheadMs],
   )
@@ -79,6 +97,7 @@ export const NoteHighway = forwardRef<NoteHighwayHandle, NoteHighwayProps>(funct
       />
       {eventTimes.map(({ event }) => {
         const lane = laneIndex.get(event.instrument) ?? 0
+        const keyLabel = getKeyLabelForInstrument(event.instrument, keyMap)
         return (
           <div
             key={event.id}
@@ -93,13 +112,26 @@ export const NoteHighway = forwardRef<NoteHighwayHandle, NoteHighwayProps>(funct
               insetInlineStart: `${(lane / laneCount) * 100}%`,
               top: 0,
               width: `${100 / laneCount}%`,
-              height: 16,
-              borderRadius: 8,
+              height: 34,
+              borderRadius: 10,
               backgroundColor: INSTRUMENT_COLORS[event.instrument],
               visibility: 'hidden',
               willChange: 'transform',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'box-shadow 80ms ease-out, opacity 80ms ease-out',
             }}
-          />
+          >
+            {keyLabel && (
+              <span
+                aria-hidden="true"
+                style={{ fontSize: 16, fontWeight: 700, color: '#111827', lineHeight: 1 }}
+              >
+                {keyLabel}
+              </span>
+            )}
+          </div>
         )
       })}
     </div>

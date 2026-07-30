@@ -57,7 +57,7 @@ describe('NoteHighway', () => {
     )
 
     ref.current!.render(2000) // exactly at the event's own time
-    expect(getByTestId(`note-${event.id}`)).toHaveStyle({ visibility: 'visible', transform: 'translateY(368px)' })
+    expect(getByTestId(`note-${event.id}`)).toHaveStyle({ visibility: 'visible', transform: 'translateY(348px)' })
   })
 
   it('hides a note well after it has passed the hit line', () => {

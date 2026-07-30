@@ -24,3 +24,17 @@ export const DEFAULT_KEYBOARD_MAP: DrumKeyboardMap = {
 export function mapCodeToInstrument(code: string, keyMap: DrumKeyboardMap): DrumInstrument | undefined {
   return keyMap[code]
 }
+
+// e.g. 'KeyF' -> 'F' — the short label shown to the player (KeyboardGuide's
+// legend, and each falling note in NoteHighway).
+export function codeToKeyLabel(code: string): string {
+  return code.replace('Key', '')
+}
+
+export function getKeyLabelForInstrument(
+  instrument: DrumInstrument,
+  keyMap: DrumKeyboardMap = DEFAULT_KEYBOARD_MAP,
+): string | undefined {
+  const entry = Object.entries(keyMap).find(([, mappedInstrument]) => mappedInstrument === instrument)
+  return entry ? codeToKeyLabel(entry[0]) : undefined
+}

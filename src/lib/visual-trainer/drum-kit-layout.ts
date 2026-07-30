@@ -1,6 +1,8 @@
 import type { DrumInstrument } from '../../domain'
 
-// Shared between DrumKitSvg and NoteHighway so a lane's color always
+// Used by NoteHighway for its lane colors — DrumKit now renders real product
+// photos (public/drum-kit/) instead of colored shapes, but keeping this
+// palette lets NoteHighway's note colors still map to a recognizable lane.
 // matches its drum kit piece. Fixed, deliberately vivid hex values rather
 // than design-system tokens — a rhythm-game highway needs 9 stable,
 // mutually distinguishable lane colors, which the app's ~4-color semantic
@@ -17,14 +19,18 @@ export const LANE_ORDER: DrumInstrument[] = [
   'kick',
 ]
 
+// All 9 chosen at roughly the same perceived brightness/saturation (varying
+// only hue) — an earlier pass mixed near-white yellows with dark greens/
+// reds, which read as "some notes are lit, some are dim" rather than just
+// 9 equally-present lanes (reported directly by the user).
 export const INSTRUMENT_COLORS: Record<DrumInstrument, string> = {
-  kick: '#e11d48',
-  snare: '#f59e0b',
-  hihat_closed: '#facc15',
-  hihat_open: '#fde047',
-  ride: '#38bdf8',
-  crash: '#a78bfa',
-  tom_high: '#34d399',
-  tom_mid: '#22c55e',
-  tom_floor: '#16a34a',
+  kick: '#f4655c',
+  snare: '#f2994a',
+  hihat_closed: '#f2c94c',
+  hihat_open: '#d9c94c',
+  ride: '#56ccf2',
+  crash: '#bb6bd9',
+  tom_high: '#6fcf97',
+  tom_mid: '#4fb477',
+  tom_floor: '#2f9e6e',
 }

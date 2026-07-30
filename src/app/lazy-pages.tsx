@@ -53,9 +53,9 @@ export const SongsListPage = lazy(() =>
 export const SongDetailPage = lazy(() =>
   import('../features/songs').then((m) => ({ default: m.SongDetailPage })),
 )
-// Temporary Visual Drum Trainer Stage 4 verification page — see
-// src/features/practice-visual-demo/PracticeVisualDemoPage.tsx's own doc
-// comment. Deleted in Stage 5.
-export const PracticeVisualDemoPage = lazy(() =>
-  import('../features/practice-visual-demo').then((m) => ({ default: m.PracticeVisualDemoPage })),
+export const ExerciseSelectPage = lazy(() =>
+  import('../features/visual-trainer').then((m) => ({ default: m.ExerciseSelectPage })),
+)
+export const VisualTrainerPage = lazy(() =>
+  import('../features/visual-trainer').then((m) => ({ default: m.VisualTrainerPage })),
 )

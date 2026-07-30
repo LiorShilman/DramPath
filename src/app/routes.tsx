@@ -17,7 +17,8 @@ import {
   LibraryPage,
   SongsListPage,
   SongDetailPage,
-  PracticeVisualDemoPage,
+  ExerciseSelectPage,
+  VisualTrainerPage,
 } from './lazy-pages'
 
 // Route map from SPEC.md §10. "/", "/setup", "/today", "/practice/session",
@@ -47,9 +48,11 @@ export const routes: RouteObject[] = [
       { path: 'library', element: <LibraryPage /> },
       { path: 'settings', element: <SettingsPage /> },
       { path: 'setup', element: <SetupWizard /> },
-      // Temporary — see PracticeVisualDemoPage's doc comment. Not in
-      // NAV_ITEMS, same precedent as practice/session. Deleted in Stage 5.
-      { path: 'practice/visual-demo', element: <PracticeVisualDemoPage /> },
+      // Visual Drum Trainer (VISUAL_DRUM_TRAINER_SPEC.md) — list+detail,
+      // same convention as lessons/exercises/songs: the list is in
+      // NAV_ITEMS, the :exerciseId detail route is link-only.
+      { path: 'practice/visual', element: <ExerciseSelectPage /> },
+      { path: 'practice/visual/:exerciseId', element: <VisualTrainerPage /> },
     ],
   },
 ]
