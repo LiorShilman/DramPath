@@ -16,11 +16,15 @@ export interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
 
 // Status pills — week/lesson/exercise status, result labels, etc. Text is
 // always paired with a matching border, per §30 "no reliance on color alone".
+// `pointer-events-none`: purely decorative/informational everywhere it's
+// used, never itself the click target — a Badge sitting next to a checkbox
+// inside a <label> should never be able to swallow a click meant for the
+// label/checkbox underneath it.
 export function Badge({ variant = 'neutral', className = '', ...rest }: BadgeProps) {
   return (
     <span
       className={[
-        'inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium',
+        'pointer-events-none inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium',
         VARIANT_CLASSES[variant],
         className,
       ]

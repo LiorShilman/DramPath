@@ -34,7 +34,7 @@ export class DrumPathDatabase extends Dexie {
   constructor(name = 'drumpath') {
     super(name)
 
-    this.version(1).stores({
+    const storesV1 = {
       coursePlans: 'id, name, isActive, updatedAt',
       weeks: 'id, coursePlanId, order, status',
       lessons: 'id, weekId, order, category, status, updatedAt',
@@ -46,6 +46,34 @@ export class DrumPathDatabase extends Dexie {
       practiceEntries: 'id, sessionId, exerciseId, result, bpm, startedAt',
       settings: 'key',
       achievements: 'id, type, achievedAt',
-    })
+    }
+
+    this.version(1).stores(storesV1)
+
+    // §14's Lesson.tags was added retroactively (ADR 0001-era decision),
+    // after real local databases had already persisted lessons created
+    // before that point. Zod validates on write, not on read, so a lesson
+    // missing `tags` sat silently valid-looking until something re-saved
+    // the full record (e.g. patch()'s read-merge-revalidate-write), which
+    // then threw a ZodError out of nowhere. Same defensive backfill for
+    // Exercise.tags, which has always been required but costs nothing to
+    // guard here too. Index definitions are unchanged from v1 — Dexie
+    // still requires repeating them for any table kept in a later version.
+    this.version(2)
+      .stores(storesV1)
+      .upgrade(async (tx) => {
+        await tx
+          .table('lessons')
+          .toCollection()
+          .modify((lesson) => {
+            if (!Array.isArray(lesson.tags)) lesson.tags = []
+          })
+        await tx
+          .table('exercises')
+          .toCollection()
+          .modify((exercise) => {
+            if (!Array.isArray(exercise.tags)) exercise.tags = []
+          })
+      })
   }
 }

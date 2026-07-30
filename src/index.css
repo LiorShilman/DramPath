@@ -18,6 +18,19 @@ option {
   color: var(--color-text);
 }
 
+/* Same class of bug as the <select> fix above: an unstyled checkbox/radio
+   in a dark color-scheme renders with almost no border contrast against a
+   dark card — technically present and clickable, but easy to miss entirely
+   (reported directly: a resource's checkbox looked "not there"). */
+input[type='checkbox'],
+input[type='radio'] {
+  accent-color: var(--color-primary);
+  width: 1.15rem;
+  height: 1.15rem;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
 /* §30: keyboard focus must always be visible, regardless of a control's own background. */
 :focus-visible {
   outline: 2px solid var(--color-primary);
