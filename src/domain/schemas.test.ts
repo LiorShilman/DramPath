@@ -10,6 +10,7 @@ import { practiceSessionSchema } from './practice-session'
 import { practiceEntrySchema } from './practice-entry'
 import { userSettingsSchema, defaultUserSettings } from './user-settings'
 import { achievementSchema } from './achievement'
+import { hitResultSchema } from './hit-result'
 
 const now = nowIso()
 
@@ -172,5 +173,19 @@ describe('domain schemas', () => {
     const valid = { id: createId(), type: 'streak', title: 'רצף 7 ימים', achievedAt: now }
     expect(achievementSchema.safeParse(valid).success).toBe(true)
     expect(achievementSchema.safeParse({ ...valid, type: 'unknown' }).success).toBe(false)
+  })
+
+  it('accepts a valid HitResult and rejects a bad grade', () => {
+    const valid = {
+      id: createId(),
+      expectedEventId: createId(),
+      instrument: 'snare',
+      expectedTimeMs: 1000,
+      actualTimeMs: 1010,
+      timingErrorMs: 10,
+      grade: 'perfect',
+    }
+    expect(hitResultSchema.safeParse(valid).success).toBe(true)
+    expect(hitResultSchema.safeParse({ ...valid, grade: 'unknown' }).success).toBe(false)
   })
 })
