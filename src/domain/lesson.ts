@@ -27,6 +27,9 @@ export const lessonSchema = z.object({
   category: lessonCategorySchema,
   externalVideoUrl: z.url().optional(),
   resourceIds: z.array(uuidSchema),
+  // Independent of resourceIds (the generic attachment list) — a purpose-
+  // specific single reference, same pattern as Exercise.notationResourceId.
+  coverImageResourceId: uuidSchema.optional(),
   exerciseIds: z.array(uuidSchema),
   // §14 requires filtering lessons by tag, but the original field table
   // (Stage 1) didn't include one — added here, symmetric with Exercise.tags.

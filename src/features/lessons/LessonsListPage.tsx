@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, Link } from 'react-router'
-import { lessonRepository, weekRepository } from '../../data/repositories'
+import { lessonRepository, weekRepository, resourceRepository } from '../../data/repositories'
 import { useDebouncedCallback } from '../../hooks/useDebouncedCallback'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
+import { ResourceThumbnail } from '../../components/ResourceThumbnail'
 import { Badge, Button, PageHeader } from '../../components/ui'
 import { LESSON_CATEGORY_LABELS, LESSON_STATUS_LABELS } from './lesson-labels'
-import type { Lesson, LessonCategory, LessonStatus, Week } from '../../domain'
+import type { Lesson, LessonCategory, LessonStatus, Resource, Week } from '../../domain'
 
 const ALL = 'all' as const
 
@@ -13,6 +14,7 @@ export function LessonsListPage() {
   const navigate = useNavigate()
   const [lessons, setLessons] = useState<Lesson[]>([])
   const [weeks, setWeeks] = useState<Week[]>([])
+  const [resources, setResources] = useState<Resource[]>([])
   const [loading, setLoading] = useState(true)
 
   const [weekFilter, setWeekFilter] = useState<string>(ALL)
@@ -27,12 +29,14 @@ export function LessonsListPage() {
   const [deleteTarget, setDeleteTarget] = useState<Lesson | null>(null)
 
   async function reload() {
-    const [allLessons, allWeeks] = await Promise.all([
+    const [allLessons, allWeeks, allResources] = await Promise.all([
       lessonRepository.getAll(),
       weekRepository.getAll(),
+      resourceRepository.getAll(),
     ])
     setLessons(allLessons.sort((a, b) => a.order - b.order))
     setWeeks(allWeeks.sort((a, b) => a.order - b.order))
+    setResources(allResources)
     setLoading(false)
   }
 
@@ -46,6 +50,11 @@ export function LessonsListPage() {
   const weekTitleById = useMemo(
     () => new Map(weeks.map((week) => [week.id, week.title])),
     [weeks],
+  )
+
+  const resourceById = useMemo(
+    () => new Map(resources.map((resource) => [resource.id, resource])),
+    [resources],
   )
 
   const allTags = useMemo(
@@ -228,7 +237,13 @@ export function LessonsListPage() {
               onDrop={() => handleDrop(lesson.id)}
               className="flex flex-col gap-1 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-3 [box-shadow:var(--shadow-card)] sm:flex-row sm:items-center sm:justify-between"
             >
-              <Link to={`/lessons/${lesson.id}`} className="font-semibold hover:underline">
+              <Link
+                to={`/lessons/${lesson.id}`}
+                className="flex items-center gap-3 font-semibold hover:underline"
+              >
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
+                  <ResourceThumbnail resource={resourceById.get(lesson.coverImageResourceId ?? '')} size={40} />
+                </span>
                 {lesson.order}. {lesson.title}
               </Link>
               <div className="flex flex-wrap items-center gap-2 text-sm text-[var(--color-text-muted)]">

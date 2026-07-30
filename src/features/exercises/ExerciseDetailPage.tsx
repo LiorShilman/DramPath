@@ -104,8 +104,22 @@ export function ExerciseDetailPage() {
     }
 
     void load()
+
+    // See the same reasoning in LessonDetailPage.tsx: a file added to the
+    // library from another tab (or a back-navigation that doesn't remount
+    // this page) would otherwise leave `resources` stale until reload.
+    function handleVisible() {
+      if (document.visibilityState === 'visible') void resourceRepository.getAll().then((all) => {
+        if (!cancelled) setResources(all.sort((a, b) => a.fileName.localeCompare(b.fileName)))
+      })
+    }
+    document.addEventListener('visibilitychange', handleVisible)
+    window.addEventListener('focus', handleVisible)
+
     return () => {
       cancelled = true
+      document.removeEventListener('visibilitychange', handleVisible)
+      window.removeEventListener('focus', handleVisible)
     }
   }, [exerciseId, reset])
 
@@ -304,7 +318,7 @@ export function ExerciseDetailPage() {
             <option value="">ללא</option>
             {resources.map((resource) => (
               <option key={resource.id} value={resource.id}>
-                {resource.fileName}
+                {resource.sourceType === 'link' ? `🔗 ${resource.fileName}` : resource.fileName}
               </option>
             ))}
           </select>

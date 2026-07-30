@@ -13,7 +13,10 @@ import {
 import { lessonCategorySchema, lessonStatusSchema, nowIso } from '../../domain'
 import { useDebouncedCallback } from '../../hooks/useDebouncedCallback'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
-import { Button, PageHeader } from '../../components/ui'
+import { ResourceThumbnail } from '../../components/ResourceThumbnail'
+import { FileTypeIcon } from '../../components/FileTypeIcon'
+import { InlineVideoPlayer } from '../../components/InlineVideoPlayer'
+import { Badge, Button, PageHeader } from '../../components/ui'
 import { LESSON_CATEGORY_LABELS, LESSON_STATUS_LABELS } from './lesson-labels'
 import type { Exercise, Lesson, Resource, Week } from '../../domain'
 
@@ -27,6 +30,7 @@ const lessonFormSchema = z.object({
     .refine((value) => value === '' || /^https?:\/\//.test(value), {
       message: 'קישור חייב להתחיל ב-http:// או https://',
     }),
+  coverImageResourceId: z.string(),
   status: lessonStatusSchema,
   completionCriteria: z.string(),
   notes: z.string(),
@@ -41,6 +45,7 @@ function lessonToFormValues(lesson: Lesson): LessonFormValues {
     weekId: lesson.weekId ?? '',
     category: lesson.category,
     externalVideoUrl: lesson.externalVideoUrl ?? '',
+    coverImageResourceId: lesson.coverImageResourceId ?? '',
     status: lesson.status,
     completionCriteria: lesson.completionCriteria ?? '',
     notes: lesson.notes ?? '',
@@ -55,7 +60,10 @@ export function LessonDetailPage() {
   const [weeks, setWeeks] = useState<Week[]>([])
   const [exercises, setExercises] = useState<Exercise[]>([])
   const [exerciseSearch, setExerciseSearch] = useState('')
+  const [showExercisePicker, setShowExercisePicker] = useState(false)
   const [resources, setResources] = useState<Resource[]>([])
+  const [resourceSearch, setResourceSearch] = useState('')
+  const [showResourcePicker, setShowResourcePicker] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
 
   const {
@@ -101,8 +109,24 @@ export function LessonDetailPage() {
     }
 
     void load()
+
+    // If a file was added to the library from another tab (or /library in
+    // the same tab, then browser-back instead of an in-app nav that would
+    // remount this page), this component's `resources` state would
+    // otherwise stay stale until a manual reload — refresh it whenever the
+    // tab regains focus/visibility instead.
+    function handleVisible() {
+      if (document.visibilityState === 'visible') void resourceRepository.getAll().then((all) => {
+        if (!cancelled) setResources(all.sort((a, b) => a.fileName.localeCompare(b.fileName)))
+      })
+    }
+    document.addEventListener('visibilitychange', handleVisible)
+    window.addEventListener('focus', handleVisible)
+
     return () => {
       cancelled = true
+      document.removeEventListener('visibilitychange', handleVisible)
+      window.removeEventListener('focus', handleVisible)
     }
   }, [lessonId, reset])
 
@@ -119,6 +143,7 @@ export function LessonDetailPage() {
       weekId: values.weekId || undefined,
       category: values.category,
       externalVideoUrl: values.externalVideoUrl || undefined,
+      coverImageResourceId: values.coverImageResourceId || undefined,
       status: values.status,
       completionCriteria: values.completionCriteria || undefined,
       notes: values.notes || undefined,
@@ -174,6 +199,27 @@ export function LessonDetailPage() {
     const needle = exerciseSearch.toLowerCase()
     return exercises.filter((exercise) => exercise.name.toLowerCase().includes(needle))
   }, [exercises, exerciseSearch])
+
+  const attachedExercises = useMemo(
+    () => exercises.filter((exercise) => lesson?.exerciseIds.includes(exercise.id)),
+    [exercises, lesson],
+  )
+
+  const visibleResources = useMemo(() => {
+    if (!resourceSearch) return resources
+    const needle = resourceSearch.toLowerCase()
+    return resources.filter((resource) => resource.fileName.toLowerCase().includes(needle))
+  }, [resources, resourceSearch])
+
+  const attachedResources = useMemo(
+    () => resources.filter((resource) => lesson?.resourceIds.includes(resource.id)),
+    [resources, lesson],
+  )
+
+  const imageResources = useMemo(
+    () => resources.filter((resource) => resource.mimeType.startsWith('image/')),
+    [resources],
+  )
 
   if (!lesson) {
     return <p className="text-[var(--color-text-muted)]">טוען…</p>
@@ -292,6 +338,36 @@ export function LessonDetailPage() {
         )}
 
         <label className="flex flex-col gap-1 text-sm">
+          תמונת נושא
+          <div className="flex items-center gap-3">
+            <ResourceThumbnail
+              resource={imageResources.find((resource) => resource.id === lesson.coverImageResourceId)}
+              size={56}
+            />
+            <select
+              {...register('coverImageResourceId')}
+              className="flex-1 rounded-[var(--radius-card)] border border-[var(--color-border)] px-2 py-2"
+            >
+              <option value="">ללא</option>
+              {imageResources.map((resource) => (
+                <option key={resource.id} value={resource.id}>
+                  {resource.sourceType === 'link' ? `🔗 ${resource.fileName}` : resource.fileName}
+                </option>
+              ))}
+            </select>
+          </div>
+          {imageResources.length === 0 && (
+            <span className="text-xs text-[var(--color-text-muted)]">
+              אין עדיין תמונות בספרייה. ניתן להעלות או לקשר ב-
+              <Link to="/library" className="text-[var(--color-primary-text)]">
+                ספריית קבצים
+              </Link>
+              .
+            </span>
+          )}
+        </label>
+
+        <label className="flex flex-col gap-1 text-sm">
           תנאי השלמה
           <input
             {...register('completionCriteria')}
@@ -310,33 +386,128 @@ export function LessonDetailPage() {
       </form>
 
       <section>
-        <h3 className="mb-2 text-sm text-[var(--color-text-muted)]">תרגילים קשורים</h3>
-        <input
-          value={exerciseSearch}
-          onChange={(event) => setExerciseSearch(event.target.value)}
-          placeholder="חיפוש תרגיל..."
-          aria-label="חיפוש תרגילים לשיוך"
-          className="mb-2 w-full rounded-[var(--radius-card)] border border-[var(--color-border)] px-3 py-1.5 text-sm"
-        />
-        <ul className="flex max-h-64 flex-col gap-1 overflow-y-auto">
-          {visibleExercises.map((exercise) => (
-            <li key={exercise.id}>
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={lesson.exerciseIds.includes(exercise.id)}
-                  onChange={() => void handleToggleExercise(exercise.id)}
-                />
-                {exercise.name}
-              </label>
-            </li>
-          ))}
-        </ul>
+        <div className="mb-2 flex items-center justify-between">
+          <h3 className="text-sm text-[var(--color-text-muted)]">תרגילים קשורים</h3>
+          <Button size="sm" variant="ghost" onClick={() => setShowExercisePicker((value) => !value)}>
+            {showExercisePicker ? 'סגירה' : '+ הוספת תרגיל'}
+          </Button>
+        </div>
+
+        {attachedExercises.length > 0 && (
+          <ul className="mb-3 flex flex-col gap-1">
+            {attachedExercises.map((exercise) => (
+              <li
+                key={exercise.id}
+                className="flex items-center justify-between gap-2 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface-raised)] px-3 py-1.5 text-sm"
+              >
+                <span>{exercise.name}</span>
+                <Button
+                  size="sm"
+                  variant="danger-outline"
+                  onClick={() => void handleToggleExercise(exercise.id)}
+                  aria-label={`הסר את ${exercise.name} מהשיעור`}
+                >
+                  הסר
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {attachedExercises.length === 0 && !showExercisePicker && (
+          <p className="text-sm text-[var(--color-text-muted)]">אין עדיין תרגילים משויכים לשיעור זה.</p>
+        )}
+
+        {showExercisePicker && (
+          <>
+            <input
+              value={exerciseSearch}
+              onChange={(event) => setExerciseSearch(event.target.value)}
+              placeholder="חיפוש תרגיל..."
+              aria-label="חיפוש תרגילים לשיוך"
+              className="mb-2 w-full rounded-[var(--radius-card)] border border-[var(--color-border)] px-3 py-1.5 text-sm"
+            />
+            <ul className="flex max-h-64 flex-col gap-1 overflow-y-auto">
+              {visibleExercises.length === 0 ? (
+                <li className="text-sm text-[var(--color-text-muted)]">לא נמצאו תרגילים.</li>
+              ) : (
+                visibleExercises.map((exercise) => (
+                  <li key={exercise.id}>
+                    <label className="flex items-center gap-2 rounded-[var(--radius-card)] px-1 py-1.5 text-sm hover:bg-[var(--color-surface)]">
+                      <input
+                        type="checkbox"
+                        checked={lesson.exerciseIds.includes(exercise.id)}
+                        onChange={() => void handleToggleExercise(exercise.id)}
+                      />
+                      {exercise.name}
+                    </label>
+                  </li>
+                ))
+              )}
+            </ul>
+          </>
+        )}
       </section>
 
       <section>
-        <h3 className="mb-2 text-sm text-[var(--color-text-muted)]">קבצים מצורפים</h3>
-        {resources.length === 0 ? (
+        <div className="mb-1 flex items-center justify-between">
+          <h3 className="text-sm text-[var(--color-text-muted)]">קבצים מצורפים</h3>
+          {resources.length > 0 && (
+            <Button size="sm" variant="ghost" onClick={() => setShowResourcePicker((value) => !value)}>
+              {showResourcePicker ? 'סגירה' : '+ הוספת קובץ'}
+            </Button>
+          )}
+        </div>
+        <p className="mb-2 text-xs text-[var(--color-text-muted)]">
+          {attachedResources.length === 0 && !showResourcePicker
+            ? 'אין עדיין קבצים משויכים לשיעור זה. '
+            : ''}
+          אם הקובץ שאתם מחפשים עדיין לא קיים בספרייה —{' '}
+          <Link to="/library" className="text-[var(--color-primary-text)]">
+            העלו או קשרו אותו שם
+          </Link>{' '}
+          קודם, ואז חזרו לכאן לסמן אותו.
+        </p>
+
+        {attachedResources.length > 0 && (
+          <ul className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+            {attachedResources.map((resource) => (
+              <li
+                key={resource.id}
+                className="flex flex-col items-center gap-2 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-2 text-sm"
+              >
+                {resource.mimeType.startsWith('image/') ? (
+                  <ResourceThumbnail resource={resource} size={72} />
+                ) : resource.mimeType.startsWith('video/') ? (
+                  <InlineVideoPlayer resource={resource} size={72} />
+                ) : (
+                  <span className="flex h-[72px] w-[72px] shrink-0 items-center justify-center rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-muted)]">
+                    <FileTypeIcon mimeType={resource.mimeType} size={28} />
+                  </span>
+                )}
+                <span className="w-full truncate text-center" title={resource.fileName}>
+                  {resource.fileName}
+                </span>
+                {resource.sourceType === 'link' && (
+                  <Badge variant="primary" className="min-h-8 w-full justify-center">
+                    🔗 מקושר
+                  </Badge>
+                )}
+                <Button
+                  size="sm"
+                  variant="danger-outline"
+                  className="w-full"
+                  onClick={() => void handleToggleResource(resource.id)}
+                  aria-label={`הסר את ${resource.fileName} מהשיעור`}
+                >
+                  הסר
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {resources.length === 0 && (
           <p className="text-sm text-[var(--color-text-muted)]">
             אין עדיין קבצים בספרייה. ניתן להעלות ב-
             <Link to="/library" className="text-[var(--color-primary-text)]">
@@ -344,21 +515,42 @@ export function LessonDetailPage() {
             </Link>
             .
           </p>
-        ) : (
-          <ul className="flex max-h-64 flex-col gap-1 overflow-y-auto">
-            {resources.map((resource) => (
-              <li key={resource.id}>
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={lesson.resourceIds.includes(resource.id)}
-                    onChange={() => void handleToggleResource(resource.id)}
-                  />
-                  {resource.fileName}
-                </label>
-              </li>
-            ))}
-          </ul>
+        )}
+
+        {showResourcePicker && resources.length > 0 && (
+          <>
+            <input
+              value={resourceSearch}
+              onChange={(event) => setResourceSearch(event.target.value)}
+              placeholder="חיפוש קובץ להוספה..."
+              aria-label="חיפוש קבצים לשיוך"
+              className="mb-2 w-full rounded-[var(--radius-card)] border border-[var(--color-border)] px-3 py-1.5 text-sm"
+            />
+            <ul className="grid max-h-64 grid-cols-1 gap-1 overflow-y-auto sm:grid-cols-2">
+              {visibleResources.length === 0 ? (
+                <li className="text-sm text-[var(--color-text-muted)]">לא נמצאו קבצים.</li>
+              ) : (
+                visibleResources.map((resource) => (
+                  <li key={resource.id}>
+                    <label className="flex items-center gap-2 rounded-[var(--radius-card)] px-1 py-1.5 text-sm hover:bg-[var(--color-surface)]">
+                      <input
+                        type="checkbox"
+                        checked={lesson.resourceIds.includes(resource.id)}
+                        onChange={() => void handleToggleResource(resource.id)}
+                      />
+                      <span className="shrink-0 text-[var(--color-text-muted)]">
+                        <FileTypeIcon mimeType={resource.mimeType} size={16} />
+                      </span>
+                      <span className="min-w-0 flex-1 truncate" title={resource.fileName}>
+                        {resource.fileName}
+                      </span>
+                      {resource.sourceType === 'link' && <Badge variant="primary">🔗 מקושר</Badge>}
+                    </label>
+                  </li>
+                ))
+              )}
+            </ul>
+          </>
         )}
       </section>
 
