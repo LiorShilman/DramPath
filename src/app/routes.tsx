@@ -19,6 +19,7 @@ import {
   SongDetailPage,
   ExerciseSelectPage,
   VisualTrainerPage,
+  FreeNotationPracticePage,
 } from './lazy-pages'
 
 // Route map from SPEC.md §10. "/", "/setup", "/today", "/practice/session",
@@ -53,6 +54,7 @@ export const routes: RouteObject[] = [
       // NAV_ITEMS, the :exerciseId detail route is link-only.
       { path: 'practice/visual', element: <ExerciseSelectPage /> },
       { path: 'practice/visual/:exerciseId', element: <VisualTrainerPage /> },
+      { path: 'practice/visual/free-notation', element: <FreeNotationPracticePage /> },
     ],
   },
 ]

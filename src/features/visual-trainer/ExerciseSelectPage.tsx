@@ -24,7 +24,17 @@ const DIFFICULTY_VARIANTS: Record<InteractiveExerciseDifficulty, BadgeVariant> =
 export function ExerciseSelectPage() {
   return (
     <div className="flex max-w-5xl flex-col gap-4">
-      <PageHeader title="תרגול ויזואלי" />
+      <PageHeader
+        title="תרגול ויזואלי"
+        actions={
+          <Link
+            to="/practice/visual/free-notation"
+            className="rounded-[var(--radius-card)] border border-[var(--color-border)] px-3 py-1.5 text-sm hover:underline"
+          >
+            תרגול חופשי לפי תווים
+          </Link>
+        }
+      />
       <ul className="flex flex-col gap-2">
         {DEMO_EXERCISES.map((exercise) => (
           <li key={exercise.id}>

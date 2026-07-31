@@ -59,3 +59,6 @@ export const ExerciseSelectPage = lazy(() =>
 export const VisualTrainerPage = lazy(() =>
   import('../features/visual-trainer').then((m) => ({ default: m.VisualTrainerPage })),
 )
+export const FreeNotationPracticePage = lazy(() =>
+  import('../features/visual-trainer').then((m) => ({ default: m.FreeNotationPracticePage })),
+)
