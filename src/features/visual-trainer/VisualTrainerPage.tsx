@@ -68,14 +68,18 @@ function VisualTrainerRunner({ exercise, highwayRef }: VisualTrainerRunnerProps)
           it doesn't shrink to fit. */}
       <div className="flex flex-1 items-center">
         <div className="flex w-full flex-col items-center gap-4 lg:flex-row-reverse lg:justify-between">
-          {/* pl-3: the kit's own artwork intentionally draws slightly past
-              its box on both sides (hihat pokes out the left, crash/ride the
-              right — an established DrumKit quirk, see FreeNotationPracticePage's
-              80%-width kit column for the same accommodation). Sitting at the
-              start of this row with no margin let the hihat's overflow poke
-              past the page's own left edge, causing a real (if tiny)
-              horizontal scrollbar. */}
-          <div className="w-full max-w-2xl shrink-0 pe-3 lg:w-[36rem]">
+          {/* pe-6 (not pe-3): the kit's own artwork intentionally draws
+              slightly past its box on both sides (hihat pokes out the left,
+              crash/ride the right — an established DrumKit quirk, see
+              FreeNotationPracticePage's 80%-width kit column for the same
+              accommodation). pe-3 was just enough for the hihat's resting
+              overflow, but its own "hit" animation (cymbal-hit: scale(1.05)
+              rotate(4deg)) pushes it further left at the animation's peak,
+              enough to cause a real (if brief) page-level horizontal
+              scrollbar every time hi-hat is actually played — confirmed via
+              frame-by-frame measurement, not just at rest. pe-6 covers the
+              animated peak with margin to spare. */}
+          <div className="w-full max-w-2xl shrink-0 pe-6 lg:w-[36rem]">
             <DrumKit activeHits={trainer.activeHits} />
           </div>
           <KeyboardGuide variant="inline" relevantInstruments={usedInstruments} pressedInstruments={trainer.activeHits} />
