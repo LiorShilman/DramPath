@@ -57,11 +57,11 @@ export function ExerciseSelectPage() {
         {allExercises.map((exercise) => {
           const isCustom = customExercises.some((custom) => custom.id === exercise.id)
           return (
-            <li key={exercise.id} className="flex items-center gap-2">
-              <Link
-                to={`/practice/visual/${exercise.id}`}
-                className="group flex flex-1 items-center justify-between gap-2 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-3 [box-shadow:var(--shadow-card)]"
-              >
+            <li
+              key={exercise.id}
+              className="flex items-center gap-2 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-3 [box-shadow:var(--shadow-card)]"
+            >
+              <Link to={`/practice/visual/${exercise.id}`} className="group flex flex-1 items-center justify-between gap-2">
                 <span className="flex items-center gap-2 font-semibold group-hover:underline">
                   {exercise.title}
                   {isCustom && (

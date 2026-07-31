@@ -57,7 +57,7 @@ describe('NoteHighway', () => {
     )
 
     ref.current!.render(2000) // exactly at the event's own time
-    expect(getByTestId(`note-${event.id}`)).toHaveStyle({ visibility: 'visible', transform: 'translateY(348px)' })
+    expect(getByTestId(`note-${event.id}`)).toHaveStyle({ visibility: 'visible', transform: 'translateY(448px)' })
   })
 
   it('hides a note well after it has passed the hit line', () => {
@@ -75,5 +75,19 @@ describe('NoteHighway', () => {
     const event = makeEvent({ instrument: 'snare' })
     const { getByTestId } = render(<NoteHighway events={[event]} exercise={EXERCISE} />)
     expect(getByTestId(`note-${event.id}`)).toHaveAttribute('data-instrument', 'snare')
+  })
+
+  it('reset() clears a hit/miss glow set by a previous run — event ids are stable across restarts, so the same DOM node is reused', () => {
+    const event = makeEvent()
+    const ref = createRef<NoteHighwayHandle>()
+    const { getByTestId } = render(<NoteHighway ref={ref} events={[event]} exercise={EXERCISE} />)
+
+    ref.current!.markResult(event.id, 'hit')
+    const note = getByTestId(`note-${event.id}`)
+    expect(note.style.boxShadow).not.toBe('none')
+
+    ref.current!.reset()
+    expect(note.style.boxShadow).toBe('none')
+    expect(note.style.opacity).toBe('1')
   })
 })

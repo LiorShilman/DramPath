@@ -41,6 +41,7 @@ function VisualTrainerRunner({ exercise, highwayRef }: VisualTrainerRunnerProps)
         exercise={exercise}
         phase={trainer.phase}
         currentBar={trainer.currentBar}
+        currentBeat={trainer.currentBeat}
         onStart={trainer.start}
         onPause={trainer.pause}
         onResume={trainer.resume}
@@ -59,13 +60,22 @@ function VisualTrainerRunner({ exercise, highwayRef }: VisualTrainerRunnerProps)
       <KeyboardGuide />
 
       {trainer.phase === 'finished' && (
-        <SessionResults
-          exerciseTitle={exercise.title}
-          scoring={trainer.scoring}
-          gradeCounts={trainer.gradeCounts}
-          onRestart={trainer.restart}
-          onExit={handleExit}
-        />
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={`סיום תרגול — ${exercise.title}`}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+        >
+          <div className="w-full max-w-lg">
+            <SessionResults
+              exerciseTitle={exercise.title}
+              scoring={trainer.scoring}
+              gradeCounts={trainer.gradeCounts}
+              onRestart={trainer.restart}
+              onExit={handleExit}
+            />
+          </div>
+        </div>
       )}
     </div>
   )

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { fireEvent } from '@testing-library/dom'
 import { useVisualTrainer } from './useVisualTrainer'
+import { ExercisePlaybackEngine } from '../lib/visual-trainer/exercise-playback-engine'
 import { createId, nowIso } from '../domain'
 import type { DrumNoteEvent, InteractiveExercise } from '../domain'
 import type { NoteHighwayHandle } from '../components/visual-trainer/NoteHighway'
@@ -101,6 +102,22 @@ describe('useVisualTrainer', () => {
     await waitFor(() => expect(result.current.phase).toBe('running'), { timeout: 3000 })
   })
 
+  it('advances the beat pulse during count-in instead of freezing on beat 1 for the whole count-in bar', async () => {
+    vi.stubGlobal('AudioContext', FakeAudioContext)
+    const exercise = makeExercise([
+      { id: createId(), bar: 1, beat: 1, subdivisionIndex: 0, instrument: 'kick', velocity: 100 },
+    ])
+    const { result } = renderHook(() => useVisualTrainer(exercise, noHighwayRef))
+
+    act(() => result.current.start())
+    expect(result.current.phase).toBe('count-in')
+
+    // 240bpm/4-4 = a 250ms beat, 1000ms count-in bar — plenty of time for
+    // the beat to move off 1 while still inside count-in.
+    await waitFor(() => expect(result.current.currentBeat).toBeGreaterThan(1), { timeout: 3000 })
+    expect(result.current.phase).toBe('count-in')
+  })
+
   it('grades a well-timed hit as a non-miss and updates accuracy', async () => {
     vi.stubGlobal('AudioContext', FakeAudioContext)
     const exercise = makeExercise([
@@ -136,6 +153,21 @@ describe('useVisualTrainer', () => {
     await waitFor(() => expect(result.current.phase).toBe('finished'), { timeout: 3000 })
     expect(result.current.lastGrade).toBe('miss')
     expect(result.current.scoring.accuracyPercent).toBe(0)
+  })
+
+  it('stops the playback engine as soon as the exercise finishes, instead of letting its metronome click schedule run out on its own', async () => {
+    vi.stubGlobal('AudioContext', FakeAudioContext)
+    const stopSpy = vi.spyOn(ExercisePlaybackEngine.prototype, 'stop')
+    const exercise = makeExercise([
+      { id: createId(), bar: 1, beat: 1, subdivisionIndex: 0, instrument: 'kick', velocity: 100 },
+    ])
+    const { result } = renderHook(() => useVisualTrainer(exercise, noHighwayRef))
+
+    act(() => result.current.start())
+    await waitFor(() => expect(result.current.phase).toBe('finished'), { timeout: 3000 })
+
+    expect(stopSpy).toHaveBeenCalled()
+    stopSpy.mockRestore()
   })
 
   it('pauses and resumes without losing phase', async () => {

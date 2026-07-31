@@ -29,6 +29,7 @@ export interface UseVisualTrainerResult {
   lastGrade: HitGrade | 'extra' | undefined
   activeHit: { instrument: DrumInstrument; hitToken: string } | undefined
   currentBar: number
+  currentBeat: number
   start: () => void
   pause: () => void
   resume: () => void
@@ -74,6 +75,7 @@ export function useVisualTrainer(
     undefined,
   )
   const [currentBar, setCurrentBar] = useState(1)
+  const [currentBeat, setCurrentBeat] = useState(1)
 
   const audioContextRef = useRef<AudioContext | null>(null)
   const engineRef = useRef<ExercisePlaybackEngine | null>(null)
@@ -88,6 +90,8 @@ export function useVisualTrainer(
   const clockOffsetMsRef = useRef(0)
   const countInDurationMsRef = useRef(0)
   const barDurationMsRef = useRef(0)
+  const beatDurationMsRef = useRef(0)
+  const beatsPerBarRef = useRef(4)
   const phaseRef = useRef<VisualTrainerPhase>('idle')
   const prePausePhaseRef = useRef<VisualTrainerPhase>('idle')
 
@@ -127,8 +131,18 @@ export function useVisualTrainer(
       const audioContext = audioContextRef.current
       const engine = engineRef.current
       if (!audioContext || !engine) return
-      const elapsedMs =
-        (audioContext.currentTime - engine.startAudioTimeSeconds) * 1000 - countInDurationMsRef.current
+      const rawElapsedMs = (audioContext.currentTime - engine.startAudioTimeSeconds) * 1000
+
+      // The beat pulse runs off raw elapsed time (from the very start of
+      // count-in), not time-since-count-in — a count-in is meant to visibly
+      // tick through its own bar too, not sit frozen on beat 1 until the
+      // real exercise begins.
+      if (rawElapsedMs >= 0) {
+        const beatIndexInBar = Math.floor((rawElapsedMs % barDurationMsRef.current) / beatDurationMsRef.current)
+        setCurrentBeat(Math.min(beatsPerBarRef.current, beatIndexInBar + 1))
+      }
+
+      const elapsedMs = rawElapsedMs - countInDurationMsRef.current
       if (elapsedMs < 0) return
       setCurrentBar(Math.max(1, Math.floor(elapsedMs / barDurationMsRef.current) + 1))
     }, BAR_UPDATE_INTERVAL_MS)
@@ -171,6 +185,11 @@ export function useVisualTrainer(
     if (pendingRef.current.length === 0 && phaseRef.current !== 'finished' && phaseRef.current !== 'idle') {
       setPhaseBoth('finished')
       stopLoops()
+      // All notes are resolved, but the playback engine's own click schedule
+      // covers the whole declared exercise length independent of the notes
+      // — without this, the metronome keeps ticking through the rest of its
+      // queue (up to a bar or two) after the last note has already resolved.
+      engineRef.current?.stop()
       return
     }
 
@@ -239,6 +258,8 @@ export function useVisualTrainer(
     totalExpectedEventsRef.current = pendingRef.current.length
 
     barDurationMsRef.current = calculateBarDurationMs(exercise.bpm, exercise.timeSignature)
+    beatDurationMsRef.current = barDurationMsRef.current / exercise.timeSignature.numerator
+    beatsPerBarRef.current = exercise.timeSignature.numerator
     countInDurationMsRef.current = COUNT_IN_BARS * barDurationMsRef.current
     clockOffsetMsRef.current = performance.now() - audioContext.currentTime * 1000
 
@@ -249,11 +270,13 @@ export function useVisualTrainer(
     setLastGrade(undefined)
     setActiveHit(undefined)
     setCurrentBar(1)
+    setCurrentBeat(1)
+    noteHighwayRef.current?.reset()
     setPhaseBoth('count-in')
 
     rafIdRef.current = requestAnimationFrame(tick)
     startBarInterval()
-  }, [exercise, setPhaseBoth, startBarInterval, stopLoops, tick])
+  }, [exercise, noteHighwayRef, setPhaseBoth, startBarInterval, stopLoops, tick])
 
   const pause = useCallback(() => {
     if (phaseRef.current !== 'running' && phaseRef.current !== 'count-in') return
@@ -281,5 +304,5 @@ export function useVisualTrainer(
     setPhaseBoth('idle')
   }, [setPhaseBoth, stopLoops])
 
-  return { phase, scoring, gradeCounts, lastGrade, activeHit, currentBar, start, pause, resume, restart, exit }
+  return { phase, scoring, gradeCounts, lastGrade, activeHit, currentBar, currentBeat, start, pause, resume, restart, exit }
 }

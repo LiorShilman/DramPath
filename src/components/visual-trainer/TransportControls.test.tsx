@@ -24,6 +24,7 @@ function renderControls(overrides: Partial<Parameters<typeof TransportControls>[
       exercise={EXERCISE}
       phase="idle"
       currentBar={1}
+      currentBeat={1}
       {...handlers}
       {...overrides}
     />,
@@ -69,5 +70,21 @@ describe('TransportControls', () => {
     expect(screen.getByText(/100 BPM/)).toBeInTheDocument()
     expect(screen.getByText(/4\/4/)).toBeInTheDocument()
     expect(screen.getByText(/תיבה 2 מתוך 2/)).toBeInTheDocument()
+  })
+
+  it('shows one beat dot per beat in the time signature, without highlighting any while idle', () => {
+    renderControls({ phase: 'idle', currentBeat: 1 })
+    const dots = screen.getByRole('img', { name: 'פעימות המטרונום' }).children
+    expect(dots).toHaveLength(4)
+    for (const dot of dots) expect(dot).toHaveClass('bg-[var(--color-border)]')
+  })
+
+  it('highlights only the current beat while running', () => {
+    renderControls({ phase: 'running', currentBeat: 3 })
+    const dots = screen.getByRole('img', { name: 'פעימות המטרונום' }).children
+    expect(dots[2]).toHaveClass('bg-[var(--color-text)]')
+    expect(dots[0]).toHaveClass('bg-[var(--color-border)]')
+    expect(dots[1]).toHaveClass('bg-[var(--color-border)]')
+    expect(dots[3]).toHaveClass('bg-[var(--color-border)]')
   })
 })

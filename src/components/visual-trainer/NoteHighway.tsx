@@ -15,6 +15,11 @@ export interface NoteHighwayHandle {
    * as "pressing into thin air" since the falling note gives no reaction
    * of its own. */
   markResult(eventId: string, result: NoteHitResult): void
+  /** Clears every hit/miss glow set by markResult. Event ids are stable
+   * across a restart (same exercise, same DrumNoteEvent[]), so the same DOM
+   * nodes get reused — without this, a note hit in a previous run keeps
+   * glowing green on the next run even though nothing has been hit yet. */
+  reset(): void
 }
 
 export interface NoteHighwayProps {
@@ -31,8 +36,9 @@ const DEFAULT_LOOKAHEAD_MS = 2000
 // animation, since it skips layout, unlike `top`) keeps the per-frame math
 // a single multiplication with no DOM reads. A Stage 4 simplification —
 // fine to make this responsive later.
-const HIGHWAY_HEIGHT_PX = 380
+const HIGHWAY_HEIGHT_PX = 480
 const HIT_LINE_OFFSET_PX = 32
+const NOTE_HEIGHT_PX = 48
 
 /**
  * VISUAL_DRUM_TRAINER_SPEC.md §5/§18 — notes fall from the top toward a hit
@@ -77,6 +83,12 @@ export const NoteHighway = forwardRef<NoteHighwayHandle, NoteHighwayProps>(funct
           result === 'hit' ? '0 0 0 3px #22c55e, 0 0 14px 3px #22c55e' : '0 0 0 3px #ef4444, 0 0 14px 3px #ef4444'
         el.style.opacity = result === 'miss' ? '0.55' : '1'
       },
+      reset() {
+        for (const el of noteRefs.current.values()) {
+          el.style.boxShadow = 'none'
+          el.style.opacity = '1'
+        }
+      },
     }),
     [eventTimes, lookaheadMs],
   )
@@ -112,7 +124,7 @@ export const NoteHighway = forwardRef<NoteHighwayHandle, NoteHighwayProps>(funct
               insetInlineStart: `${(lane / laneCount) * 100}%`,
               top: 0,
               width: `${100 / laneCount}%`,
-              height: 34,
+              height: NOTE_HEIGHT_PX,
               borderRadius: 10,
               backgroundColor: INSTRUMENT_COLORS[event.instrument],
               visibility: 'hidden',

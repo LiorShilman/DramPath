@@ -8,9 +8,13 @@ export interface GradingThresholds {
 }
 
 export const GRADING_THRESHOLDS: Record<InteractiveExerciseDifficulty, GradingThresholds> = {
-  beginner: { perfectMs: 60, hitMs: 130 },
-  intermediate: { perfectMs: 40, hitMs: 90 },
-  advanced: { perfectMs: 25, hitMs: 60 },
+  // Widened from the original 60/130, 40/90, 25/60 — the hit window was
+  // barely bigger than the falling note's own on-screen height (at the
+  // default lookahead/travel speed, ~130ms only spans a few px past the
+  // note's edge), making it feel far tighter than the ms number suggests.
+  beginner: { perfectMs: 90, hitMs: 195 },
+  intermediate: { perfectMs: 60, hitMs: 135 },
+  advanced: { perfectMs: 35, hitMs: 90 },
 }
 
 export interface PendingDrumEvent {
