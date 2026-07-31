@@ -89,4 +89,41 @@ describe('DrumPathDatabase', () => {
     upgraded.close()
     await Dexie.delete(dbName)
   })
+
+  it('backfills loopCount back to 1 for interactiveExercises saved before the builder\'s hardcoded loopCount: 2 was fixed', async () => {
+    const dbName = `drumpath-test-migration-${createId()}`
+
+    const legacyDb = new Dexie(dbName)
+    legacyDb.version(4).stores({
+      interactiveExercises: 'id, difficulty, updatedAt',
+    })
+    await legacyDb.open()
+    await legacyDb.table('interactiveExercises').add({
+      id: createId(),
+      title: 'תרגיל ישן',
+      difficulty: 'beginner',
+      bpm: 90,
+      minBpm: 60,
+      maxBpm: 140,
+      timeSignature: { numerator: 4, denominator: 4 },
+      subdivision: 'eighth',
+      bars: 2,
+      loopCount: 2,
+      displayMode: 'note_highway',
+      events: [],
+      createdAt: nowIso(),
+      updatedAt: nowIso(),
+    })
+    legacyDb.close()
+
+    const upgraded = new DrumPathDatabase(dbName)
+    await upgraded.open()
+
+    const exercises = await upgraded.interactiveExercises.toArray()
+    expect(exercises).toHaveLength(1)
+    expect(exercises[0]?.loopCount).toBe(1)
+
+    upgraded.close()
+    await Dexie.delete(dbName)
+  })
 })

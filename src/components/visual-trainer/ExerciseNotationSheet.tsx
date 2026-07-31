@@ -108,7 +108,15 @@ export function ExerciseNotationSheet({ exercise, highlightedEventIds, playbackP
   return (
     <svg
       viewBox={`0 0 ${viewBoxWidth} ${totalHeight}`}
-      className="w-full text-[var(--color-text)]"
+      // Plain `w-full` stretched a short exercise's small viewBox (e.g. one
+      // bar = 200 units) to fill the whole, often much wider, container —
+      // scaling every line/note/gap up with it. Capping at 2x native scale
+      // instead of the unbounded 100% keeps it from stretching that far,
+      // without also shrinking it down to a literal 200px postage stamp
+      // (native 1x, which read as too small): it fills the container up to
+      // that cap, and only shrinks below it for a genuinely narrow container.
+      className="h-auto text-[var(--color-text)]"
+      style={{ width: '100%', maxWidth: viewBoxWidth * 2 }}
       role="img"
       aria-label="תווי התרגיל"
     >

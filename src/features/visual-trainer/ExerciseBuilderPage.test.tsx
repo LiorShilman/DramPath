@@ -137,6 +137,25 @@ describe('ExerciseBuilderPage', () => {
     expect(saved.events[0]).toMatchObject({ bar: 1, beat: 1, subdivisionIndex: 0, instrument: 'kick' })
   })
 
+  it('saves successfully with a target BPM below 40, where a fixed minBpm floor would exceed it', async () => {
+    renderPage()
+    const user = userEvent.setup()
+    await user.type(screen.getByLabelText('שם התרגיל'), 'תרגיל איטי')
+    const bpmInput = screen.getByLabelText('קצב יעד (BPM)')
+    await user.clear(bpmInput)
+    await user.type(bpmInput, '30')
+    await user.click(screen.getByRole('button', { name: 'המשך לעריכת התווים' }))
+
+    const firstKickCell = screen.getAllByRole('button', { name: /בס דראם תיבה/ })[0]!
+    await user.click(firstKickCell)
+    await user.click(screen.getByRole('button', { name: 'שמירה והתחלת תרגול' }))
+
+    await waitFor(async () => expect(await db.interactiveExercises.count()).toBe(1))
+    const saved = (await db.interactiveExercises.toArray())[0]!
+    expect(saved.bpm).toBe(30)
+    expect(saved.minBpm).toBeLessThanOrEqual(saved.bpm)
+  })
+
   it('edit mode loads the existing exercise straight into the grid, pre-filled', async () => {
     const existing = await interactiveExerciseRepository.create({
       title: 'תרגיל קיים',

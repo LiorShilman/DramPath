@@ -98,5 +98,28 @@ export class DrumPathDatabase extends Dexie {
       notationPracticeState: 'id',
       interactiveExercises: 'id, difficulty, updatedAt',
     })
+
+    // ExerciseBuilderPage's save always hardcoded loopCount: 2, even though
+    // it never exposed loop configuration and the grid/notation
+    // preview/NoteHighway only ever show a single playthrough — every
+    // builder-made exercise silently looped twice, so a correct hit only
+    // counted for half its expected score. Every row in this table was
+    // created by the builder (the built-in demo catalog stays in-memory,
+    // never persisted here), so it's safe to force loopCount back to 1 for
+    // all of them, not just newly-saved ones.
+    this.version(5)
+      .stores({
+        ...storesV1,
+        notationPracticeState: 'id',
+        interactiveExercises: 'id, difficulty, updatedAt',
+      })
+      .upgrade(async (tx) => {
+        await tx
+          .table('interactiveExercises')
+          .toCollection()
+          .modify((exercise) => {
+            exercise.loopCount = 1
+          })
+      })
   }
 }

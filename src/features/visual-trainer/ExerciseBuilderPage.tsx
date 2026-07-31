@@ -284,12 +284,21 @@ export function ExerciseBuilderPage() {
       title: setup.title.trim(),
       difficulty: setup.difficulty,
       bpm: setup.bpm,
-      minBpm: Math.max(40, setup.bpm - 30),
+      // The floor here must stay below the setup form's own BPM minimum
+      // (30) — clamping to a fixed 40 could exceed setup.bpm itself for a
+      // slow target tempo, violating the schema's bpm >= minBpm rule.
+      minBpm: Math.max(1, setup.bpm - 30),
       maxBpm: setup.bpm + 50,
       timeSignature: { numerator: 4, denominator: 4 },
       subdivision: setup.subdivision,
       bars: setup.bars,
-      loopCount: 2,
+      // A hardcoded 2 here silently doubled every expected hit (each note
+      // scheduled once per loop) while the grid/notation preview and
+      // NoteHighway's falling-note animation only ever show a single
+      // playthrough — a real mismatch: a correct hit only counted for half
+      // of what the runner expected, and NoteHighway has no support for
+      // re-showing a note on a second pass, so loop 2 had no visual cue at all.
+      loopCount: 1,
       displayMode: 'note_highway' as const,
       events,
     }
