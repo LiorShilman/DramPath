@@ -20,6 +20,7 @@ import {
   ExerciseSelectPage,
   VisualTrainerPage,
   FreeNotationPracticePage,
+  ExerciseBuilderPage,
 } from './lazy-pages'
 
 // Route map from SPEC.md §10. "/", "/setup", "/today", "/practice/session",
@@ -55,6 +56,8 @@ export const routes: RouteObject[] = [
       { path: 'practice/visual', element: <ExerciseSelectPage /> },
       { path: 'practice/visual/:exerciseId', element: <VisualTrainerPage /> },
       { path: 'practice/visual/free-notation', element: <FreeNotationPracticePage /> },
+      { path: 'practice/visual/build', element: <ExerciseBuilderPage /> },
+      { path: 'practice/visual/build/:exerciseId', element: <ExerciseBuilderPage /> },
     ],
   },
 ]

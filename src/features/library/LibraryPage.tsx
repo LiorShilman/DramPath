@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { resourceRepository, settingsRepository } from '../../data/repositories'
 import { useDebouncedCallback } from '../../hooks/useDebouncedCallback'
 import { useObjectUrl } from '../../hooks/useObjectUrl'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { ResourceThumbnail } from '../../components/ResourceThumbnail'
 import { FileTypeIcon } from '../../components/FileTypeIcon'
+import { FileDropzone } from '../../components/FileDropzone'
 import { Button, Badge, PageHeader, buttonClassName } from '../../components/ui'
 import {
   isFileSystemAccessSupported,
@@ -144,7 +145,6 @@ export function LibraryPage() {
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [linkError, setLinkError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
-  const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     async function load() {
@@ -159,11 +159,7 @@ export function LibraryPage() {
     void load()
   }, [])
 
-  async function handleFileSelected(event: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(event.target.files ?? [])
-    if (fileInputRef.current) fileInputRef.current.value = ''
-    if (files.length === 0) return
-
+  async function handleFilesSelected(files: File[]) {
     setUploadError(null)
     const errors: string[] = []
     const saved: Resource[] = []
@@ -247,17 +243,13 @@ export function LibraryPage() {
       </p>
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:gap-6">
-        <div>
-          <label className="flex flex-col gap-1 text-sm">
-            העלאת קבצים (כל סוג קובץ, עד {maxSizeMB}MB לקובץ — ניתן לבחור כמה קבצים יחד)
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              onChange={(event) => void handleFileSelected(event)}
-              className="text-sm"
-            />
-          </label>
+        <div className="flex-1">
+          <FileDropzone
+            multiple
+            onFilesSelected={(files) => void handleFilesSelected(files)}
+            label="העלאת קבצים"
+            hint={`כל סוג קובץ, עד ${maxSizeMB}MB לקובץ — ניתן לבחור כמה קבצים יחד`}
+          />
           {uploadError && (
             <p className="mt-1 text-sm text-[var(--color-danger-text)]">{uploadError}</p>
           )}

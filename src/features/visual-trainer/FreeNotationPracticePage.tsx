@@ -1,30 +1,41 @@
 import { useEffect, useRef, useState } from 'react'
-import { FileMusic, Upload } from 'lucide-react'
+import { Trash2 } from 'lucide-react'
 import { PageHeader, Button, Card } from '../../components/ui'
+import { FileDropzone } from '../../components/FileDropzone'
+import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { DrumKit } from '../../components/visual-trainer/DrumKit'
 import { useFreeDrumPlayback } from '../../hooks/useFreeDrumPlayback'
+import { useDebouncedCallback } from '../../hooks/useDebouncedCallback'
 import { useMetronome } from '../practice-session/useMetronome'
+import { resourceRepository, notationPracticeStateRepository } from '../../data/repositories'
+import { calculateTapTempoBpm } from '../../lib/metronome-math'
 import { SUBDIVISION_LABELS } from '../exercises/exercise-labels'
 import { DEFAULT_KEYBOARD_MAP, codeToKeyLabel } from '../../lib/visual-trainer/keyboard-map'
 import { INSTRUMENT_LABELS } from '../../lib/visual-trainer/instrument-labels'
-import type { Subdivision } from '../../domain'
+import type { Resource, Subdivision } from '../../domain'
 
 const BEATS_PER_BAR = [0, 1, 2, 3]
 const DEFAULT_BPM = 90
 const BPM_STEP = 5
+const MIN_BPM = 30
+const MAX_BPM = 300
+// Tags saved notation uploads so they're a distinct, filterable slice of
+// the shared Resource library, not mixed in with lesson/song attachments.
+const NOTATION_TAG = 'notation-practice'
 
 /** VISUAL_DRUM_TRAINER_SPEC.md's graded exercises need structured
- * DrumNoteEvent[] data — an uploaded photo has none, so this is a
- * deliberately ungraded mode: a reference image/PDF on screen, a metronome
- * for tempo, and the drum kit reacting live to keyboard input while the
- * player reads the sheet and plays along by hand. */
+ * DrumNoteEvent[] data — an uploaded photo/PDF has none, so this is a
+ * deliberately ungraded mode: a reference file on screen, a metronome for
+ * tempo, and the drum kit reacting live to keyboard input while the player
+ * reads the sheet and plays along by hand. Uploaded files are saved to the
+ * shared Resource library (not just a session-only blob URL) so they don't
+ * need re-uploading next time. */
 export function FreeNotationPracticePage() {
+  const [songs, setSongs] = useState<Resource[]>([])
+  const [selectedResource, setSelectedResource] = useState<Resource | undefined>(undefined)
   const [fileUrl, setFileUrl] = useState<string | undefined>(undefined)
-  const [fileName, setFileName] = useState<string | undefined>(undefined)
-  const [fileIsPdf, setFileIsPdf] = useState(false)
-  const [isDragOver, setIsDragOver] = useState(false)
+  const [pendingRemoval, setPendingRemoval] = useState<Resource | undefined>(undefined)
   const fileUrlRef = useRef(fileUrl)
-  const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     fileUrlRef.current = fileUrl
@@ -36,38 +47,83 @@ export function FreeNotationPracticePage() {
     }
   }, [])
 
-  function loadFile(file: File) {
+  useEffect(() => {
+    void resourceRepository.getAll().then((all) => {
+      setSongs(
+        all
+          .filter((resource) => resource.tags.includes(NOTATION_TAG))
+          .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+      )
+    })
+  }, [])
+
+  async function selectSong(resource: Resource) {
+    if (!resource.blob) return
     setFileUrl((current) => {
       if (current) URL.revokeObjectURL(current)
-      return URL.createObjectURL(file)
+      return URL.createObjectURL(resource.blob!)
     })
-    setFileName(file.name)
-    setFileIsPdf(file.type === 'application/pdf')
+    setSelectedResource(resource)
+    const savedState = await notationPracticeStateRepository.getForResource(resource.id)
+    setBpm(savedState?.lastBpm ?? DEFAULT_BPM)
   }
 
-  function handleFileSelected(event: React.ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0]
-    if (file) loadFile(file)
+  async function handleFilesSelected(files: File[]) {
+    const file = files[0]
+    if (!file) return
+    const saved = await resourceRepository.save({
+      fileName: file.name,
+      mimeType: file.type,
+      blob: file,
+      tags: [NOTATION_TAG],
+    })
+    setSongs((current) => [saved, ...current.filter((song) => song.id !== saved.id)])
+    void selectSong(saved)
   }
 
-  function handleDrop(event: React.DragEvent<HTMLButtonElement>) {
-    event.preventDefault()
-    setIsDragOver(false)
-    const file = event.dataTransfer.files?.[0]
-    if (file) loadFile(file)
+  async function confirmRemoveSong() {
+    if (!pendingRemoval) return
+    await resourceRepository.remove(pendingRemoval.id)
+    await notationPracticeStateRepository.remove(pendingRemoval.id)
+    setSongs((current) => current.filter((song) => song.id !== pendingRemoval.id))
+    if (selectedResource?.id === pendingRemoval.id) {
+      setFileUrl((current) => {
+        if (current) URL.revokeObjectURL(current)
+        return undefined
+      })
+      setSelectedResource(undefined)
+    }
+    setPendingRemoval(undefined)
   }
 
   const { activeHit } = useFreeDrumPlayback()
   const metronome = useMetronome()
   const [bpm, setBpm] = useState(DEFAULT_BPM)
   const [subdivision, setSubdivision] = useState<Subdivision>('quarter')
+  const [tapTimestamps, setTapTimestamps] = useState<number[]>([])
+
+  const saveBpmForSong = useDebouncedCallback((resourceId: string, value: number) => {
+    void notationPracticeStateRepository.saveBpm(resourceId, value)
+  }, 500)
+
+  function applyBpm(next: number) {
+    const clamped = Math.min(MAX_BPM, Math.max(MIN_BPM, next))
+    setBpm(clamped)
+    if (metronome.isPlaying) metronome.updateBpm(clamped)
+    if (selectedResource) saveBpmForSong(selectedResource.id, clamped)
+    return clamped
+  }
 
   function adjustBpm(delta: number) {
-    setBpm((current) => {
-      const next = Math.min(300, Math.max(30, current + delta))
-      if (metronome.isPlaying) metronome.updateBpm(next)
-      return next
-    })
+    applyBpm(bpm + delta)
+  }
+
+  function handleTap() {
+    const now = Date.now()
+    const nextTaps = [...tapTimestamps, now].slice(-5)
+    setTapTimestamps(nextTaps)
+    const tapped = calculateTapTempoBpm(nextTaps)
+    if (tapped !== undefined) applyBpm(Math.round(tapped))
   }
 
   function handleToggleMetronome() {
@@ -83,6 +139,8 @@ export function FreeNotationPracticePage() {
     if (metronome.isPlaying) metronome.updateSubdivision(next)
   }
 
+  const fileIsPdf = selectedResource?.mimeType === 'application/pdf'
+
   return (
     <div className="flex flex-col gap-4 pb-12">
       <PageHeader title="תרגול חופשי לפי תווים" backTo="/practice/visual" backLabel="← חזרה לרשימת התרגילים" />
@@ -94,45 +152,42 @@ export function FreeNotationPracticePage() {
           layout direction. */}
       <div className="flex flex-col gap-6 lg:flex-row-reverse lg:items-start">
         <div className="flex w-full flex-col gap-2 lg:flex-1">
-          <input
-            ref={fileInputRef}
-            type="file"
+          <FileDropzone
             accept="image/*,application/pdf"
-            onChange={handleFileSelected}
-            className="hidden"
+            onFilesSelected={(files) => void handleFilesSelected(files)}
+            label="גררו קובץ תווים לכאן או לחצו לבחירה"
+            hint="תמונה או PDF — נשמר לשימוש הבא"
+            selectedSummary={selectedResource?.fileName}
           />
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            onDragOver={(event) => {
-              event.preventDefault()
-              setIsDragOver(true)
-            }}
-            onDragLeave={() => setIsDragOver(false)}
-            onDrop={handleDrop}
-            className={`flex items-center gap-3 rounded-[var(--radius-card)] border-2 border-dashed p-4 text-start transition-colors ${
-              isDragOver
-                ? 'border-[var(--color-primary)] bg-[var(--color-surface-raised)]'
-                : 'border-[var(--color-border)] bg-[var(--color-surface)] hover:bg-[var(--color-surface-raised)]'
-            }`}
-          >
-            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]">
-              {fileName ? <FileMusic size={22} aria-hidden="true" /> : <Upload size={22} aria-hidden="true" />}
-            </span>
-            <span className="min-w-0 flex-1">
-              {fileName ? (
-                <>
-                  <p className="truncate font-semibold">{fileName}</p>
-                  <p className="text-xs text-[var(--color-text-muted)]">לחצו או גררו כדי להחליף קובץ</p>
-                </>
-              ) : (
-                <>
-                  <p className="font-semibold">גררו קובץ תווים לכאן או לחצו לבחירה</p>
-                  <p className="text-xs text-[var(--color-text-muted)]">תמונה או PDF</p>
-                </>
-              )}
-            </span>
-          </button>
+
+          {songs.length > 0 && (
+            <ul className="flex flex-wrap gap-2">
+              {songs.map((song) => (
+                <li key={song.id} className="flex items-center">
+                  <button
+                    type="button"
+                    onClick={() => void selectSong(song)}
+                    className={`max-w-48 truncate rounded-s-[var(--radius-card)] border px-3 py-1.5 text-sm ${
+                      selectedResource?.id === song.id
+                        ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/15'
+                        : 'border-[var(--color-border)] bg-[var(--color-surface)] hover:bg-[var(--color-surface-raised)]'
+                    }`}
+                    title={song.fileName}
+                  >
+                    {song.fileName}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPendingRemoval(song)}
+                    aria-label={`הסרת ${song.fileName}`}
+                    className="rounded-e-[var(--radius-card)] border border-s-0 border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-[var(--color-danger-text)] hover:bg-[var(--color-surface-raised)]"
+                  >
+                    <Trash2 size={14} aria-hidden="true" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
 
           {fileUrl ? (
             fileIsPdf ? (
@@ -142,12 +197,16 @@ export function FreeNotationPracticePage() {
               // than it is wide.
               <iframe
                 src={`${fileUrl}#view=FitH`}
-                title={fileName ?? 'תווים'}
+                title={selectedResource?.fileName ?? 'תווים'}
                 className="h-[75vh] w-full rounded-[var(--radius-card)] border border-[var(--color-border)]"
               />
             ) : (
               <div className="flex items-center justify-center overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-2">
-                <img src={fileUrl} alt={fileName ?? 'תווים'} className="mx-auto h-[75vh] max-h-[75vh] w-auto max-w-full object-contain" />
+                <img
+                  src={fileUrl}
+                  alt={selectedResource?.fileName ?? 'תווים'}
+                  className="mx-auto h-[75vh] max-h-[75vh] w-auto max-w-full object-contain"
+                />
               </div>
             )
           ) : (
@@ -190,6 +249,10 @@ export function FreeNotationPracticePage() {
                 +
               </button>
             </div>
+
+            <Button variant="ghost" onClick={handleTap} aria-label="הקשה לקצב">
+              הקשה לקצב
+            </Button>
 
             <Button onClick={handleToggleMetronome} aria-label={metronome.isPlaying ? 'עצור מטרונום' : 'הפעל מטרונום'}>
               {metronome.isPlaying ? 'עצור מטרונום' : 'הפעל מטרונום'}
@@ -243,6 +306,14 @@ export function FreeNotationPracticePage() {
           </Card>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={pendingRemoval !== undefined}
+        title={`להסיר את "${pendingRemoval?.fileName}"?`}
+        description="הקובץ יימחק מהספרייה ולא ניתן יהיה לשחזר אותו."
+        onConfirm={() => void confirmRemoveSong()}
+        onCancel={() => setPendingRemoval(undefined)}
+      />
     </div>
   )
 }

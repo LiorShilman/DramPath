@@ -10,6 +10,6 @@ describe('KeyboardGuide', () => {
     expect(screen.getByText('J')).toBeInTheDocument()
     expect(screen.getByText('סנר')).toBeInTheDocument()
     expect(screen.getByText('O')).toBeInTheDocument()
-    expect(screen.getByText('טום רצפה')).toBeInTheDocument()
+    expect(screen.getByText('טמטם רצפה')).toBeInTheDocument()
   })
 })

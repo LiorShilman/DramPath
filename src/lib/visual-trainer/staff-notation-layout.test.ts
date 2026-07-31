@@ -6,12 +6,12 @@ describe('STAFF_POSITION', () => {
     expect(STAFF_POSITION.kick).toEqual({ position: 1, notehead: 'normal' })
   })
 
-  it('places snare on the 2nd line from the top', () => {
-    expect(STAFF_POSITION.snare).toEqual({ position: 6, notehead: 'normal' })
+  it('places snare in the 2nd space from the top', () => {
+    expect(STAFF_POSITION.snare).toEqual({ position: 5, notehead: 'normal' })
   })
 
-  it('places tom_high and ride on the same top-line position but with different noteheads', () => {
-    expect(STAFF_POSITION.tom_high.position).toBe(8)
+  it('places ride on the top line, one step below tom_high in the top space', () => {
+    expect(STAFF_POSITION.tom_high.position).toBe(7)
     expect(STAFF_POSITION.ride.position).toBe(8)
     expect(STAFF_POSITION.tom_high.notehead).toBe('normal')
     expect(STAFF_POSITION.ride.notehead).toBe('x')
@@ -23,9 +23,10 @@ describe('STAFF_POSITION', () => {
     expect(STAFF_POSITION.hihat_closed.ledger).toBeUndefined()
   })
 
-  it('places crash above the staff with a ledger line, higher than hihat', () => {
-    expect(STAFF_POSITION.crash.position).toBeGreaterThan(STAFF_POSITION.hihat_closed.position)
+  it('places crash at the same height as hihat, distinguished only by the ledger line', () => {
+    expect(STAFF_POSITION.crash.position).toBe(STAFF_POSITION.hihat_closed.position)
     expect(STAFF_POSITION.crash.ledger).toBe(true)
+    expect(STAFF_POSITION.hihat_closed.ledger).toBeUndefined()
   })
 })
 

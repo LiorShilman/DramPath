@@ -57,9 +57,9 @@ const PIECE_ALT: Record<DrumPiece, string> = {
   hihat: 'היי-הט',
   ride: 'ריייד',
   crash: 'קראש',
-  tom_high: 'טום גבוה',
-  tom_mid: 'טום אמצעי',
-  tom_floor: 'טום רצפה',
+  tom_high: 'טמטם גבוה',
+  tom_mid: 'טמטם אמצעי',
+  tom_floor: 'טמטם רצפה',
 }
 
 export interface DrumKitProps {

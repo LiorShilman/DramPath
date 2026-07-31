@@ -15,15 +15,19 @@ export interface StaffPosition {
 }
 
 export const STAFF_POSITION: Record<DrumInstrument, StaffPosition> = {
+  // The user's own vocabulary uses "שורה" (line) to mean a *space* between
+  // staff lines, not a line itself — confirmed explicitly ("שורה זה רווח")
+  // after a round of live corrections. Every position below is re-derived
+  // from that: "שורה X" = the Xth space, "קו" = an actual line.
   kick: { position: 1, notehead: 'normal' }, // bottom space
-  tom_floor: { position: 2, notehead: 'normal' }, // 2nd line from bottom
-  snare: { position: 6, notehead: 'normal' }, // 2nd line from top
-  tom_mid: { position: 7, notehead: 'normal' }, // top space
-  tom_high: { position: 8, notehead: 'normal' }, // top line
-  ride: { position: 8, notehead: 'x' }, // top line
+  tom_floor: { position: 3, notehead: 'normal' }, // 2nd space from bottom
+  snare: { position: 5, notehead: 'normal' }, // 2nd space from top
+  tom_mid: { position: 6, notehead: 'normal' }, // between the top space and the 2nd space from top -> the line between them
+  tom_high: { position: 7, notehead: 'normal' }, // top space
+  ride: { position: 8, notehead: 'x' }, // top line (explicitly "קו עליון", a real line)
   hihat_closed: { position: 9, notehead: 'x' }, // above staff, no ledger
   hihat_open: { position: 9, notehead: 'x' }, // above staff, no ledger — same mark as closed
-  crash: { position: 10, notehead: 'x', ledger: true }, // above staff, with ledger
+  crash: { position: 9, notehead: 'x', ledger: true }, // same height as hihat — the ledger line is the only distinguishing mark
 }
 
 // Converts a staff position number into a y-offset in pixels, measured

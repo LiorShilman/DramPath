@@ -9,6 +9,8 @@ import type { PracticeSession } from '../../domain/practice-session'
 import type { PracticeEntry } from '../../domain/practice-entry'
 import type { Achievement } from '../../domain/achievement'
 import type { UserSettings } from '../../domain/user-settings'
+import type { NotationPracticeState } from '../../domain/notation-practice-state'
+import type { InteractiveExercise } from '../../domain/interactive-exercise'
 
 // ADR 0003: lessonExercises is a derived join table maintained by
 // lesson-repository, alongside Lesson.exerciseIds (source of truth).
@@ -30,6 +32,12 @@ export class DrumPathDatabase extends Dexie {
   // ADR 0004: singleton settings row, primary key 'key' = 'user-settings'.
   settings!: EntityTable<UserSettings, 'key'>
   achievements!: EntityTable<Achievement, 'id'>
+  // Free Notation Practice's "remember the last BPM used per song" — id is
+  // the notation Resource's own id, one row per uploaded song.
+  notationPracticeState!: EntityTable<NotationPracticeState, 'id'>
+  // User-created graded exercises from the manual builder — same shape as
+  // the hardcoded DEMO_EXERCISES, just persisted.
+  interactiveExercises!: EntityTable<InteractiveExercise, 'id'>
 
   constructor(name = 'drumpath') {
     super(name)
@@ -75,5 +83,20 @@ export class DrumPathDatabase extends Dexie {
             if (!Array.isArray(exercise.tags)) exercise.tags = []
           })
       })
+
+    // Free Notation Practice's remembered-BPM-per-song — a new table, no
+    // upgrade/backfill needed.
+    this.version(3).stores({
+      ...storesV1,
+      notationPracticeState: 'id',
+    })
+
+    // The manual exercise builder's persisted exercises — another new
+    // table, no upgrade/backfill needed.
+    this.version(4).stores({
+      ...storesV1,
+      notationPracticeState: 'id',
+      interactiveExercises: 'id, difficulty, updatedAt',
+    })
   }
 }

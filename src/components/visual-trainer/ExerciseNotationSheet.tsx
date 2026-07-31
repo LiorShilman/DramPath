@@ -1,6 +1,6 @@
 import { calculateBarDurationMs, calculateEventTimeMs } from '../../domain/calculations/event-timing'
 import { STAFF_POSITION, staffPositionToOffsetPx } from '../../lib/visual-trainer/staff-notation-layout'
-import type { InteractiveExercise } from '../../domain'
+import type { InteractiveExercise, Subdivision } from '../../domain'
 
 export interface ExerciseNotationSheetProps {
   exercise: Pick<InteractiveExercise, 'events' | 'timeSignature' | 'subdivision' | 'bars'>
@@ -9,11 +9,18 @@ export interface ExerciseNotationSheetProps {
 const BARS_PER_ROW = 4
 const BAR_WIDTH_PX = 200
 const NOTE_INSET_PX = 20
-const LINE_SPACING_PX = 12
+const LINE_SPACING_PX = 16
 const NOTE_RADIUS_PX = 5
-const TOP_PADDING_PX = 12
+const STEM_LENGTH_PX = 24
+const FLAG_GAP_PX = 7
 const BOTTOM_PADDING_PX = 12
 const ROW_GAP_PX = 28
+// The whole exercise shares one subdivision (no per-note duration yet), so
+// every note gets the same flag count — reflecting the real note-duration
+// shape (quarter/eighth/sixteenth), not just a plain circle.
+const FLAG_COUNT: Record<Subdivision, number> = { quarter: 0, eighth: 1, sixteenth: 2 }
+// Reserve enough headroom above the highest note for its stem + flags.
+const TOP_PADDING_PX = STEM_LENGTH_PX + FLAG_GAP_PX * 2 + 4
 // Bottom staff line = position 0; the drawn lines sit at positions 0/2/4/6/8.
 const STAFF_LINE_POSITIONS = [0, 2, 4, 6, 8]
 const STAFF_BOTTOM_LINE_POSITION = STAFF_LINE_POSITIONS[0]!
@@ -30,8 +37,10 @@ function barDurationMs(exercise: ExerciseNotationSheetProps['exercise']): number
 
 /** A static, simplified rhythm sheet — noteheads on a standard 5-line
  * drum-notation staff, positioned by the grid (bar/beat/subdivision), not
- * by real time. No stems/beaming/duration shapes: this intentionally isn't
- * full music engraving, only enough to read back which hits fall where. */
+ * by real time. Every note gets a stem + a flag count matching the
+ * exercise's subdivision (quarter/eighth/sixteenth) — there's no per-note
+ * duration yet, so this can't mix durations or beam consecutive notes,
+ * only reflect the one subdivision the whole exercise shares. */
 export function ExerciseNotationSheet({ exercise }: ExerciseNotationSheetProps) {
   const rowCount = Math.max(1, Math.ceil(exercise.bars / BARS_PER_ROW))
   // Only reserve vertical room up to the highest notehead actually used
@@ -111,6 +120,9 @@ export function ExerciseNotationSheet({ exercise }: ExerciseNotationSheetProps) 
               const staff = STAFF_POSITION[event.instrument]
               const x = event.barIndexInRow * BAR_WIDTH_PX + NOTE_INSET_PX + event.fraction * (BAR_WIDTH_PX - NOTE_INSET_PX)
               const y = toY(staff.position)
+              const flagCount = FLAG_COUNT[exercise.subdivision]
+              const stemX = x + NOTE_RADIUS_PX
+              const stemTopY = y - NOTE_RADIUS_PX - STEM_LENGTH_PX
 
               return (
                 <g key={eventIndex} data-testid="notation-note" data-instrument={event.instrument}>
@@ -146,8 +158,41 @@ export function ExerciseNotationSheet({ exercise }: ExerciseNotationSheetProps) 
                       />
                     </>
                   )}
+                  {staff.notehead === 'normal' && (
+                    <>
+                      <line
+                        data-testid="notation-note-stem"
+                        x1={stemX}
+                        y1={y}
+                        x2={stemX}
+                        y2={stemTopY}
+                        stroke="currentColor"
+                        strokeWidth={1.25}
+                      />
+                      {Array.from({ length: flagCount }, (_, flagIndex) => {
+                        const flagTopY = stemTopY + flagIndex * FLAG_GAP_PX
+                        return (
+                          <path
+                            key={flagIndex}
+                            data-testid="notation-note-flag"
+                            d={`M${stemX},${flagTopY} C${stemX + 9},${flagTopY + 2} ${stemX + 9},${flagTopY + 10} ${stemX + 2},${flagTopY + 14}`}
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth={1.25}
+                            strokeLinecap="round"
+                          />
+                        )
+                      })}
+                    </>
+                  )}
                   {event.accent && (
-                    <text x={x} y={y - NOTE_RADIUS_PX - 6} textAnchor="middle" fontSize={11} fill="currentColor">
+                    <text
+                      x={x}
+                      y={(staff.notehead === 'normal' ? stemTopY : y - NOTE_RADIUS_PX) - 6}
+                      textAnchor="middle"
+                      fontSize={11}
+                      fill="currentColor"
+                    >
                       &gt;
                     </text>
                   )}
