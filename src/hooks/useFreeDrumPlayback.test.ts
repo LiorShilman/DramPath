@@ -50,22 +50,22 @@ describe('useFreeDrumPlayback', () => {
 
   it('sets activeHits with the mapped instrument when a mapped key is pressed', () => {
     const { result } = renderHook(() => useFreeDrumPlayback())
-    expect(result.current.activeHits.kick).toBeUndefined()
+    expect(result.current.activeHits.snare).toBeUndefined()
 
     fireEvent.keyDown(window, { code: 'KeyF' })
 
-    expect(result.current.activeHits.kick).toBeTruthy()
+    expect(result.current.activeHits.snare).toBeTruthy()
   })
 
   it('gives each hit a fresh hitToken, even for the same instrument twice', () => {
     const { result } = renderHook(() => useFreeDrumPlayback())
 
     fireEvent.keyDown(window, { code: 'KeyF' })
-    const firstToken = result.current.activeHits.kick
+    const firstToken = result.current.activeHits.snare
 
     fireEvent.keyUp(window, { code: 'KeyF' })
     fireEvent.keyDown(window, { code: 'KeyF' })
-    const secondToken = result.current.activeHits.kick
+    const secondToken = result.current.activeHits.snare
 
     expect(secondToken).toBeTruthy()
     expect(secondToken).not.toBe(firstToken)
@@ -77,8 +77,8 @@ describe('useFreeDrumPlayback', () => {
     fireEvent.keyDown(window, { code: 'KeyF' })
     fireEvent.keyDown(window, { code: 'KeyJ' })
 
-    expect(result.current.activeHits.kick).toBeTruthy()
     expect(result.current.activeHits.snare).toBeTruthy()
+    expect(result.current.activeHits.kick).toBeTruthy()
   })
 
   it('does nothing for an unmapped key', () => {

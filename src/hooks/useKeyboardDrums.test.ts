@@ -10,7 +10,7 @@ describe('useKeyboardDrums', () => {
     fireEvent.keyDown(window, { code: 'KeyF' })
 
     expect(onHit).toHaveBeenCalledTimes(1)
-    expect(onHit.mock.calls[0]![0]).toBe('kick')
+    expect(onHit.mock.calls[0]![0]).toBe('snare')
     expect(typeof onHit.mock.calls[0]![1]).toBe('number')
   })
 

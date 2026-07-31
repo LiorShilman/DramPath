@@ -132,7 +132,7 @@ describe('useVisualTrainer', () => {
     // is first observed right as elapsedMs crosses 0, so firing immediately
     // lands comfortably inside beginner's ±130ms hit window.
     act(() => {
-      fireEvent.keyDown(window, { code: 'KeyF' })
+      fireEvent.keyDown(window, { code: 'KeyJ' })
     })
 
     await waitFor(() => expect(result.current.lastGrade).not.toBeUndefined())

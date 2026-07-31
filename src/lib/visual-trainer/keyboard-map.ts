@@ -9,16 +9,21 @@ import type { DrumInstrument } from '../../domain'
 // the standard technique for keyboard-driven games.
 export type DrumKeyboardMap = Record<string, DrumInstrument>
 
+// Chosen so each key's left-right position on the keyboard roughly matches
+// its instrument's left-right position on the drum kit (VISUAL_DRUM_TRAINER_SPEC.md
+// §6): crash/toms/ride left-to-right along the top row, hi-hat (leftmost on
+// the kit) at the left of the home row, then snare/kick/floor-tom
+// continuing left-to-right.
 export const DEFAULT_KEYBOARD_MAP: DrumKeyboardMap = {
-  KeyF: 'kick',
-  KeyJ: 'snare',
+  KeyE: 'crash',
+  KeyR: 'tom_high',
+  KeyT: 'tom_mid',
+  KeyU: 'ride',
+  KeyS: 'hihat_open',
   KeyD: 'hihat_closed',
-  KeyE: 'hihat_open',
-  KeyR: 'ride',
-  KeyT: 'crash',
-  KeyU: 'tom_high',
-  KeyI: 'tom_mid',
-  KeyO: 'tom_floor',
+  KeyF: 'snare',
+  KeyJ: 'kick',
+  KeyK: 'tom_floor',
 }
 
 export function mapCodeToInstrument(code: string, keyMap: DrumKeyboardMap): DrumInstrument | undefined {

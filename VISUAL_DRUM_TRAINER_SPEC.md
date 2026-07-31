@@ -65,17 +65,21 @@ Bass, Snare, High Tom, Mid Tom, Floor Tom, Hi-Hat, Ride, Crash.
 Perfect, Early, Late, Miss, Combo, Accuracy ו-Timing Error.
 
 # 6. מיפוי מקלדת
+המיקום של כל מקש נבחר כך שיתאם, משמאל לימין, את המיקום החזותי של הכלי המתאים
+בערכת התופים: קראש/טומים/רייד לאורך השורה העליונה, היי-הט (הכלי השמאלי ביותר
+בערכה) בצד שמאל של שורת הבית, ואחריו סנר/בס-דראם/טום-רצפה.
+
 | מקש | כלי |
 |---|---|
-| `F` | Bass Drum |
-| `J` | Snare |
+| `E` | Crash |
+| `R` | High Tom |
+| `T` | Mid Tom |
+| `U` | Ride |
+| `S` | Open Hi-Hat |
 | `D` | Closed Hi-Hat |
-| `E` | Open Hi-Hat |
-| `R` | Ride |
-| `T` | Crash |
-| `U` | High Tom |
-| `I` | Mid Tom |
-| `O` | Floor Tom |
+| `F` | Snare |
+| `J` | Bass Drum |
+| `K` | Floor Tom |
 
 המיפוי ניתן לעריכה, ללא כפילויות, ונשמר בהגדרות.
 

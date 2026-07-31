@@ -13,10 +13,12 @@ const FLASH_DURATION_MS = 220
 
 // Grouped by physical row (top QWERTY row, then home row) and ordered
 // left-to-right within each row, so the guide's layout mirrors where the
-// keys actually sit on the keyboard instead of an arbitrary list order.
+// keys actually sit on the keyboard instead of an arbitrary list order —
+// and, per DEFAULT_KEYBOARD_MAP's own left-to-right design (keyboard-map.ts),
+// mirrors the drum kit's own left-to-right layout too.
 const KEY_ROWS: readonly (readonly string[])[] = [
-  ['KeyE', 'KeyR', 'KeyT', 'KeyU', 'KeyI', 'KeyO'],
-  ['KeyD', 'KeyF', 'KeyJ'],
+  ['KeyE', 'KeyR', 'KeyT', 'KeyU'],
+  ['KeyS', 'KeyD', 'KeyF', 'KeyJ', 'KeyK'],
 ]
 
 // A soft 3D keycap: an inset top highlight (light catching the upper edge)
@@ -27,8 +29,14 @@ const KEY_ROWS: readonly (readonly string[])[] = [
 // transparency on its own.
 const KEYCAP_SHADOW =
   'inset 0 1px 0 rgba(255,255,255,0.35), 0 2px 0 var(--color-border), 0 4px 6px -2px rgba(15,23,24,0.15)'
+// Same depth/shape as KEYCAP_SHADOW, just the bottom "wall" in the primary
+// color instead of the border color — no blur/spread glow layer, and no
+// lift transform on the lit keycap either (removed below): both previously
+// made a lit key visually read as a different size, not just a different
+// color, even though the actual box is always exactly 44x44 (or 20x20 in
+// the fixed variant) either way.
 const KEYCAP_ACTIVE_SHADOW =
-  'inset 0 1px 0 rgba(255,255,255,0.4), 0 3px 0 var(--color-primary-dark), 0 6px 12px -2px rgba(15,23,24,0.25), 0 0 16px 3px rgba(11,110,117,0.55)'
+  'inset 0 1px 0 rgba(255,255,255,0.4), 0 2px 0 var(--color-primary-dark), 0 4px 6px -2px rgba(15,23,24,0.15)'
 
 export interface KeyboardGuideProps {
   /** 'fixed' (default) pins a compact bar to the viewport bottom — good for
@@ -101,7 +109,12 @@ export function KeyboardGuide({ variant = 'fixed', relevantInstruments, pressedI
     return (
       <Card padding="md" className="max-w-full shrink-0">
         <h3 className="mb-3 text-sm font-semibold text-[var(--color-text-muted)]">מקשים</h3>
-        <div className="flex max-w-full flex-col gap-5">
+        {/* mx-auto w-fit: the two-row block centers as one unit inside this
+            (now full-width, matching a sibling card) Card, while each row's
+            own justify-start keeps both rows sharing the same left edge —
+            centering each row independently instead would let the shorter
+            row drift away from the longer one's left-to-right alignment. */}
+        <div className="mx-auto flex w-fit max-w-full flex-col gap-5">
           {KEY_ROWS.map((row, rowIndex) => (
             // dir="ltr" + flex-nowrap: this row is a physical keyboard
             // layout, not text — in the app's RTL context a plain flex row
@@ -116,14 +129,22 @@ export function KeyboardGuide({ variant = 'fixed', relevantInstruments, pressedI
             <ul
               key={rowIndex}
               dir="ltr"
-              // py-2 (not just pb-1): setting overflow-x without an explicit
+              // justify-start (not center): each row is centered
+              // independently, and the two rows have different key counts —
+              // centering would let a shorter row's keys drift away from a
+              // longer row's, breaking the left-to-right correspondence with
+              // the kit. The top row is additionally indented by two key
+              // slots (ms-*, rowIndex===0 only) so it reads as clearly
+              // shifted right of the home row — hi-hat (home row's first
+              // key) ends up left of crash (top row's first key), and ride
+              // (top row's last key) ends up right of floor-tom (home row's
+              // last key), matching their left-right order on the kit. py-2
+              // (not just pb-1): setting overflow-x without an explicit
               // overflow-y forces the browser to compute overflow-y as auto
               // too (can't mix 'visible' with a non-visible axis), which
-              // then clips anything poking past this row's own box — a lit
-              // key's -translate-y-0.5 lift did exactly that against a
-              // top-flush row. The padding gives it room so nothing actually
-              // reaches the clip edge.
-              className="flex flex-nowrap items-start justify-center gap-x-2.5 overflow-x-auto py-2"
+              // clips anything poking past this row's own box — the padding
+              // keeps that from ever actually kicking in.
+              className={`flex flex-nowrap items-start justify-start gap-x-2.5 overflow-x-auto py-2${rowIndex === 0 ? ' ms-[8.25rem]' : ''}`}
             >
               {row.map((code) => {
                 const instrument = DEFAULT_KEYBOARD_MAP[code]!
@@ -144,14 +165,20 @@ export function KeyboardGuide({ variant = 'fixed', relevantInstruments, pressedI
                         flashing ? 'pressed' : ''
                       } ${
                         lit
-                          ? 'bg-[var(--color-primary)] text-white -translate-y-0.5'
+                          ? 'border border-[var(--color-primary)] bg-[var(--color-primary)] text-white'
                           : 'border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)]'
                       }`}
                       style={{ boxShadow: lit ? KEYCAP_ACTIVE_SHADOW : KEYCAP_SHADOW }}
                     >
                       {codeToKeyLabel(code)}
                     </span>
-                    <span className="text-center text-xs leading-tight text-[var(--color-text-muted)]">
+                    {/* min-h-8 (not just text-xs leading-tight): reserves
+                        room for a two-line label so every key's column ends
+                        up the same total height — a one-word label like
+                        "קראש" would otherwise leave its <li> shorter than a
+                        two-word one like "טמטם גבוה", making the badges look
+                        inconsistently sized even though they're all 44x44. */}
+                    <span className="flex min-h-8 items-start justify-center text-center text-xs leading-tight text-[var(--color-text-muted)]">
                       {INSTRUMENT_LABELS[instrument]}
                     </span>
                   </li>
@@ -166,9 +193,15 @@ export function KeyboardGuide({ variant = 'fixed', relevantInstruments, pressedI
 
   return (
     <div className="fixed inset-x-0 bottom-0 z-20 border-t border-[var(--color-border)] bg-[var(--color-surface-raised)] px-3 py-2 [padding-bottom:env(safe-area-inset-bottom)]">
-      <div className="mx-auto flex max-w-4xl flex-col items-center gap-1 overflow-x-auto">
+      {/* items-start (not center): keeps both rows sharing the same left
+          edge, same reasoning as the inline variant above. */}
+      <div className="mx-auto flex w-fit max-w-4xl flex-col items-start gap-1 overflow-x-auto">
         {KEY_ROWS.map((row, rowIndex) => (
-          <ul key={rowIndex} dir="ltr" className="flex flex-nowrap items-center justify-center gap-x-4 py-0.5 text-sm">
+          <ul
+            key={rowIndex}
+            dir="ltr"
+            className={`flex flex-nowrap items-center justify-start gap-x-4 py-0.5 text-sm${rowIndex === 0 ? ' ms-[4.5rem]' : ''}`}
+          >
             {row.map((code) => {
               const instrument = DEFAULT_KEYBOARD_MAP[code]!
               const dimmed = isDimmed(instrument)
@@ -184,7 +217,7 @@ export function KeyboardGuide({ variant = 'fixed', relevantInstruments, pressedI
                       flashing ? 'pressed' : ''
                     } ${
                       lit
-                        ? 'bg-[var(--color-primary)] text-white'
+                        ? 'border border-[var(--color-primary)] bg-[var(--color-primary)] text-white'
                         : 'border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)]'
                     }`}
                     style={{ boxShadow: lit ? KEYCAP_ACTIVE_SHADOW : KEYCAP_SHADOW }}
