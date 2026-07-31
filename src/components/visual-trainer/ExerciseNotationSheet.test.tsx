@@ -45,7 +45,7 @@ describe('ExerciseNotationSheet', () => {
     const kick = container.querySelector('[data-instrument="kick"]')!
     const circle = kick.querySelector('circle')!
     expect(circle).toBeTruthy()
-    expect(Number(circle.getAttribute('cy'))).toBe(106) // baseline(114) - position(1)*8
+    expect(Number(circle.getAttribute('cy'))).toBe(56) // baseline(60) - position(1)*4
   })
 
   it('positions snare higher than kick (both filled noteheads)', () => {

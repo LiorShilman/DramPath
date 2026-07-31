@@ -9,12 +9,12 @@ export interface ExerciseNotationSheetProps {
 const BARS_PER_ROW = 4
 const BAR_WIDTH_PX = 200
 const NOTE_INSET_PX = 20
-const LINE_SPACING_PX = 16
-const NOTE_RADIUS_PX = 5
-const STEM_LENGTH_PX = 24
-const FLAG_GAP_PX = 7
-const BOTTOM_PADDING_PX = 12
-const ROW_GAP_PX = 28
+const LINE_SPACING_PX = 8
+const NOTE_RADIUS_PX = 3
+const STEM_LENGTH_PX = 12
+const FLAG_GAP_PX = 4
+const BOTTOM_PADDING_PX = 6
+const ROW_GAP_PX = 12
 // The whole exercise shares one subdivision (no per-note duration yet), so
 // every note gets the same flag count — reflecting the real note-duration
 // shape (quarter/eighth/sixteenth), not just a plain circle.
@@ -128,8 +128,8 @@ export function ExerciseNotationSheet({ exercise }: ExerciseNotationSheetProps) 
                 <g key={eventIndex} data-testid="notation-note" data-instrument={event.instrument}>
                   {staff.ledger && (
                     <line
-                      x1={x - NOTE_RADIUS_PX - 3}
-                      x2={x + NOTE_RADIUS_PX + 3}
+                      x1={x - NOTE_RADIUS_PX - 2}
+                      x2={x + NOTE_RADIUS_PX + 2}
                       y1={y}
                       y2={y}
                       stroke="currentColor"
@@ -146,7 +146,7 @@ export function ExerciseNotationSheet({ exercise }: ExerciseNotationSheetProps) 
                         x2={x + NOTE_RADIUS_PX}
                         y2={y + NOTE_RADIUS_PX}
                         stroke="currentColor"
-                        strokeWidth={1.5}
+                        strokeWidth={1.1}
                       />
                       <line
                         x1={x - NOTE_RADIUS_PX}
@@ -154,7 +154,7 @@ export function ExerciseNotationSheet({ exercise }: ExerciseNotationSheetProps) 
                         x2={x + NOTE_RADIUS_PX}
                         y2={y - NOTE_RADIUS_PX}
                         stroke="currentColor"
-                        strokeWidth={1.5}
+                        strokeWidth={1.1}
                       />
                     </>
                   )}
@@ -167,7 +167,7 @@ export function ExerciseNotationSheet({ exercise }: ExerciseNotationSheetProps) 
                         x2={stemX}
                         y2={stemTopY}
                         stroke="currentColor"
-                        strokeWidth={1.25}
+                        strokeWidth={1}
                       />
                       {Array.from({ length: flagCount }, (_, flagIndex) => {
                         const flagTopY = stemTopY + flagIndex * FLAG_GAP_PX
@@ -175,10 +175,10 @@ export function ExerciseNotationSheet({ exercise }: ExerciseNotationSheetProps) 
                           <path
                             key={flagIndex}
                             data-testid="notation-note-flag"
-                            d={`M${stemX},${flagTopY} C${stemX + 9},${flagTopY + 2} ${stemX + 9},${flagTopY + 10} ${stemX + 2},${flagTopY + 14}`}
+                            d={`M${stemX},${flagTopY} C${stemX + 4},${flagTopY + 1} ${stemX + 4},${flagTopY + 5} ${stemX + 1},${flagTopY + 6}`}
                             fill="none"
                             stroke="currentColor"
-                            strokeWidth={1.25}
+                            strokeWidth={0.9}
                             strokeLinecap="round"
                           />
                         )
