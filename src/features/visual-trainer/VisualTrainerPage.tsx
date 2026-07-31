@@ -34,7 +34,7 @@ function VisualTrainerRunner({ exercise, highwayRef }: VisualTrainerRunnerProps)
   }
 
   return (
-    <div className="flex flex-col gap-2 pb-16">
+    <div className="flex h-full min-h-[calc(100svh-8rem)] flex-col gap-1.5">
       <PageHeader title={exercise.title} backTo="/practice/visual" backLabel="← חזרה לרשימת התרגילים" />
 
       <TransportControls
@@ -53,11 +53,30 @@ function VisualTrainerRunner({ exercise, highwayRef }: VisualTrainerRunnerProps)
 
       <NoteHighway ref={highwayRef} events={exercise.events} exercise={exercise} />
 
-      <div className="mx-auto w-full max-w-lg">
-        <DrumKit activeHit={trainer.activeHit} />
+      {/* flex-1 on the outer wrapper: the page fits in one screen with real
+          leftover space below the highway, so growing this section to fill
+          the remaining height (and centering vertically within it) pulls
+          the row down into that space instead of leaving it stranded near
+          the top. justify-between (not a centered w-fit pair): the keyboard
+          legend goes flush to the row's own end edge — against the sidebar,
+          same as it's described everywhere else in this file — while the
+          kit gets a large firm width instead of matching the legend's, so
+          it doesn't shrink to fit. */}
+      <div className="flex flex-1 items-center">
+        <div className="flex w-full flex-col items-center gap-4 lg:flex-row-reverse lg:justify-between">
+          {/* pl-3: the kit's own artwork intentionally draws slightly past
+              its box on both sides (hihat pokes out the left, crash/ride the
+              right — an established DrumKit quirk, see FreeNotationPracticePage's
+              80%-width kit column for the same accommodation). Sitting at the
+              start of this row with no margin let the hihat's overflow poke
+              past the page's own left edge, causing a real (if tiny)
+              horizontal scrollbar. */}
+          <div className="w-full max-w-2xl shrink-0 pe-3 lg:w-[36rem]">
+            <DrumKit activeHit={trainer.activeHit} />
+          </div>
+          <KeyboardGuide variant="inline" />
+        </div>
       </div>
-
-      <KeyboardGuide />
 
       {trainer.phase === 'finished' && (
         <div

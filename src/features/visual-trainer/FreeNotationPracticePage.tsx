@@ -4,14 +4,13 @@ import { PageHeader, Button, Card } from '../../components/ui'
 import { FileDropzone } from '../../components/FileDropzone'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { DrumKit } from '../../components/visual-trainer/DrumKit'
+import { KeyboardGuide } from '../../components/visual-trainer/KeyboardGuide'
 import { useFreeDrumPlayback } from '../../hooks/useFreeDrumPlayback'
 import { useDebouncedCallback } from '../../hooks/useDebouncedCallback'
 import { useMetronome } from '../practice-session/useMetronome'
 import { resourceRepository, notationPracticeStateRepository } from '../../data/repositories'
 import { calculateTapTempoBpm } from '../../lib/metronome-math'
 import { SUBDIVISION_LABELS } from '../exercises/exercise-labels'
-import { DEFAULT_KEYBOARD_MAP, codeToKeyLabel } from '../../lib/visual-trainer/keyboard-map'
-import { INSTRUMENT_LABELS } from '../../lib/visual-trainer/instrument-labels'
 import type { Resource, Subdivision } from '../../domain'
 
 const BEATS_PER_BAR = [0, 1, 2, 3]
@@ -287,23 +286,7 @@ export function FreeNotationPracticePage() {
             </label>
           </Card>
 
-          {/* Inline keyboard legend — a plain (non-fixed) grid, unlike the
-              shared KeyboardGuide component which pins itself to the
-              viewport bottom (right for the graded runner page, but this
-              page wants it as part of the stacked right-hand column). */}
-          <Card padding="sm">
-            <h3 className="mb-2 text-sm font-semibold text-[var(--color-text-muted)]">מקשים</h3>
-            <ul className="grid grid-cols-2 gap-x-3 gap-y-3 text-base">
-              {Object.entries(DEFAULT_KEYBOARD_MAP).map(([code, instrument]) => (
-                <li key={code} className="flex items-center gap-2">
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-primary)]/15 text-base font-bold [box-shadow:var(--shadow-card)]">
-                    {codeToKeyLabel(code)}
-                  </span>
-                  <span className="text-[var(--color-text-muted)]">{INSTRUMENT_LABELS[instrument]}</span>
-                </li>
-              ))}
-            </ul>
-          </Card>
+          <KeyboardGuide variant="inline" />
         </div>
       </div>
 

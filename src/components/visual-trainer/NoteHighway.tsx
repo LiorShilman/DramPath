@@ -36,7 +36,7 @@ const DEFAULT_LOOKAHEAD_MS = 2000
 // animation, since it skips layout, unlike `top`) keeps the per-frame math
 // a single multiplication with no DOM reads. A Stage 4 simplification —
 // fine to make this responsive later.
-const HIGHWAY_HEIGHT_PX = 480
+const HIGHWAY_HEIGHT_PX = 420
 const HIT_LINE_OFFSET_PX = 32
 const NOTE_HEIGHT_PX = 48
 

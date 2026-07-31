@@ -30,8 +30,8 @@ export function TransportControls({
   const isActive = phase === 'count-in' || phase === 'running'
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-3 [box-shadow:var(--shadow-card)]">
-      <div className="flex flex-col gap-1.5">
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-2 [box-shadow:var(--shadow-card)]">
+      <div className="flex flex-col gap-1">
         <span className="font-semibold">{exercise.title}</span>
         <span className="text-sm text-[var(--color-text-muted)]">
           {exercise.bpm} BPM · {exercise.timeSignature.numerator}/{exercise.timeSignature.denominator} · תיבה{' '}
