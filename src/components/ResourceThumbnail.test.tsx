@@ -76,4 +76,13 @@ describe('ResourceThumbnail', () => {
     await user.click(placeholder)
     expect(await screen.findByAltText('תמונת נושא')).toBeInTheDocument()
   })
+
+  it('renders at native size (no inline width/height box) when nativeSize is set', async () => {
+    const resource = baseResource({ blob: new Blob(['x'], { type: 'image/png' }) })
+    render(<ResourceThumbnail resource={resource} nativeSize alt="תמונת נושא" />)
+    const img = await screen.findByAltText('תמונת נושא')
+    expect(img.style.width).toBe('')
+    expect(img.style.height).toBe('')
+    expect(img.className).toContain('max-w-full')
+  })
 })

@@ -673,17 +673,17 @@ export function LessonDetailPage() {
       </div>
 
       {(playingVideo || coverImage) && (
-        <div className="order-first flex w-full shrink-0 flex-col gap-4 lg:order-none lg:flex-1">
+        <div className="order-first flex w-full shrink-0 flex-col gap-4 lg:order-none lg:max-w-2xl lg:flex-1">
           {playingVideo && (
-            // The card itself is capped to 80% of the (now wide) free
-            // column and centered — leaving it full-width made the
-            // card's border/background stretch edge-to-edge around a
-            // smaller video, reading as "stretched" even though the video
-            // itself wasn't distorted. The video inside is then max-w-full
-            // of THIS card (a concrete width, not a %-of-fit-content
-            // circular reference) + h-auto, so it renders at its native
-            // resolution unless that's bigger than the card, never upscaled.
-            <div className="mx-auto max-w-[80%] overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-3 [box-shadow:var(--shadow-card)]">
+            // The column itself is capped at a sensible absolute width
+            // (lg:max-w-2xl, matching the form) rather than "however much
+            // free space happens to be available" — on a very wide/dual
+            // monitor window that free space was enormous, so even 80% of
+            // it produced a huge card with the (much smaller, native-sized)
+            // video floating uncentered inside. mx-auto on the video itself
+            // centers it within this now-reasonably-sized card; h-auto +
+            // max-w-full keeps it at native resolution, never upscaled.
+            <div className="overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-3 [box-shadow:var(--shadow-card)]">
               <div className="mb-2 flex items-center justify-between gap-2">
                 <p className="min-w-0 flex-1 truncate text-xs text-[var(--color-text-muted)]" title={playingVideo.resource.fileName}>
                   {playingVideo.resource.fileName}
@@ -692,7 +692,7 @@ export function LessonDetailPage() {
                   סגירה
                 </Button>
               </div>
-              <video controls autoPlay src={playingVideo.url} className="block h-auto max-w-full rounded-[var(--radius-card)] bg-black">
+              <video controls autoPlay src={playingVideo.url} className="mx-auto block h-auto max-w-full rounded-[var(--radius-card)] bg-black">
                 <track kind="captions" />
               </video>
             </div>
@@ -700,13 +700,7 @@ export function LessonDetailPage() {
 
           {coverImage && (
             <div className="overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-3 [box-shadow:var(--shadow-card)]">
-              <ResourceThumbnail
-                resource={coverImage}
-                height={340}
-                fluidWidth
-                objectFit="contain"
-                alt={lesson.title}
-              />
+              <ResourceThumbnail resource={coverImage} nativeSize alt={lesson.title} />
               <p
                 className="mt-2 truncate text-center text-xs text-[var(--color-text-muted)]"
                 title={coverImage.fileName}

@@ -20,6 +20,11 @@ export interface ResourceThumbnailProps {
   // off part of a photo or a text-heavy image (sheet music, a diagram)
   // would hide real content.
   objectFit?: 'cover' | 'contain'
+  // Ignores size/width/height/objectFit once an image actually loads —
+  // renders at its real intrinsic resolution (centered, capped to the
+  // parent's width) instead of a fixed box, so it's never stretched or
+  // cropped. Matches how the lesson video panel sizes its <video>.
+  nativeSize?: boolean
 }
 
 // Three display states, because an image Resource isn't just "has a blob"
@@ -41,6 +46,7 @@ export function ResourceThumbnail({
   alt,
   fluidWidth = false,
   objectFit = 'cover',
+  nativeSize = false,
 }: ResourceThumbnailProps) {
   const blobUrl = useObjectUrl(resource?.sourceType === 'blob' ? resource.blob : undefined)
   const [linkUrl, setLinkUrl] = useState<string | undefined>(undefined)
@@ -97,6 +103,16 @@ export function ResourceThumbnail({
   const shrinkClass = fluidWidth ? 'w-full' : 'shrink-0'
   const objectFitClass = objectFit === 'contain' ? 'object-contain' : 'object-cover'
   const src = resource.sourceType === 'blob' ? blobUrl : linkUrl
+
+  if (src && nativeSize) {
+    return (
+      <img
+        src={src}
+        alt={alt ?? resource.fileName}
+        className="mx-auto block h-auto max-w-full rounded-[var(--radius-card)]"
+      />
+    )
+  }
 
   if (src) {
     return (
