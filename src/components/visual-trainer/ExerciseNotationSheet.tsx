@@ -4,6 +4,16 @@ import type { InteractiveExercise, Subdivision } from '../../domain'
 
 export interface ExerciseNotationSheetProps {
   exercise: Pick<InteractiveExercise, 'events' | 'timeSignature' | 'subdivision' | 'bars'>
+  /** Event ids to draw in a highlight color — e.g. whichever notes are
+   * "now playing" during a preview playback, mirroring the same moment's
+   * highlight in the grid editor above this sheet. */
+  highlightedEventIds?: ReadonlySet<string>
+  /** When set, each row grows a background fill left-to-right in real time
+   * (via a CSS animation, not per-frame state) — `bpm` drives the actual
+   * playback speed (independent of the arbitrary tempo used for note-x
+   * layout above), `sessionId` remounts the fill elements so restarting
+   * playback restarts the animation instead of no-oping on an unchanged style. */
+  playbackProgress?: { bpm: number; sessionId: number }
 }
 
 const BARS_PER_ROW = 4
@@ -41,7 +51,7 @@ function barDurationMs(exercise: ExerciseNotationSheetProps['exercise']): number
  * exercise's subdivision (quarter/eighth/sixteenth) — there's no per-note
  * duration yet, so this can't mix durations or beam consecutive notes,
  * only reflect the one subdivision the whole exercise shares. */
-export function ExerciseNotationSheet({ exercise }: ExerciseNotationSheetProps) {
+export function ExerciseNotationSheet({ exercise, highlightedEventIds, playbackProgress }: ExerciseNotationSheetProps) {
   const rowCount = Math.max(1, Math.ceil(exercise.bars / BARS_PER_ROW))
   // Only reserve vertical room up to the highest notehead actually used
   // (e.g. no crash in this exercise = no wasted headroom above the staff),
@@ -54,8 +64,13 @@ export function ExerciseNotationSheet({ exercise }: ExerciseNotationSheetProps) 
   const totalHeight = rowCount * rowHeight + (rowCount - 1) * ROW_GAP_PX
   const barMs = barDurationMs(exercise)
 
-  const eventsByRow: { barIndexInRow: number; fraction: number; instrument: (typeof exercise.events)[number]['instrument']; accent?: boolean }[][] =
-    Array.from({ length: rowCount }, () => [])
+  const eventsByRow: {
+    id: string
+    barIndexInRow: number
+    fraction: number
+    instrument: (typeof exercise.events)[number]['instrument']
+    accent?: boolean
+  }[][] = Array.from({ length: rowCount }, () => [])
 
   for (const event of exercise.events) {
     const barGlobalIndex = event.bar - 1
@@ -67,7 +82,7 @@ export function ExerciseNotationSheet({ exercise }: ExerciseNotationSheetProps) 
       subdivision: exercise.subdivision,
     }) / barMs
     const fraction = totalBarPosition - barGlobalIndex
-    eventsByRow[rowIndex]?.push({ barIndexInRow, fraction, instrument: event.instrument, accent: event.accent })
+    eventsByRow[rowIndex]?.push({ id: event.id, barIndexInRow, fraction, instrument: event.instrument, accent: event.accent })
   }
 
   // The viewBox must match the widest row actually drawn — row 0 always has
@@ -75,6 +90,20 @@ export function ExerciseNotationSheet({ exercise }: ExerciseNotationSheetProps) 
   // sizing it any wider than that (e.g. always BARS_PER_ROW) leaves a blank
   // strip when the exercise is shorter than a full row.
   const viewBoxWidth = Math.min(BARS_PER_ROW, exercise.bars) * BAR_WIDTH_PX
+
+  // Real-time (not ARBITRARY_BPM) duration of each row, and each row's own
+  // start offset — lets every row's fill animation run purely in CSS, with
+  // `animation-delay` doing the cross-row sequencing instead of JS polling.
+  let cumulativeRealMs = 0
+  const rowRealTimings = Array.from({ length: rowCount }, (_, rowIndex) => {
+    const rowBars = Math.min(BARS_PER_ROW, exercise.bars - rowIndex * BARS_PER_ROW)
+    const rowDurationMs = playbackProgress
+      ? rowBars * calculateBarDurationMs(playbackProgress.bpm, exercise.timeSignature)
+      : 0
+    const startMs = cumulativeRealMs
+    cumulativeRealMs += rowDurationMs
+    return { startMs, durationMs: rowDurationMs }
+  })
 
   return (
     <svg
@@ -85,11 +114,28 @@ export function ExerciseNotationSheet({ exercise }: ExerciseNotationSheetProps) 
     >
       {eventsByRow.map((rowEvents, rowIndex) => {
         const rowBars = Math.min(BARS_PER_ROW, exercise.bars - rowIndex * BARS_PER_ROW)
-        const baselineY = rowIndex * (rowHeight + ROW_GAP_PX) + rowHeight - BOTTOM_PADDING_PX
+        const rowTopY = rowIndex * (rowHeight + ROW_GAP_PX)
+        const baselineY = rowTopY + rowHeight - BOTTOM_PADDING_PX
         const toY = (position: number) => baselineY - staffPositionToOffsetPx(position, LINE_SPACING_PX)
+        const rowTiming = rowRealTimings[rowIndex]!
 
         return (
           <g key={rowIndex} data-testid={`notation-row-${rowIndex}`}>
+            {playbackProgress && rowTiming.durationMs > 0 && (
+              <rect
+                key={playbackProgress.sessionId}
+                data-testid={`notation-row-${rowIndex}-fill`}
+                x={0}
+                y={toY(STAFF_TOP_LINE_POSITION)}
+                height={toY(STAFF_BOTTOM_LINE_POSITION) - toY(STAFF_TOP_LINE_POSITION)}
+                fill="var(--color-primary-text)"
+                opacity={0.28}
+                style={{
+                  ['--notation-fill-target-width' as string]: `${rowBars * BAR_WIDTH_PX}px`,
+                  animation: `notation-row-fill ${rowTiming.durationMs}ms linear ${rowTiming.startMs}ms both`,
+                }}
+              />
+            )}
             {STAFF_LINE_POSITIONS.map((position) => (
               <line
                 key={position}
@@ -123,9 +169,16 @@ export function ExerciseNotationSheet({ exercise }: ExerciseNotationSheetProps) 
               const flagCount = FLAG_COUNT[exercise.subdivision]
               const stemX = x + NOTE_RADIUS_PX
               const stemTopY = y - NOTE_RADIUS_PX - STEM_LENGTH_PX
+              const isHighlighted = highlightedEventIds?.has(event.id) ?? false
 
               return (
-                <g key={eventIndex} data-testid="notation-note" data-instrument={event.instrument}>
+                <g
+                  key={eventIndex}
+                  data-testid="notation-note"
+                  data-instrument={event.instrument}
+                  data-highlighted={isHighlighted}
+                  style={isHighlighted ? { color: 'var(--color-warning-text)' } : undefined}
+                >
                   {staff.ledger && (
                     <line
                       x1={x - NOTE_RADIUS_PX - 2}

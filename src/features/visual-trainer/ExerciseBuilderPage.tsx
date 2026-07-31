@@ -4,13 +4,16 @@ import { PageHeader, Button, Card } from '../../components/ui'
 import { ExerciseNotationSheet } from '../../components/visual-trainer/ExerciseNotationSheet'
 import { interactiveExerciseRepository } from '../../data/repositories'
 import { playDrumSound } from '../../lib/visual-trainer/drum-synth'
+import { ExercisePlaybackEngine } from '../../lib/visual-trainer/exercise-playback-engine'
 import { LANE_ORDER } from '../../lib/visual-trainer/drum-kit-layout'
 import { INSTRUMENT_LABELS } from '../../lib/visual-trainer/instrument-labels'
-import { SUBDIVISIONS_PER_BEAT } from '../../domain/calculations/event-timing'
+import { SUBDIVISIONS_PER_BEAT, calculateBarDurationMs, calculateEventTimeMs } from '../../domain/calculations/event-timing'
 import { STAFF_POSITION } from '../../lib/visual-trainer/staff-notation-layout'
 import { DIFFICULTY_LABELS } from './exercise-difficulty-labels'
-import { createId } from '../../domain'
+import { createId, nowIso } from '../../domain'
 import type { DrumInstrument, DrumNoteEvent, InteractiveExerciseDifficulty, InteractiveExercise, Subdivision } from '../../domain'
+
+const PLAYBACK_POLL_INTERVAL_MS = 30
 
 const BEATS_PER_BAR = 4
 const NOTE_VELOCITY = 100
@@ -101,8 +104,12 @@ export function ExerciseBuilderPage() {
   // undefined = "not resolved yet", 'not-found' = "resolved, doesn't exist"
   // — only meaningful while isEditing; the create flow never touches this.
   const [loadedExercise, setLoadedExercise] = useState<InteractiveExercise | 'not-found' | undefined>(undefined)
+  const [playingStepIndex, setPlayingStepIndex] = useState<number | undefined>(undefined)
+  const [playSessionId, setPlaySessionId] = useState(0)
   const audioContextRef = useRef<AudioContext | null>(null)
   const outputNodeRef = useRef<GainNode | null>(null)
+  const playbackEngineRef = useRef<ExercisePlaybackEngine | null>(null)
+  const playPollIdRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useEffect(() => {
     if (!exerciseId) return
@@ -137,6 +144,104 @@ export function ExerciseBuilderPage() {
     }),
     [previewEvents, setup.subdivision, setup.bars],
   )
+
+  // Each step's own ms offset from the start of a single playthrough — used
+  // to figure out which grid column is "now playing" while previewing.
+  const stepTimesMs = useMemo(
+    () =>
+      steps.map((step) =>
+        calculateEventTimeMs(step, { bpm: setup.bpm, timeSignature: { numerator: 4, denominator: 4 }, subdivision: setup.subdivision }),
+      ),
+    [steps, setup.bpm, setup.subdivision],
+  )
+  const singlePlaythroughMs = useMemo(
+    () => calculateBarDurationMs(setup.bpm, { numerator: 4, denominator: 4 }) * setup.bars,
+    [setup.bpm, setup.bars],
+  )
+
+  // Which notation-preview events fall on the currently-playing step, so
+  // ExerciseNotationSheet can highlight the same moment the grid does.
+  const playingStepEventIds = useMemo(() => {
+    if (playingStepIndex === undefined) return undefined
+    const step = steps[playingStepIndex]
+    if (!step) return undefined
+    const ids = new Set<string>()
+    for (const event of previewEvents) {
+      if (event.bar === step.bar && event.beat === step.beat && event.subdivisionIndex === step.subdivisionIndex) {
+        ids.add(event.id)
+      }
+    }
+    return ids
+  }, [playingStepIndex, steps, previewEvents])
+
+  // ExercisePlaybackEngine.start() takes a full InteractiveExercise — the
+  // fields beyond bpm/timeSignature/bars/loopCount/events/subdivision are
+  // unused by playback itself, so this is a throwaway wrapper, never saved.
+  const previewPlaybackExercise = useMemo<InteractiveExercise>(
+    () => ({
+      id: createId(),
+      title: setup.title,
+      difficulty: setup.difficulty,
+      bpm: setup.bpm,
+      minBpm: setup.bpm,
+      maxBpm: setup.bpm,
+      timeSignature: { numerator: 4, denominator: 4 },
+      subdivision: setup.subdivision,
+      bars: setup.bars,
+      loopCount: 1,
+      displayMode: 'note_highway',
+      events: previewEvents,
+      createdAt: nowIso(),
+      updatedAt: nowIso(),
+    }),
+    [setup.title, setup.difficulty, setup.bpm, setup.subdivision, setup.bars, previewEvents],
+  )
+
+  function stopPlayback() {
+    if (playPollIdRef.current !== null) {
+      clearInterval(playPollIdRef.current)
+      playPollIdRef.current = null
+    }
+    playbackEngineRef.current?.stop()
+    setPlayingStepIndex(undefined)
+  }
+
+  useEffect(() => stopPlayback, [])
+
+  function startPlayback() {
+    if (previewEvents.length === 0) return
+    stopPlayback()
+
+    if (!audioContextRef.current) {
+      audioContextRef.current = new AudioContext()
+      outputNodeRef.current = audioContextRef.current.createGain()
+      outputNodeRef.current.connect(audioContextRef.current.destination)
+    }
+    const audioContext = audioContextRef.current
+    void audioContext.resume()
+
+    if (!playbackEngineRef.current) playbackEngineRef.current = new ExercisePlaybackEngine(audioContext)
+    const engine = playbackEngineRef.current
+    // A single playthrough, no count-in — this is a quick "how does it
+    // sound" preview while building, not a graded run.
+    engine.start(previewPlaybackExercise, { countInBars: 0 })
+
+    setPlayingStepIndex(0)
+    setPlaySessionId((current) => current + 1)
+    playPollIdRef.current = setInterval(() => {
+      const elapsedMs = (audioContext.currentTime - engine.startAudioTimeSeconds) * 1000
+      if (elapsedMs >= singlePlaythroughMs) {
+        stopPlayback()
+        return
+      }
+      let stepIndex = 0
+      for (let i = 0; i < stepTimesMs.length; i += 1) {
+        if (stepTimesMs[i]! <= elapsedMs) stepIndex = i
+        else break
+      }
+      setPlayingStepIndex(stepIndex)
+    }, PLAYBACK_POLL_INTERVAL_MS)
+  }
 
   function playPreview(instrument: DrumInstrument) {
     if (!audioContextRef.current) {
@@ -298,9 +403,20 @@ export function ExerciseBuilderPage() {
         backLabel="← חזרה לרשימת התרגילים"
       />
 
-      <p className="text-sm text-[var(--color-text-muted)]">
-        לחצו על תא כדי להוסיף או להסיר תו. כל שורה היא כלי, כל עמודה היא תת-חלוקה בזמן.
-      </p>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm text-[var(--color-text-muted)]">
+          לחצו על תא כדי להוסיף או להסיר תו. כל שורה היא כלי, כל עמודה היא תת-חלוקה בזמן.
+        </p>
+        {playingStepIndex === undefined ? (
+          <Button size="sm" variant="secondary" onClick={startPlayback} disabled={previewEvents.length === 0}>
+            ▶ נגן
+          </Button>
+        ) : (
+          <Button size="sm" variant="ghost" onClick={stopPlayback}>
+            ⏹ עצור
+          </Button>
+        )}
+      </div>
 
       {/* dir="ltr": musical time reads left-to-right universally, same as
           real sheet music — regardless of the app's RTL UI language. */}
@@ -314,30 +430,31 @@ export function ExerciseBuilderPage() {
                   <th className="sticky start-0 z-10 border-b border-[var(--color-border)] bg-[var(--color-surface-raised)] px-3 py-1.5 text-start text-sm font-semibold whitespace-nowrap">
                     {INSTRUMENT_LABELS[instrument]}
                   </th>
-                  {steps.map((step) => {
+                  {steps.map((step, stepIndex) => {
                     const key = cellKey(step, instrument)
                     const isActive = activeCells.has(key)
                     const isBarStart = step.beat === 1 && step.subdivisionIndex === 0
                     const isBeatStart = step.subdivisionIndex === 0
+                    const isPlayingNow = stepIndex === playingStepIndex
                     return (
                       <td
                         key={key}
                         className={`border-b border-[var(--color-border)] p-0.5 ${
                           isBarStart ? 'border-s-2 border-s-[var(--color-text)]' : isBeatStart ? 'border-s border-s-[var(--color-border)]' : ''
-                        }`}
+                        } ${isPlayingNow ? 'bg-[var(--color-primary)]/10' : ''}`}
                       >
                         <button
                           type="button"
                           onClick={() => toggleCell(step, instrument)}
                           aria-label={`${INSTRUMENT_LABELS[instrument]} תיבה ${step.bar} פעימה ${step.beat}.${step.subdivisionIndex + 1}`}
                           aria-pressed={isActive}
-                          className={`flex h-8 w-8 items-center justify-center border font-bold ${
+                          className={`flex h-8 w-8 items-center justify-center border font-bold transition-shadow ${
                             isCymbal ? 'rounded-[var(--radius-card)]' : 'rounded-full'
                           } ${
                             isActive
                               ? 'border-[var(--color-primary)] bg-[var(--color-primary)] text-white'
                               : 'border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-muted)] hover:bg-[var(--color-surface-raised)]'
-                          }`}
+                          } ${isPlayingNow && isActive ? 'ring-2 ring-offset-1 ring-[var(--color-warning-text)]' : ''}`}
                         >
                           {isCymbal ? '✕' : ''}
                         </button>
@@ -355,7 +472,11 @@ export function ExerciseBuilderPage() {
         <div>
           <h3 className="mb-2 text-sm font-semibold text-[var(--color-text-muted)]">תצוגת תווים</h3>
           <div dir="ltr" className="overflow-x-auto rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
-            <ExerciseNotationSheet exercise={previewExercise} />
+            <ExerciseNotationSheet
+              exercise={previewExercise}
+              highlightedEventIds={playingStepEventIds}
+              playbackProgress={playingStepIndex !== undefined ? { bpm: setup.bpm, sessionId: playSessionId } : undefined}
+            />
           </div>
         </div>
       )}
@@ -363,10 +484,23 @@ export function ExerciseBuilderPage() {
       {saveError && <p className="text-sm text-[var(--color-danger-text)]">{saveError}</p>}
 
       <div className="flex gap-2">
-        <Button variant="ghost" onClick={() => setGridStarted(false)}>
+        <Button
+          variant="ghost"
+          onClick={() => {
+            stopPlayback()
+            setGridStarted(false)
+          }}
+        >
           ← חזרה להגדרות
         </Button>
-        <Button onClick={() => void handleSave()}>שמירה והתחלת תרגול</Button>
+        <Button
+          onClick={() => {
+            stopPlayback()
+            void handleSave()
+          }}
+        >
+          שמירה והתחלת תרגול
+        </Button>
       </div>
     </div>
   )

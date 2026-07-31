@@ -95,6 +95,19 @@ input[type='radio'] {
   }
 }
 
+/* ExerciseNotationSheet's playback-progress fill — grows a row's background
+   from 0 to its own bar width in real time, one row at a time (later rows
+   use `animation-delay` to start exactly when the row before them finishes,
+   so a multi-row exercise reads as one continuous sweep). */
+@keyframes notation-row-fill {
+  from {
+    width: 0;
+  }
+  to {
+    width: var(--notation-fill-target-width, 100%);
+  }
+}
+
 /* §30: respect prefers-reduced-motion for any transition/animation in the app. */
 @media (prefers-reduced-motion: reduce) {
   *,

@@ -79,6 +79,14 @@ describe('ExerciseNotationSheet', () => {
     expect(container.querySelector('[data-instrument="kick"] text')).toBeNull()
   })
 
+  it('marks only the highlighted event id, leaving the rest un-highlighted', () => {
+    const { container } = render(
+      <ExerciseNotationSheet exercise={EXERCISE} highlightedEventIds={new Set([EXERCISE.events[0]!.id])} />,
+    )
+    expect(container.querySelector('[data-instrument="kick"]')).toHaveAttribute('data-highlighted', 'true')
+    expect(container.querySelector('[data-instrument="snare"]')).toHaveAttribute('data-highlighted', 'false')
+  })
+
   it('gives every note a stem, with a flag count matching the exercise subdivision', () => {
     const { container: quarterContainer } = render(<ExerciseNotationSheet exercise={{ ...EXERCISE, subdivision: 'quarter' }} />)
     expect(quarterContainer.querySelector('[data-instrument="kick"] [data-testid="notation-note-stem"]')).toBeTruthy()
