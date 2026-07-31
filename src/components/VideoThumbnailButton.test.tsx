@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { InlineVideoPlayer } from './InlineVideoPlayer'
+import { VideoThumbnailButton } from './VideoThumbnailButton'
 import { createId, nowIso } from '../domain'
 import type { Resource } from '../domain'
 
@@ -39,34 +39,53 @@ class FakeFileHandle {
   }
 }
 
-describe('InlineVideoPlayer', () => {
-  it('shows a play button, then plays a blob-backed video on click', async () => {
+describe('VideoThumbnailButton', () => {
+  it('resolves a blob-backed video and calls onPlay with an object URL, without rendering a <video> itself', async () => {
     const resource = baseResource({ blob: new Blob(['x'], { type: 'video/mp4' }) })
-    render(<InlineVideoPlayer resource={resource} />)
+    const onPlay = vi.fn()
+    render(<VideoThumbnailButton resource={resource} onPlay={onPlay} />)
 
     const playButton = await screen.findByRole('button', { name: /נגן/ })
     const user = userEvent.setup()
     await user.click(playButton)
 
-    expect(screen.queryByRole('button', { name: /נגן/ })).not.toBeInTheDocument()
-    const video = document.querySelector('video')
-    expect(video).toBeInTheDocument()
-    expect(video).toHaveAttribute('src')
+    await waitFor(() => expect(onPlay).toHaveBeenCalledWith(resource, expect.stringContaining('blob:')))
+    expect(document.querySelector('video')).not.toBeInTheDocument()
   })
 
-  it('plays a linked video after granting permission via the click', async () => {
+  it('resolves a linked video after granting permission via the click', async () => {
     const resource = baseResource({
       sourceType: 'link',
       fileHandle: new FakeFileHandle('prompt') as unknown as Resource['fileHandle'],
     })
-    render(<InlineVideoPlayer resource={resource} />)
+    const onPlay = vi.fn()
+    render(<VideoThumbnailButton resource={resource} onPlay={onPlay} />)
 
     const playButton = await screen.findByRole('button', { name: /נגן/ })
     const user = userEvent.setup()
     await user.click(playButton)
 
-    await waitFor(() => {
-      expect(document.querySelector('video')).toBeInTheDocument()
+    await waitFor(() => expect(onPlay).toHaveBeenCalledTimes(1))
+  })
+
+  it('shows an error and does not call onPlay when permission is denied', async () => {
+    const resource = baseResource({
+      sourceType: 'link',
+      fileHandle: {
+        kind: 'file',
+        name: 'concert.mp4',
+        queryPermission: async () => 'prompt',
+        requestPermission: async () => 'denied',
+      } as unknown as Resource['fileHandle'],
     })
+    const onPlay = vi.fn()
+    render(<VideoThumbnailButton resource={resource} onPlay={onPlay} />)
+
+    const playButton = await screen.findByRole('button', { name: /נגן/ })
+    const user = userEvent.setup()
+    await user.click(playButton)
+
+    expect(await screen.findByText(/אין הרשאה/)).toBeInTheDocument()
+    expect(onPlay).not.toHaveBeenCalled()
   })
 })

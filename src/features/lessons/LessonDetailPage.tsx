@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -15,7 +15,7 @@ import { useDebouncedCallback } from '../../hooks/useDebouncedCallback'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { ResourceThumbnail } from '../../components/ResourceThumbnail'
 import { FileTypeIcon } from '../../components/FileTypeIcon'
-import { InlineVideoPlayer } from '../../components/InlineVideoPlayer'
+import { VideoThumbnailButton } from '../../components/VideoThumbnailButton'
 import { Badge, Button, PageHeader } from '../../components/ui'
 import { LESSON_CATEGORY_LABELS, LESSON_STATUS_LABELS } from './lesson-labels'
 import type { Exercise, Lesson, Resource, Week } from '../../domain'
@@ -65,6 +65,32 @@ export function LessonDetailPage() {
   const [resourceSearch, setResourceSearch] = useState('')
   const [showResourcePicker, setShowResourcePicker] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [playingVideo, setPlayingVideo] = useState<{ resource: Resource; url: string } | undefined>(undefined)
+  const playingVideoRef = useRef(playingVideo)
+  playingVideoRef.current = playingVideo
+
+  function playVideo(resource: Resource, url: string) {
+    setPlayingVideo((current) => {
+      if (current) URL.revokeObjectURL(current.url)
+      return { resource, url }
+    })
+  }
+
+  function closeVideo() {
+    setPlayingVideo((current) => {
+      if (current) URL.revokeObjectURL(current.url)
+      return undefined
+    })
+  }
+
+  // Unmount-only cleanup — reads the ref (always current) rather than closing
+  // over `playingVideo`, which would stay stuck at its mount-time value
+  // (undefined) for the lifetime of this effect.
+  useEffect(() => {
+    return () => {
+      if (playingVideoRef.current) URL.revokeObjectURL(playingVideoRef.current.url)
+    }
+  }, [])
 
   const {
     register,
@@ -536,7 +562,7 @@ export function LessonDetailPage() {
                   {resource.mimeType.startsWith('image/') ? (
                     <ResourceThumbnail resource={resource} size={72} />
                   ) : resource.mimeType.startsWith('video/') ? (
-                    <InlineVideoPlayer resource={resource} size={72} />
+                    <VideoThumbnailButton resource={resource} size={72} onPlay={playVideo} />
                   ) : (
                     <span className="flex h-[72px] w-[72px] shrink-0 items-center justify-center rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-muted)]">
                       <FileTypeIcon mimeType={resource.mimeType} size={28} />
@@ -646,23 +672,49 @@ export function LessonDetailPage() {
         />
       </div>
 
-      {coverImage && (
-        <div className="order-first w-full shrink-0 lg:order-none lg:max-w-xl lg:flex-1">
-          <div className="overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-3 [box-shadow:var(--shadow-card)]">
-            <ResourceThumbnail
-              resource={coverImage}
-              height={340}
-              fluidWidth
-              objectFit="contain"
-              alt={lesson.title}
-            />
-            <p
-              className="mt-2 truncate text-center text-xs text-[var(--color-text-muted)]"
-              title={coverImage.fileName}
-            >
-              {coverImage.sourceType === 'link' ? `🔗 ${coverImage.fileName}` : coverImage.fileName}
-            </p>
-          </div>
+      {(playingVideo || coverImage) && (
+        <div className="order-first flex w-full shrink-0 flex-col gap-4 lg:order-none lg:flex-1">
+          {playingVideo && (
+            // The card itself is capped to 80% of the (now wide) free
+            // column and centered — leaving it full-width made the
+            // card's border/background stretch edge-to-edge around a
+            // smaller video, reading as "stretched" even though the video
+            // itself wasn't distorted. The video inside is then max-w-full
+            // of THIS card (a concrete width, not a %-of-fit-content
+            // circular reference) + h-auto, so it renders at its native
+            // resolution unless that's bigger than the card, never upscaled.
+            <div className="mx-auto max-w-[80%] overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-3 [box-shadow:var(--shadow-card)]">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <p className="min-w-0 flex-1 truncate text-xs text-[var(--color-text-muted)]" title={playingVideo.resource.fileName}>
+                  {playingVideo.resource.fileName}
+                </p>
+                <Button size="sm" variant="ghost" onClick={closeVideo} aria-label="סגירת הנגן">
+                  סגירה
+                </Button>
+              </div>
+              <video controls autoPlay src={playingVideo.url} className="block h-auto max-w-full rounded-[var(--radius-card)] bg-black">
+                <track kind="captions" />
+              </video>
+            </div>
+          )}
+
+          {coverImage && (
+            <div className="overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-3 [box-shadow:var(--shadow-card)]">
+              <ResourceThumbnail
+                resource={coverImage}
+                height={340}
+                fluidWidth
+                objectFit="contain"
+                alt={lesson.title}
+              />
+              <p
+                className="mt-2 truncate text-center text-xs text-[var(--color-text-muted)]"
+                title={coverImage.fileName}
+              >
+                {coverImage.sourceType === 'link' ? `🔗 ${coverImage.fileName}` : coverImage.fileName}
+              </p>
+            </div>
+          )}
         </div>
       )}
     </div>
