@@ -13,12 +13,15 @@ export type DrumKeyboardMap = Record<string, DrumInstrument>
 // its instrument's left-right position on the drum kit (VISUAL_DRUM_TRAINER_SPEC.md
 // §6): crash/toms/ride left-to-right along the top row, hi-hat (leftmost on
 // the kit) at the left of the home row, then snare/kick/floor-tom
-// continuing left-to-right.
+// continuing left-to-right. tom_high/tom_mid/ride sit on U/I/O — all under
+// the right hand — rather than spanning R/T/U (left hand into right hand),
+// so playing that run doesn't force a hand-crossing reach; crash (E) is
+// played rarely enough by comparison to stay on the left hand alone.
 export const DEFAULT_KEYBOARD_MAP: DrumKeyboardMap = {
   KeyE: 'crash',
-  KeyR: 'tom_high',
-  KeyT: 'tom_mid',
-  KeyU: 'ride',
+  KeyU: 'tom_high',
+  KeyI: 'tom_mid',
+  KeyO: 'ride',
   KeyS: 'hihat_open',
   KeyD: 'hihat_closed',
   KeyF: 'snare',

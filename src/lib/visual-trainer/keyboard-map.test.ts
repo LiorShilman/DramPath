@@ -17,10 +17,10 @@ describe('mapCodeToInstrument', () => {
       KeyF: 'snare',
       KeyD: 'hihat_closed',
       KeyS: 'hihat_open',
-      KeyU: 'ride',
+      KeyO: 'ride',
       KeyE: 'crash',
-      KeyR: 'tom_high',
-      KeyT: 'tom_mid',
+      KeyU: 'tom_high',
+      KeyI: 'tom_mid',
       KeyK: 'tom_floor',
     }
     for (const [code, instrument] of Object.entries(expected)) {

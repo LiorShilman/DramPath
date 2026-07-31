@@ -17,7 +17,7 @@ const FLASH_DURATION_MS = 220
 // and, per DEFAULT_KEYBOARD_MAP's own left-to-right design (keyboard-map.ts),
 // mirrors the drum kit's own left-to-right layout too.
 const KEY_ROWS: readonly (readonly string[])[] = [
-  ['KeyE', 'KeyR', 'KeyT', 'KeyU'],
+  ['KeyE', 'KeyU', 'KeyI', 'KeyO'],
   ['KeyS', 'KeyD', 'KeyF', 'KeyJ', 'KeyK'],
 ]
 
