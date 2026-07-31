@@ -7,16 +7,21 @@ import type { DrumInstrument } from '../../domain'
 // than design-system tokens — a rhythm-game highway needs 9 stable,
 // mutually distinguishable lane colors, which the app's ~4-color semantic
 // palette (primary/success/warning/danger) can't provide without repeats.
+// Matches DEFAULT_KEYBOARD_MAP's own left-to-right layout (keyboard-map.ts,
+// KeyboardGuide's two rows): home row (hi-hat open/closed, snare, kick,
+// floor-tom) first, then the top row (crash/high-tom/mid-tom/ride) — the
+// home row is the one most exercises actually use, so its instruments land
+// in the first lanes instead of being pushed toward the highway's far side.
 export const LANE_ORDER: DrumInstrument[] = [
-  'crash',
-  'ride',
   'hihat_open',
   'hihat_closed',
+  'snare',
+  'kick',
+  'tom_floor',
+  'crash',
   'tom_high',
   'tom_mid',
-  'snare',
-  'tom_floor',
-  'kick',
+  'ride',
 ]
 
 // All 9 chosen at roughly the same perceived brightness/saturation (varying

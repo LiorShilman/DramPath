@@ -39,6 +39,7 @@ const DEFAULT_LOOKAHEAD_MS = 2000
 const HIGHWAY_HEIGHT_PX = 420
 const HIT_LINE_OFFSET_PX = 32
 const NOTE_HEIGHT_PX = 48
+const LANE_GAP_PX = 10
 
 /**
  * VISUAL_DRUM_TRAINER_SPEC.md §5/§18 — notes fall from the top toward a hit
@@ -121,9 +122,14 @@ export const NoteHighway = forwardRef<NoteHighwayHandle, NoteHighwayProps>(funct
             data-instrument={event.instrument}
             style={{
               position: 'absolute',
-              insetInlineStart: `${(lane / laneCount) * 100}%`,
+              // left (not insetInlineStart): lane position needs to be
+              // physical, not RTL-aware — insetInlineStart flips to the
+              // right edge in this app's RTL context, inverting LANE_ORDER's
+              // intended left-to-right sequence (the same class of bug
+              // KeyboardGuide had with a plain RTL flex row).
+              left: `calc(${(lane / laneCount) * 100}% + ${LANE_GAP_PX / 2}px)`,
               top: 0,
-              width: `${100 / laneCount}%`,
+              width: `calc(${100 / laneCount}% - ${LANE_GAP_PX}px)`,
               height: NOTE_HEIGHT_PX,
               borderRadius: 10,
               backgroundColor: INSTRUMENT_COLORS[event.instrument],
