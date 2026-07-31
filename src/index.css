@@ -95,6 +95,26 @@ input[type='radio'] {
   }
 }
 
+/* KeyboardGuide: the matching "physical press" feedback for a key badge —
+   same remount-on-new-token approach as .drum-piece.hit (see above), since a
+   class toggle alone can't restart an animation that's already applied on
+   rapid repeated presses of the same key. */
+.key-cap.pressed {
+  animation: key-press 160ms ease-out;
+}
+
+@keyframes key-press {
+  0% {
+    transform: translateY(0) scale(1);
+  }
+  35% {
+    transform: translateY(1px) scale(0.9);
+  }
+  100% {
+    transform: translateY(0) scale(1);
+  }
+}
+
 /* ExerciseNotationSheet's playback-progress fill — grows a row's background
    from 0 to its own bar width in real time, one row at a time (later rows
    use `animation-delay` to start exactly when the row before them finishes,

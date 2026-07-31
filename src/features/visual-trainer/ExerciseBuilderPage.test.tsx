@@ -137,6 +137,27 @@ describe('ExerciseBuilderPage', () => {
     expect(saved.events[0]).toMatchObject({ bar: 1, beat: 1, subdivisionIndex: 0, instrument: 'kick' })
   })
 
+  it('persists the beamCymbals checkbox, off by default', async () => {
+    renderPage()
+    const user = userEvent.setup()
+    await user.type(screen.getByLabelText('שם התרגיל'), 'תרגיל עם צלחות')
+    await user.click(screen.getByRole('button', { name: 'המשך לעריכת התווים' }))
+
+    const firstKickCell = screen.getAllByRole('button', { name: /בס דראם תיבה/ })[0]!
+    await user.click(firstKickCell)
+
+    const beamCheckbox = screen.getByLabelText('לחבר גם צלחות (X) בקורה')
+    expect(beamCheckbox).not.toBeChecked()
+    await user.click(beamCheckbox)
+    expect(beamCheckbox).toBeChecked()
+
+    await user.click(screen.getByRole('button', { name: 'שמירה והתחלת תרגול' }))
+
+    await waitFor(async () => expect(await db.interactiveExercises.count()).toBe(1))
+    const saved = (await db.interactiveExercises.toArray())[0]!
+    expect(saved.beamCymbals).toBe(true)
+  })
+
   it('saves successfully with a target BPM below 40, where a fixed minBpm floor would exceed it', async () => {
     renderPage()
     const user = userEvent.setup()

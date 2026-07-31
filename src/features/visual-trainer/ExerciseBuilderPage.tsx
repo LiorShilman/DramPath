@@ -100,6 +100,7 @@ export function ExerciseBuilderPage() {
   const [setup, setSetup] = useState<Setup>(DEFAULT_SETUP)
   const [gridStarted, setGridStarted] = useState(false)
   const [activeCells, setActiveCells] = useState<Set<string>>(new Set())
+  const [beamCymbals, setBeamCymbals] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   // undefined = "not resolved yet", 'not-found' = "resolved, doesn't exist"
   // — only meaningful while isEditing; the create flow never touches this.
@@ -119,6 +120,7 @@ export function ExerciseBuilderPage() {
       if (found) {
         setSetup(setupFromExercise(found))
         setActiveCells(new Set(found.events.map((event) => cellKey(event, event.instrument))))
+        setBeamCymbals(found.beamCymbals ?? false)
         setGridStarted(true)
       }
       setLoadedExercise(found ?? 'not-found')
@@ -300,6 +302,7 @@ export function ExerciseBuilderPage() {
       // re-showing a note on a second pass, so loop 2 had no visual cue at all.
       loopCount: 1,
       displayMode: 'note_highway' as const,
+      beamCymbals,
       events,
     }
 
@@ -479,12 +482,19 @@ export function ExerciseBuilderPage() {
 
       {previewEvents.length > 0 && (
         <div>
-          <h3 className="mb-2 text-sm font-semibold text-[var(--color-text-muted)]">תצוגת תווים</h3>
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-sm font-semibold text-[var(--color-text-muted)]">תצוגת תווים</h3>
+            <label className="flex items-center gap-1.5 text-sm">
+              <input type="checkbox" checked={beamCymbals} onChange={(event) => setBeamCymbals(event.target.checked)} />
+              לחבר גם צלחות (X) בקורה
+            </label>
+          </div>
           <div dir="ltr" className="overflow-x-auto rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
             <ExerciseNotationSheet
               exercise={previewExercise}
               highlightedEventIds={playingStepEventIds}
               playbackProgress={playingStepIndex !== undefined ? { bpm: setup.bpm, sessionId: playSessionId } : undefined}
+              beamCymbals={beamCymbals}
             />
           </div>
         </div>

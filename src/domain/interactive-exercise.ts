@@ -66,6 +66,10 @@ export const interactiveExerciseSchema = z
     bars: z.number().int().positive(),
     loopCount: z.number().int().positive(),
     displayMode: displayModeSchema,
+    // Notation-preview display preference — off by default (cymbals draw as
+    // a plain X, no stem/beam). Optional so exercises saved before this
+    // existed still validate without a backfill.
+    beamCymbals: z.boolean().optional(),
     events: z.array(drumNoteEventSchema),
     lessonId: uuidSchema.optional(),
     exerciseId: uuidSchema.optional(),

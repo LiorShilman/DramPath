@@ -27,7 +27,7 @@ export interface UseVisualTrainerResult {
   scoring: ScoringSummary
   gradeCounts: GradeCounts
   lastGrade: HitGrade | 'extra' | undefined
-  activeHit: { instrument: DrumInstrument; hitToken: string } | undefined
+  activeHits: Partial<Record<DrumInstrument, string>>
   currentBar: number
   currentBeat: number
   start: () => void
@@ -71,9 +71,10 @@ export function useVisualTrainer(
   const [scoring, setScoring] = useState<ScoringSummary>(EMPTY_SCORING)
   const [gradeCounts, setGradeCounts] = useState<GradeCounts>(EMPTY_GRADE_COUNTS)
   const [lastGrade, setLastGrade] = useState<HitGrade | 'extra' | undefined>(undefined)
-  const [activeHit, setActiveHit] = useState<{ instrument: DrumInstrument; hitToken: string } | undefined>(
-    undefined,
-  )
+  // Keyed by instrument, not a single value — otherwise two instruments hit
+  // at (near-)the same time would just overwrite each other's entry and
+  // only one drum piece would ever visually react.
+  const [activeHits, setActiveHits] = useState<Partial<Record<DrumInstrument, string>>>({})
   const [currentBar, setCurrentBar] = useState(1)
   const [currentBeat, setCurrentBeat] = useState(1)
 
@@ -212,7 +213,7 @@ export function useVisualTrainer(
         countInDurationMsRef.current,
       )
 
-      setActiveHit({ instrument, hitToken: createId() })
+      setActiveHits((prev) => ({ ...prev, [instrument]: createId() }))
 
       const match = findMatchingEvent(pendingRef.current, instrument, elapsedMs, thresholds)
       if (match) {
@@ -268,7 +269,7 @@ export function useVisualTrainer(
     setScoring(EMPTY_SCORING)
     setGradeCounts(EMPTY_GRADE_COUNTS)
     setLastGrade(undefined)
-    setActiveHit(undefined)
+    setActiveHits({})
     setCurrentBar(1)
     setCurrentBeat(1)
     noteHighwayRef.current?.reset()
@@ -304,5 +305,5 @@ export function useVisualTrainer(
     setPhaseBoth('idle')
   }, [setPhaseBoth, stopLoops])
 
-  return { phase, scoring, gradeCounts, lastGrade, activeHit, currentBar, currentBeat, start, pause, resume, restart, exit }
+  return { phase, scoring, gradeCounts, lastGrade, activeHits, currentBar, currentBeat, start, pause, resume, restart, exit }
 }

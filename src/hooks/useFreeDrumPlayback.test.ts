@@ -48,33 +48,42 @@ describe('useFreeDrumPlayback', () => {
     vi.unstubAllGlobals()
   })
 
-  it('sets activeHit with the mapped instrument when a mapped key is pressed', () => {
+  it('sets activeHits with the mapped instrument when a mapped key is pressed', () => {
     const { result } = renderHook(() => useFreeDrumPlayback())
-    expect(result.current.activeHit).toBeUndefined()
+    expect(result.current.activeHits.kick).toBeUndefined()
 
     fireEvent.keyDown(window, { code: 'KeyF' })
 
-    expect(result.current.activeHit?.instrument).toBe('kick')
-    expect(result.current.activeHit?.hitToken).toBeTruthy()
+    expect(result.current.activeHits.kick).toBeTruthy()
   })
 
   it('gives each hit a fresh hitToken, even for the same instrument twice', () => {
     const { result } = renderHook(() => useFreeDrumPlayback())
 
     fireEvent.keyDown(window, { code: 'KeyF' })
-    const firstToken = result.current.activeHit?.hitToken
+    const firstToken = result.current.activeHits.kick
 
     fireEvent.keyUp(window, { code: 'KeyF' })
     fireEvent.keyDown(window, { code: 'KeyF' })
-    const secondToken = result.current.activeHit?.hitToken
+    const secondToken = result.current.activeHits.kick
 
     expect(secondToken).toBeTruthy()
     expect(secondToken).not.toBe(firstToken)
   })
 
+  it('keeps both instruments active when two different keys are pressed close together, instead of one overwriting the other', () => {
+    const { result } = renderHook(() => useFreeDrumPlayback())
+
+    fireEvent.keyDown(window, { code: 'KeyF' })
+    fireEvent.keyDown(window, { code: 'KeyJ' })
+
+    expect(result.current.activeHits.kick).toBeTruthy()
+    expect(result.current.activeHits.snare).toBeTruthy()
+  })
+
   it('does nothing for an unmapped key', () => {
     const { result } = renderHook(() => useFreeDrumPlayback())
     fireEvent.keyDown(window, { code: 'KeyZ' })
-    expect(result.current.activeHit).toBeUndefined()
+    expect(Object.keys(result.current.activeHits)).toHaveLength(0)
   })
 })

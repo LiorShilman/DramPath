@@ -1,6 +1,18 @@
-import { calculateBarDurationMs, calculateEventTimeMs } from '../../domain/calculations/event-timing'
+import { SUBDIVISIONS_PER_BEAT, calculateBarDurationMs, calculateEventTimeMs } from '../../domain/calculations/event-timing'
 import { STAFF_POSITION, staffPositionToOffsetPx } from '../../lib/visual-trainer/staff-notation-layout'
-import type { InteractiveExercise, Subdivision } from '../../domain'
+import type { DrumInstrument, InteractiveExercise, Subdivision } from '../../domain'
+
+// Standard drum-notation convention: the "foot" voice (kick) stems down,
+// every "hand" voice (snare/toms/cymbals) stems up — this is what makes it
+// visually unambiguous which notes belong to which voice when several land
+// on the same beat, instead of every stem sharing one direction.
+type Voice = 'hands' | 'feet'
+function voiceOf(instrument: DrumInstrument): Voice {
+  return instrument === 'kick' ? 'feet' : 'hands'
+}
+function stemDirection(instrument: DrumInstrument): 'up' | 'down' {
+  return voiceOf(instrument) === 'feet' ? 'down' : 'up'
+}
 
 export interface ExerciseNotationSheetProps {
   exercise: Pick<InteractiveExercise, 'events' | 'timeSignature' | 'subdivision' | 'bars'>
@@ -14,6 +26,11 @@ export interface ExerciseNotationSheetProps {
    * layout above), `sessionId` remounts the fill elements so restarting
    * playback restarts the animation instead of no-oping on an unchanged style. */
   playbackProgress?: { bpm: number; sessionId: number }
+  /** Off by default (cymbals draw as a plain X, no stem). When on, cymbal
+   * (X notehead) instruments also get a stem and join the same beam
+   * grouping as normal noteheads — an isolated cymbal note still gets its
+   * own individual flag(s), same as a normal notehead would. */
+  beamCymbals?: boolean
 }
 
 const BARS_PER_ROW = 4
@@ -23,12 +40,18 @@ const LINE_SPACING_PX = 8
 const NOTE_RADIUS_PX = 3
 const STEM_LENGTH_PX = 12
 const FLAG_GAP_PX = 4
-const BOTTOM_PADDING_PX = 6
+const BASE_BOTTOM_PADDING_PX = 6
 const ROW_GAP_PX = 12
 // The whole exercise shares one subdivision (no per-note duration yet), so
 // every note gets the same flag count — reflecting the real note-duration
 // shape (quarter/eighth/sixteenth), not just a plain circle.
 const FLAG_COUNT: Record<Subdivision, number> = { quarter: 0, eighth: 1, sixteenth: 2 }
+// How many beats' worth of notes share one beam group for a continuous
+// same-instrument run — eighth notes group by half-bar (beats 1-2, 3-4),
+// matching how a continuous pattern like hi-hat is normally engraved rather
+// than the choppier per-beat grouping; sixteenths already make a
+// substantial-looking group at just one beat, so they stay per-beat.
+const BEAM_GROUP_BEATS: Record<Subdivision, number> = { quarter: 1, eighth: 2, sixteenth: 1 }
 // Reserve enough headroom above the highest note for its stem + flags.
 const TOP_PADDING_PX = STEM_LENGTH_PX + FLAG_GAP_PX * 2 + 4
 // Bottom staff line = position 0; the drawn lines sit at positions 0/2/4/6/8.
@@ -48,10 +71,17 @@ function barDurationMs(exercise: ExerciseNotationSheetProps['exercise']): number
 /** A static, simplified rhythm sheet — noteheads on a standard 5-line
  * drum-notation staff, positioned by the grid (bar/beat/subdivision), not
  * by real time. Every note gets a stem + a flag count matching the
- * exercise's subdivision (quarter/eighth/sixteenth) — there's no per-note
- * duration yet, so this can't mix durations or beam consecutive notes,
- * only reflect the one subdivision the whole exercise shares. */
-export function ExerciseNotationSheet({ exercise, highlightedEventIds, playbackProgress }: ExerciseNotationSheetProps) {
+ * exercise's subdivision (quarter/eighth/sixteenth); consecutive
+ * same-instrument notes within a beam group (see BEAM_GROUP_BEATS) share one
+ * beam instead of individual flags, same as real engraving. There's still no
+ * per-note duration, so this can't mix durations within one exercise, only
+ * reflect the one subdivision the whole exercise shares — and only normal
+ * (circle) noteheads beam for now, not cymbals (X noteheads, no stem yet). */
+export function ExerciseNotationSheet({ exercise, highlightedEventIds, playbackProgress, beamCymbals = false }: ExerciseNotationSheetProps) {
+  const hasStem = (instrument: (typeof exercise.events)[number]['instrument']) => {
+    const notehead = STAFF_POSITION[instrument].notehead
+    return notehead === 'normal' || (beamCymbals && notehead === 'x')
+  }
   const rowCount = Math.max(1, Math.ceil(exercise.bars / BARS_PER_ROW))
   // Only reserve vertical room up to the highest notehead actually used
   // (e.g. no crash in this exercise = no wasted headroom above the staff),
@@ -60,13 +90,27 @@ export function ExerciseNotationSheet({ exercise, highlightedEventIds, playbackP
     (max, event) => Math.max(max, STAFF_POSITION[event.instrument].position),
     STAFF_TOP_LINE_POSITION,
   )
-  const rowHeight = TOP_PADDING_PX + staffPositionToOffsetPx(highestPosition, LINE_SPACING_PX) + BOTTOM_PADDING_PX
+  // The feet (down-stem) voice's shared beam sits just below whichever of
+  // its notes is lowest on the staff — mirrors highestPosition, just for
+  // the opposite direction/voice.
+  const feetPositions = exercise.events
+    .filter((event) => stemDirection(event.instrument) === 'down')
+    .map((event) => STAFF_POSITION[event.instrument].position)
+  const lowestFeetPosition = feetPositions.length > 0 ? Math.min(...feetPositions) : STAFF_BOTTOM_LINE_POSITION
+  // Same idea as TOP_PADDING_PX, but for the down-stem (kick) voice — its
+  // stem + flags extend *below* the notehead instead of above it, so it
+  // needs its own reserved room at the bottom, only when actually used.
+  const hasDownStemNote = feetPositions.length > 0
+  const bottomPadding = hasDownStemNote ? BASE_BOTTOM_PADDING_PX + TOP_PADDING_PX : BASE_BOTTOM_PADDING_PX
+  const rowHeight = TOP_PADDING_PX + staffPositionToOffsetPx(highestPosition, LINE_SPACING_PX) + bottomPadding
   const totalHeight = rowCount * rowHeight + (rowCount - 1) * ROW_GAP_PX
   const barMs = barDurationMs(exercise)
 
   const eventsByRow: {
     id: string
     barIndexInRow: number
+    beat: number
+    subdivisionIndex: number
     fraction: number
     instrument: (typeof exercise.events)[number]['instrument']
     accent?: boolean
@@ -82,7 +126,15 @@ export function ExerciseNotationSheet({ exercise, highlightedEventIds, playbackP
       subdivision: exercise.subdivision,
     }) / barMs
     const fraction = totalBarPosition - barGlobalIndex
-    eventsByRow[rowIndex]?.push({ id: event.id, barIndexInRow, fraction, instrument: event.instrument, accent: event.accent })
+    eventsByRow[rowIndex]?.push({
+      id: event.id,
+      barIndexInRow,
+      beat: event.beat,
+      subdivisionIndex: event.subdivisionIndex,
+      fraction,
+      instrument: event.instrument,
+      accent: event.accent,
+    })
   }
 
   // The viewBox must match the widest row actually drawn — row 0 always has
@@ -123,9 +175,90 @@ export function ExerciseNotationSheet({ exercise, highlightedEventIds, playbackP
       {eventsByRow.map((rowEvents, rowIndex) => {
         const rowBars = Math.min(BARS_PER_ROW, exercise.bars - rowIndex * BARS_PER_ROW)
         const rowTopY = rowIndex * (rowHeight + ROW_GAP_PX)
-        const baselineY = rowTopY + rowHeight - BOTTOM_PADDING_PX
+        const baselineY = rowTopY + rowHeight - bottomPadding
         const toY = (position: number) => baselineY - staffPositionToOffsetPx(position, LINE_SPACING_PX)
         const rowTiming = rowRealTimings[rowIndex]!
+
+        // x per note, needed by both the beam grouping below and the note
+        // rendering loop further down.
+        const noteX = new Map(
+          rowEvents.map((event) => [
+            event.id,
+            event.barIndexInRow * BAR_WIDTH_PX + NOTE_INSET_PX + event.fraction * (BAR_WIDTH_PX - NOTE_INSET_PX),
+          ]),
+        )
+
+        // Real notation connects consecutive notes within a beam group with a
+        // beam instead of individual flags — grouped by VOICE (hands vs.
+        // feet), not by instrument: when e.g. hi-hat and snare are both in
+        // the "hands" voice and land on consecutive steps, they share one
+        // beam even though they're different instruments, exactly like a
+        // real drum staff's composite rhythm. Each note still keeps its own
+        // stem down to its own notehead (its own staff position) — only the
+        // stem *length* changes for a beamed note, reaching up (or down, for
+        // feet) to the voice's one shared beam height instead of a fixed
+        // short length. A step with no same-voice neighbor in its group
+        // still gets its own individual flag(s), same as real engraving.
+        const rowFlagCount = FLAG_COUNT[exercise.subdivision]
+        const beamedEventIds = new Set<string>()
+        const noteBeamY = new Map<string, number>()
+        const beams: { x1: number; x2: number; y: number; direction: 'up' | 'down' }[] = []
+        if (rowFlagCount > 0) {
+          const groupBeats = BEAM_GROUP_BEATS[exercise.subdivision]
+          const subdivisionsPerBeat = SUBDIVISIONS_PER_BEAT[exercise.subdivision]
+          // A single step index spanning the whole beam group (not just the
+          // event's own beat) — needed so e.g. beat 2's subdivisionIndex 0
+          // is correctly seen as consecutive with beat 1's last subdivision
+          // when a group spans multiple beats (half-bar eighth grouping).
+          const stepInGroup = (event: (typeof rowEvents)[number]) =>
+            ((event.beat - 1) % groupBeats) * subdivisionsPerBeat + event.subdivisionIndex
+
+          for (const voice of ['hands', 'feet'] as const) {
+            const direction: 'up' | 'down' = voice === 'feet' ? 'down' : 'up'
+            const beamPosition = voice === 'feet' ? lowestFeetPosition : highestPosition
+            const noteY = toY(beamPosition)
+            const beamY = direction === 'down' ? noteY + NOTE_RADIUS_PX + STEM_LENGTH_PX : noteY - NOTE_RADIUS_PX - STEM_LENGTH_PX
+
+            // Bucket this voice's events by (bar, beam group, step) — a step
+            // can hold more than one event when two instruments in the same
+            // voice coincide (e.g. hi-hat + snare on the same subdivision).
+            const byGroup = new Map<string, Map<number, typeof rowEvents>>()
+            for (const event of rowEvents) {
+              if (!hasStem(event.instrument) || voiceOf(event.instrument) !== voice) continue
+              const groupIndex = Math.floor((event.beat - 1) / groupBeats)
+              const groupKey = `${event.barIndexInRow}-${groupIndex}`
+              const steps = byGroup.get(groupKey) ?? new Map<number, typeof rowEvents>()
+              const step = stepInGroup(event)
+              const stepEvents = steps.get(step) ?? []
+              stepEvents.push(event)
+              steps.set(step, stepEvents)
+              byGroup.set(groupKey, steps)
+            }
+
+            for (const steps of byGroup.values()) {
+              const sortedStepKeys = [...steps.keys()].sort((a, b) => a - b)
+              let runStart = 0
+              for (let i = 1; i <= sortedStepKeys.length; i += 1) {
+                const runBroke = i === sortedStepKeys.length || sortedStepKeys[i]! !== sortedStepKeys[i - 1]! + 1
+                if (!runBroke) continue
+                const runStepKeys = sortedStepKeys.slice(runStart, i)
+                if (runStepKeys.length >= 2) {
+                  const firstStepEvents = steps.get(runStepKeys[0]!)!
+                  const lastStepEvents = steps.get(runStepKeys[runStepKeys.length - 1]!)!
+                  const stemXFor = (id: string) => noteX.get(id)! + (direction === 'down' ? -NOTE_RADIUS_PX : NOTE_RADIUS_PX)
+                  beams.push({ x1: stemXFor(firstStepEvents[0]!.id), x2: stemXFor(lastStepEvents[0]!.id), y: beamY, direction })
+                  for (const stepKey of runStepKeys) {
+                    for (const beamedEvent of steps.get(stepKey)!) {
+                      beamedEventIds.add(beamedEvent.id)
+                      noteBeamY.set(beamedEvent.id, beamY)
+                    }
+                  }
+                }
+                runStart = i
+              }
+            }
+          }
+        }
 
         return (
           <g key={rowIndex} data-testid={`notation-row-${rowIndex}`}>
@@ -172,11 +305,18 @@ export function ExerciseNotationSheet({ exercise, highlightedEventIds, playbackP
 
             {rowEvents.map((event, eventIndex) => {
               const staff = STAFF_POSITION[event.instrument]
-              const x = event.barIndexInRow * BAR_WIDTH_PX + NOTE_INSET_PX + event.fraction * (BAR_WIDTH_PX - NOTE_INSET_PX)
+              const x = noteX.get(event.id)!
               const y = toY(staff.position)
-              const flagCount = FLAG_COUNT[exercise.subdivision]
-              const stemX = x + NOTE_RADIUS_PX
-              const stemTopY = y - NOTE_RADIUS_PX - STEM_LENGTH_PX
+              const direction = stemDirection(event.instrument)
+              const stemX = direction === 'down' ? x - NOTE_RADIUS_PX : x + NOTE_RADIUS_PX
+              const isBeamed = beamedEventIds.has(event.id)
+              // A beamed note's stem reaches the voice's shared beam height
+              // (variable length) instead of the fixed individual-flag
+              // length — that's what visually connects e.g. a low snare note
+              // to a high hi-hat note sharing the same beam.
+              const stemEndY =
+                noteBeamY.get(event.id) ??
+                (direction === 'down' ? y + NOTE_RADIUS_PX + STEM_LENGTH_PX : y - NOTE_RADIUS_PX - STEM_LENGTH_PX)
               const isHighlighted = highlightedEventIds?.has(event.id) ?? false
 
               return (
@@ -219,37 +359,41 @@ export function ExerciseNotationSheet({ exercise, highlightedEventIds, playbackP
                       />
                     </>
                   )}
-                  {staff.notehead === 'normal' && (
+                  {hasStem(event.instrument) && (
                     <>
                       <line
                         data-testid="notation-note-stem"
                         x1={stemX}
                         y1={y}
                         x2={stemX}
-                        y2={stemTopY}
+                        y2={stemEndY}
                         stroke="currentColor"
                         strokeWidth={1}
                       />
-                      {Array.from({ length: flagCount }, (_, flagIndex) => {
-                        const flagTopY = stemTopY + flagIndex * FLAG_GAP_PX
-                        return (
-                          <path
-                            key={flagIndex}
-                            data-testid="notation-note-flag"
-                            d={`M${stemX},${flagTopY} C${stemX + 4},${flagTopY + 1} ${stemX + 4},${flagTopY + 5} ${stemX + 1},${flagTopY + 6}`}
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth={0.9}
-                            strokeLinecap="round"
-                          />
-                        )
-                      })}
+                      {!isBeamed &&
+                        Array.from({ length: rowFlagCount }, (_, flagIndex) => {
+                          // Mirrored for a down-stem: the flag hooks back up
+                          // toward the notehead instead of down away from it.
+                          const flagY = stemEndY + flagIndex * FLAG_GAP_PX * (direction === 'down' ? -1 : 1)
+                          const curveSign = direction === 'down' ? -1 : 1
+                          return (
+                            <path
+                              key={flagIndex}
+                              data-testid="notation-note-flag"
+                              d={`M${stemX},${flagY} C${stemX + 4},${flagY + 1 * curveSign} ${stemX + 4},${flagY + 5 * curveSign} ${stemX + 1},${flagY + 6 * curveSign}`}
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth={0.9}
+                              strokeLinecap="round"
+                            />
+                          )
+                        })}
                     </>
                   )}
                   {event.accent && (
                     <text
                       x={x}
-                      y={(staff.notehead === 'normal' ? stemTopY : y - NOTE_RADIUS_PX) - 6}
+                      y={hasStem(event.instrument) ? stemEndY + (direction === 'down' ? 10 : -6) : y - NOTE_RADIUS_PX - 6}
                       textAnchor="middle"
                       fontSize={11}
                       fill="currentColor"
@@ -260,6 +404,15 @@ export function ExerciseNotationSheet({ exercise, highlightedEventIds, playbackP
                 </g>
               )
             })}
+
+            {beams.map((beam, beamIndex) => (
+              <g key={beamIndex} data-testid="notation-beam" data-direction={beam.direction}>
+                {Array.from({ length: rowFlagCount }, (_, lineIndex) => {
+                  const lineY = beam.y + lineIndex * FLAG_GAP_PX * (beam.direction === 'down' ? -1 : 1)
+                  return <line key={lineIndex} x1={beam.x1} x2={beam.x2} y1={lineY} y2={lineY} stroke="currentColor" strokeWidth={2} />
+                })}
+              </g>
+            ))}
           </g>
         )
       })}

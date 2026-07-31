@@ -95,7 +95,7 @@ export function FreeNotationPracticePage() {
     setPendingRemoval(undefined)
   }
 
-  const { activeHit } = useFreeDrumPlayback()
+  const { activeHits } = useFreeDrumPlayback()
   const metronome = useMetronome()
   const [bpm, setBpm] = useState(DEFAULT_BPM)
   const [subdivision, setSubdivision] = useState<Subdivision>('quarter')
@@ -149,7 +149,7 @@ export function FreeNotationPracticePage() {
           first) on the LEFT and the drum-kit/metronome/keys column (coded
           second) on the RIGHT, flush against the sidebar, per explicit
           layout direction. */}
-      <div className="flex flex-col gap-6 lg:flex-row-reverse lg:items-start">
+      <div className="flex flex-col gap-6 lg:flex-row-reverse lg:items-stretch">
         <div className="flex w-full flex-col gap-2 lg:flex-1">
           <FileDropzone
             accept="image/*,application/pdf"
@@ -209,7 +209,14 @@ export function FreeNotationPracticePage() {
               </div>
             )
           ) : (
-            <div className="flex h-[50vh] items-center justify-center rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] text-sm text-[var(--color-text-muted)]">
+            // min-h-[50vh] is the mobile/stacked floor (no sibling column to
+            // match there); lg:min-h-0 lg:flex-1 instead grows this to fill
+            // whatever height the row's other column ends up at (drum kit +
+            // metronome + keyboard guide), via lg:items-stretch on the row
+            // above — so this box's bottom edge lands at the same place as
+            // that column's, instead of a fixed vh guess that's disconnected
+            // from the other column's actual content height.
+            <div className="flex min-h-[50vh] items-center justify-center rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] text-sm text-[var(--color-text-muted)] lg:min-h-0 lg:flex-1">
               העלו קובץ תווים (תמונה או PDF) כדי להתחיל
             </div>
           )}
@@ -225,7 +232,7 @@ export function FreeNotationPracticePage() {
               while the wider column (max-w-2xl) still nets a bigger kit
               overall than before. */}
           <div className="mx-auto w-[80%]">
-            <DrumKit activeHit={activeHit} />
+            <DrumKit activeHits={activeHits} />
           </div>
 
           <Card padding="sm" className="flex flex-wrap items-center gap-6">
@@ -286,7 +293,7 @@ export function FreeNotationPracticePage() {
             </label>
           </Card>
 
-          <KeyboardGuide variant="inline" />
+          <KeyboardGuide variant="inline" pressedInstruments={activeHits} />
         </div>
       </div>
 

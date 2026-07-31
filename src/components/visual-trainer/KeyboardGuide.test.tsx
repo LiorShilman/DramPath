@@ -18,4 +18,38 @@ describe('KeyboardGuide', () => {
     expect(screen.getByText('בס דראם')).toBeInTheDocument()
     expect(container.querySelector('.fixed')).toBeNull()
   })
+
+  it('dims keys whose instrument is not in relevantInstruments, leaving the rest at full emphasis', () => {
+    render(<KeyboardGuide variant="inline" relevantInstruments={new Set(['kick', 'snare'])} />)
+
+    const kickKey = screen.getByText('F').closest('li')!
+    const snareKey = screen.getByText('J').closest('li')!
+    const rideKey = screen.getByText('R').closest('li')!
+
+    expect(kickKey).not.toHaveClass('opacity-35')
+    expect(snareKey).not.toHaveClass('opacity-35')
+    expect(rideKey).toHaveClass('opacity-35')
+  })
+
+  it('lights up and plays the press animation on the key matching pressedInstruments', () => {
+    render(<KeyboardGuide variant="inline" pressedInstruments={{ kick: 'token-a' }} />)
+
+    const kickBadge = screen.getByText('F')
+    const rideBadge = screen.getByText('R')
+
+    expect(kickBadge).toHaveClass('pressed')
+    expect(kickBadge).toHaveClass('bg-[var(--color-primary)]')
+    expect(rideBadge).not.toHaveClass('pressed')
+  })
+
+  it('remounts the pressed key badge when a new token arrives, restarting the animation on repeated presses', () => {
+    const { rerender } = render(<KeyboardGuide variant="inline" pressedInstruments={{ kick: 'first' }} />)
+    const firstBadge = screen.getByText('F')
+
+    rerender(<KeyboardGuide variant="inline" pressedInstruments={{ kick: 'second' }} />)
+    const secondBadge = screen.getByText('F')
+
+    expect(secondBadge).not.toBe(firstBadge)
+    expect(secondBadge).toHaveClass('pressed')
+  })
 })

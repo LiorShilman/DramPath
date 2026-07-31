@@ -27,6 +27,10 @@ interface VisualTrainerRunnerProps {
 function VisualTrainerRunner({ exercise, highwayRef }: VisualTrainerRunnerProps) {
   const navigate = useNavigate()
   const trainer = useVisualTrainer(exercise, highwayRef)
+  const usedInstruments = useMemo(
+    () => new Set(exercise.events.map((event) => event.instrument)),
+    [exercise.events],
+  )
 
   function handleExit() {
     trainer.exit()
@@ -72,9 +76,9 @@ function VisualTrainerRunner({ exercise, highwayRef }: VisualTrainerRunnerProps)
               past the page's own left edge, causing a real (if tiny)
               horizontal scrollbar. */}
           <div className="w-full max-w-2xl shrink-0 pe-3 lg:w-[36rem]">
-            <DrumKit activeHit={trainer.activeHit} />
+            <DrumKit activeHits={trainer.activeHits} />
           </div>
-          <KeyboardGuide variant="inline" />
+          <KeyboardGuide variant="inline" relevantInstruments={usedInstruments} pressedInstruments={trainer.activeHits} />
         </div>
       </div>
 

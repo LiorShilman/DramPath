@@ -14,21 +14,21 @@ describe('DrumKit', () => {
   })
 
   it('applies the hit class to the kick piece on a kick hit', () => {
-    const { container } = render(<DrumKit activeHit={{ instrument: 'kick', hitToken: 'a' }} />)
+    const { container } = render(<DrumKit activeHits={{ kick: 'a' }} />)
     expect(container.querySelector('[data-instrument="kick"]')).toHaveClass('hit')
     expect(container.querySelector('[data-instrument="snare"]')).not.toHaveClass('hit')
   })
 
   it('routes both hihat_closed and hihat_open hits to the same shared hihat piece', () => {
-    const { container: closed } = render(<DrumKit activeHit={{ instrument: 'hihat_closed', hitToken: 'a' }} />)
+    const { container: closed } = render(<DrumKit activeHits={{ hihat_closed: 'a' }} />)
     expect(closed.querySelector('[data-instrument="hihat"]')).toHaveClass('hit')
 
-    const { container: open } = render(<DrumKit activeHit={{ instrument: 'hihat_open', hitToken: 'b' }} />)
+    const { container: open } = render(<DrumKit activeHits={{ hihat_open: 'b' }} />)
     expect(open.querySelector('[data-instrument="hihat"]')).toHaveClass('hit')
   })
 
   it('marks cymbal pieces (ride/crash/hihat) with the extra cymbal class', () => {
-    const { container } = render(<DrumKit activeHit={{ instrument: 'crash', hitToken: 'a' }} />)
+    const { container } = render(<DrumKit activeHits={{ crash: 'a' }} />)
     const crash = container.querySelector('[data-instrument="crash"]')
     expect(crash).toHaveClass('cymbal')
     expect(crash).toHaveClass('hit')
@@ -36,14 +36,21 @@ describe('DrumKit', () => {
   })
 
   it('remounts the active piece when a new hitToken arrives for the same instrument', () => {
-    const { container, rerender } = render(<DrumKit activeHit={{ instrument: 'kick', hitToken: 'first' }} />)
+    const { container, rerender } = render(<DrumKit activeHits={{ kick: 'first' }} />)
     const firstElement = container.querySelector('[data-instrument="kick"]')
 
-    rerender(<DrumKit activeHit={{ instrument: 'kick', hitToken: 'second' }} />)
+    rerender(<DrumKit activeHits={{ kick: 'second' }} />)
     const secondElement = container.querySelector('[data-instrument="kick"]')
 
     expect(secondElement).not.toBe(firstElement)
     expect(secondElement).toHaveClass('hit')
+  })
+
+  it('applies the hit class to two different instruments hit at the same time, without either overwriting the other', () => {
+    const { container } = render(<DrumKit activeHits={{ kick: 'a', snare: 'b' }} />)
+    expect(container.querySelector('[data-instrument="kick"]')).toHaveClass('hit')
+    expect(container.querySelector('[data-instrument="snare"]')).toHaveClass('hit')
+    expect(container.querySelector('[data-instrument="ride"]')).not.toHaveClass('hit')
   })
 
   it('renders a real product photo for every piece', () => {

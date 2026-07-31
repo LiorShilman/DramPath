@@ -63,11 +63,15 @@ const PIECE_ALT: Record<DrumPiece, string> = {
 }
 
 export interface DrumKitProps {
-  /** A new hitToken per hit (e.g. crypto.randomUUID()) forces the piece to
+  /** Keyed by instrument so two different instruments hit at (near-)the
+   * same time both get their own entry instead of one overwriting the
+   * other — a single `activeHit` value could only ever highlight one
+   * piece, which made simultaneous hits look like only one registered.
+   * A new hitToken per hit (e.g. crypto.randomUUID()) forces the piece to
    * remount so its CSS hit-animation restarts even on rapid repeated hits
    * of the same instrument — a class toggle alone can't restart an
    * animation that's already applied. */
-  activeHit?: { instrument: DrumInstrument; hitToken: string }
+  activeHits?: Partial<Record<DrumInstrument, string>>
 }
 
 /** Real product photos (public/drum-kit/) laid out as a kit collage —
@@ -77,17 +81,23 @@ export interface DrumKitProps {
  * Key letters are shown in the pinned bottom `KeyboardGuide` bar instead of
  * on the pieces themselves — badges layered on the photos were reported as
  * hurting the kit's look. */
-export function DrumKit({ activeHit }: DrumKitProps) {
-  const activePiece = activeHit ? INSTRUMENT_TO_PIECE[activeHit.instrument] : undefined
+export function DrumKit({ activeHits }: DrumKitProps) {
+  const pieceTokens: Partial<Record<DrumPiece, string>> = {}
+  if (activeHits) {
+    for (const [instrument, token] of Object.entries(activeHits) as [DrumInstrument, string | undefined][]) {
+      if (token) pieceTokens[INSTRUMENT_TO_PIECE[instrument]] = token
+    }
+  }
 
   return (
     <div className="relative aspect-[4/3] w-full">
       {(Object.keys(PIECE_LAYOUT) as DrumPiece[]).map((piece) => {
-        const isActive = activePiece === piece
+        const token = pieceTokens[piece]
+        const isActive = token !== undefined
         const className = `drum-piece${CYMBAL_PIECES.has(piece) ? ' cymbal' : ''}${isActive ? ' hit' : ''}`
         return (
           <div
-            key={isActive && activeHit ? activeHit.hitToken : `${piece}-idle`}
+            key={isActive ? token : `${piece}-idle`}
             data-instrument={piece}
             className={className}
             style={{ position: 'absolute', ...PIECE_LAYOUT[piece] }}

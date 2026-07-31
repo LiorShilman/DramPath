@@ -3,19 +3,16 @@ import { useKeyboardDrums } from './useKeyboardDrums'
 import { playDrumSound } from '../lib/visual-trainer/drum-synth'
 import type { DrumInstrument } from '../domain'
 
-export interface ActiveHit {
-  instrument: DrumInstrument
-  hitToken: string
-}
-
 /** Free (ungraded) keyboard drum playback — no exercise timeline, just
  * "press a mapped key, hear the matching drum, see the kit react." Used by
  * the free notation-practice mode, where the notes come from a photo the
- * player is reading, not a scored DrumNoteEvent[]. */
-export function useFreeDrumPlayback(): { activeHit: ActiveHit | undefined } {
+ * player is reading, not a scored DrumNoteEvent[]. Keyed by instrument
+ * (not a single value) so two instruments hit at (near-)the same time both
+ * get their own entry instead of one overwriting the other. */
+export function useFreeDrumPlayback(): { activeHits: Partial<Record<DrumInstrument, string>> } {
   const audioContextRef = useRef<AudioContext | null>(null)
   const outputNodeRef = useRef<GainNode | null>(null)
-  const [activeHit, setActiveHit] = useState<ActiveHit | undefined>(undefined)
+  const [activeHits, setActiveHits] = useState<Partial<Record<DrumInstrument, string>>>({})
 
   useEffect(() => {
     return () => {
@@ -32,9 +29,9 @@ export function useFreeDrumPlayback(): { activeHit: ActiveHit | undefined } {
       }
       void audioContextRef.current.resume()
       playDrumSound(audioContextRef.current, outputNodeRef.current!, audioContextRef.current.currentTime, instrument, 100)
-      setActiveHit({ instrument, hitToken: crypto.randomUUID() })
+      setActiveHits((prev) => ({ ...prev, [instrument]: crypto.randomUUID() }))
     },
   })
 
-  return { activeHit }
+  return { activeHits }
 }
