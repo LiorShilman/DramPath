@@ -123,8 +123,11 @@ describe('DrumPathDatabase', () => {
     await upgraded.open()
 
     const exercises = await upgraded.interactiveExercises.toArray()
-    expect(exercises).toHaveLength(1)
-    expect(exercises[0]?.loopCount).toBe(1)
+    // The v7 migration (separately tested below) also runs here and adds
+    // its own groove exercise — this test only cares about the original
+    // builder-made exercise's loopCount surviving the v4→v5 upgrade.
+    const originalExercise = exercises.find((exercise) => exercise.title === 'תרגיל ישן')
+    expect(originalExercise?.loopCount).toBe(1)
 
     upgraded.close()
     await Dexie.delete(dbName)
@@ -189,6 +192,242 @@ describe('DrumPathDatabase', () => {
     expect(lesson31?.title).toBe('זיהוי מקצבים בשירים ונגינה איתם')
     expect(lesson32?.title).toBe('סיכום הקורס')
     expect(lesson31?.status).toBe('not_started')
+
+    upgraded.close()
+    await Dexie.delete(dbName)
+  })
+
+  it('inserts the "האהבה שלי" groove exercise once, as a real editable interactiveExercise', async () => {
+    const dbName = `drumpath-test-migration-${createId()}`
+
+    // Simulate an existing install that predates version 7 — an empty
+    // interactiveExercises table, same as any real pre-v7 database.
+    const legacyDb = new Dexie(dbName)
+    legacyDb.version(6).stores({
+      interactiveExercises: 'id, difficulty, updatedAt',
+    })
+    await legacyDb.open()
+    legacyDb.close()
+
+    const upgraded = new DrumPathDatabase(dbName)
+    await upgraded.open()
+
+    const exercises = await upgraded.interactiveExercises.toArray()
+    const groove = exercises.find((exercise) => exercise.title === 'האהבה שלי היא לא האהבה שלו — גרוב ראשי')
+    expect(groove).toBeDefined()
+    expect(groove?.difficulty).toBe('intermediate')
+    expect(groove?.bpm).toBe(145)
+    expect(groove?.subdivision).toBe('eighth')
+    expect(groove?.bars).toBe(4)
+    expect(groove?.loopCount).toBe(1)
+    // 4 bars × (8 hi-hat + kick on 1, 2& and 3 + snare on 2 and 4).
+    expect(groove?.events).toHaveLength(4 * 13)
+    expect(groove?.events.filter((event) => event.instrument === 'kick')).toHaveLength(12)
+    expect(groove?.events.filter((event) => event.instrument === 'snare')).toHaveLength(8)
+    const barOneKicks = groove?.events.filter((event) => event.bar === 1 && event.instrument === 'kick')
+    expect(barOneKicks?.map((event) => `${event.beat}.${event.subdivisionIndex}`).sort()).toEqual([
+      '1.0',
+      '2.1',
+      '3.0',
+    ])
+    const barOneSnare = groove?.events.filter((event) => event.bar === 1 && event.instrument === 'snare')
+    expect(barOneSnare?.map((event) => `${event.beat}.${event.subdivisionIndex}`).sort()).toEqual(['2.0', '4.0'])
+
+    upgraded.close()
+
+    // Reopening the same (now-current-version) database must not insert a
+    // second copy — the upgrade only runs once, on the version transition.
+    const reopened = new DrumPathDatabase(dbName)
+    await reopened.open()
+    const reopenedExercises = await reopened.interactiveExercises.toArray()
+    expect(reopenedExercises.filter((exercise) => exercise.title === groove?.title)).toHaveLength(1)
+
+    reopened.close()
+    await Dexie.delete(dbName)
+  })
+
+  it('corrects the "האהבה שלי" groove for a database that already has v7\'s wrong on-beat pattern', async () => {
+    const dbName = `drumpath-test-migration-${createId()}`
+    const title = 'האהבה שלי היא לא האהבה שלו — גרוב ראשי'
+
+    // Simulate a database that already ran version 7 with the original
+    // (wrong) transcription — kick squarely on beat 1, not on the "and".
+    const legacyDb = new Dexie(dbName)
+    legacyDb.version(7).stores({
+      interactiveExercises: 'id, difficulty, updatedAt',
+    })
+    await legacyDb.open()
+    await legacyDb.table('interactiveExercises').add({
+      id: createId(),
+      title,
+      difficulty: 'intermediate',
+      bpm: 145,
+      minBpm: 115,
+      maxBpm: 195,
+      timeSignature: { numerator: 4, denominator: 4 },
+      subdivision: 'eighth',
+      bars: 4,
+      loopCount: 1,
+      displayMode: 'note_highway',
+      events: [{ id: createId(), bar: 1, beat: 1, subdivisionIndex: 0, instrument: 'kick', velocity: 110 }],
+      createdAt: nowIso(),
+      updatedAt: nowIso(),
+    })
+    legacyDb.close()
+
+    const upgraded = new DrumPathDatabase(dbName)
+    await upgraded.open()
+
+    const exercises = await upgraded.interactiveExercises.toArray()
+    const groove = exercises.find((exercise) => exercise.title === title)
+    expect(groove?.events.filter((event) => event.instrument === 'kick')).toHaveLength(12)
+    const barOneKicks = groove?.events.filter((event) => event.bar === 1 && event.instrument === 'kick')
+    expect(barOneKicks?.map((event) => `${event.beat}.${event.subdivisionIndex}`).sort()).toEqual([
+      '1.0',
+      '2.1',
+      '3.0',
+    ])
+
+    upgraded.close()
+    await Dexie.delete(dbName)
+  })
+
+  it('replaces every copy of the "האהבה שלי" groove with one fresh record, leaving other exercises untouched', async () => {
+    const dbName = `drumpath-test-migration-${createId()}`
+    const title = 'האהבה שלי היא לא האהבה שלו — גרוב ראשי'
+
+    const legacyDb = new Dexie(dbName)
+    legacyDb.version(8).stores({
+      interactiveExercises: 'id, difficulty, updatedAt',
+    })
+    await legacyDb.open()
+    const oldIdOne = createId()
+    const oldIdTwo = createId()
+    const unrelatedId = createId()
+    await legacyDb.table('interactiveExercises').bulkAdd([
+      {
+        id: oldIdOne,
+        title,
+        difficulty: 'intermediate',
+        bpm: 145,
+        minBpm: 115,
+        maxBpm: 195,
+        timeSignature: { numerator: 4, denominator: 4 },
+        subdivision: 'eighth',
+        bars: 4,
+        loopCount: 1,
+        displayMode: 'note_highway',
+        events: [],
+        createdAt: nowIso(),
+        updatedAt: nowIso(),
+      },
+      {
+        // A stray duplicate that could have accumulated from the earlier
+        // back-and-forth — the migration should remove this one too.
+        id: oldIdTwo,
+        title,
+        difficulty: 'intermediate',
+        bpm: 145,
+        minBpm: 115,
+        maxBpm: 195,
+        timeSignature: { numerator: 4, denominator: 4 },
+        subdivision: 'eighth',
+        bars: 4,
+        loopCount: 1,
+        displayMode: 'note_highway',
+        events: [],
+        createdAt: nowIso(),
+        updatedAt: nowIso(),
+      },
+      {
+        // A completely unrelated user-created exercise (e.g. "שיעור 16")
+        // that must survive untouched.
+        id: unrelatedId,
+        title: 'שיעור 16',
+        difficulty: 'beginner',
+        bpm: 60,
+        minBpm: 40,
+        maxBpm: 110,
+        timeSignature: { numerator: 4, denominator: 4 },
+        subdivision: 'quarter',
+        bars: 1,
+        loopCount: 1,
+        displayMode: 'note_highway',
+        events: [],
+        createdAt: nowIso(),
+        updatedAt: nowIso(),
+      },
+    ])
+    legacyDb.close()
+
+    const upgraded = new DrumPathDatabase(dbName)
+    await upgraded.open()
+
+    const exercises = await upgraded.interactiveExercises.toArray()
+    const grooveCopies = exercises.filter((exercise) => exercise.title === title)
+    expect(grooveCopies).toHaveLength(1)
+    expect(grooveCopies[0]?.id).not.toBe(oldIdOne)
+    expect(grooveCopies[0]?.id).not.toBe(oldIdTwo)
+    const barOneKicks = grooveCopies[0]?.events.filter((event) => event.bar === 1 && event.instrument === 'kick')
+    expect(barOneKicks?.map((event) => `${event.beat}.${event.subdivisionIndex}`).sort()).toEqual([
+      '1.0',
+      '2.1',
+      '3.0',
+    ])
+
+    const unrelated = exercises.find((exercise) => exercise.id === unrelatedId)
+    expect(unrelated?.title).toBe('שיעור 16')
+    expect(unrelated?.bpm).toBe(60)
+
+    upgraded.close()
+    await Dexie.delete(dbName)
+  })
+
+  it('corrects the "האהבה שלי" groove to the final on/off-beat mixed pattern for a database still on v9\'s off-beat-only version', async () => {
+    const dbName = `drumpath-test-migration-${createId()}`
+    const title = 'האהבה שלי היא לא האהבה שלו — גרוב ראשי'
+
+    const legacyDb = new Dexie(dbName)
+    legacyDb.version(9).stores({
+      interactiveExercises: 'id, difficulty, updatedAt',
+    })
+    await legacyDb.open()
+    await legacyDb.table('interactiveExercises').add({
+      id: createId(),
+      title,
+      difficulty: 'intermediate',
+      bpm: 145,
+      minBpm: 115,
+      maxBpm: 195,
+      timeSignature: { numerator: 4, denominator: 4 },
+      subdivision: 'eighth',
+      bars: 4,
+      loopCount: 1,
+      displayMode: 'note_highway',
+      // v9's (still wrong) off-beat-only pattern.
+      events: [
+        { id: createId(), bar: 1, beat: 1, subdivisionIndex: 1, instrument: 'kick', velocity: 110 },
+        { id: createId(), bar: 1, beat: 3, subdivisionIndex: 1, instrument: 'snare', velocity: 110 },
+        { id: createId(), bar: 1, beat: 4, subdivisionIndex: 1, instrument: 'kick', velocity: 105 },
+      ],
+      createdAt: nowIso(),
+      updatedAt: nowIso(),
+    })
+    legacyDb.close()
+
+    const upgraded = new DrumPathDatabase(dbName)
+    await upgraded.open()
+
+    const exercises = await upgraded.interactiveExercises.toArray()
+    const groove = exercises.find((exercise) => exercise.title === title)
+    const barOneKicks = groove?.events.filter((event) => event.bar === 1 && event.instrument === 'kick')
+    expect(barOneKicks?.map((event) => `${event.beat}.${event.subdivisionIndex}`).sort()).toEqual([
+      '1.0',
+      '2.1',
+      '3.0',
+    ])
+    const barOneSnare = groove?.events.filter((event) => event.bar === 1 && event.instrument === 'snare')
+    expect(barOneSnare?.map((event) => `${event.beat}.${event.subdivisionIndex}`).sort()).toEqual(['2.0', '4.0'])
 
     upgraded.close()
     await Dexie.delete(dbName)

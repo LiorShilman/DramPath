@@ -12,6 +12,7 @@ import type { UserSettings } from '../../domain/user-settings'
 import type { NotationPracticeState } from '../../domain/notation-practice-state'
 import type { InteractiveExercise } from '../../domain/interactive-exercise'
 import { buildLessonSeed } from '../seed/course-seed'
+import { buildInteractiveExerciseSeed } from '../seed/interactive-exercise-seed'
 
 // ADR 0003: lessonExercises is a derived join table maintained by
 // lesson-repository, alongside Lesson.exerciseIds (source of truth).
@@ -167,6 +168,117 @@ export class DrumPathDatabase extends Dexie {
               createdAt: now,
               updatedAt: now,
             })
+          }
+        }
+      })
+
+    // A real, editable practice exercise (not a hardcoded DEMO_EXERCISES
+    // entry, which has no edit path through the UI) — see
+    // interactive-exercise-seed.ts for the content and its source. Also
+    // used by seed-runner.ts for fresh installs; reused here (rather than
+    // duplicated) so this migration can't drift from that seed. Keyed by
+    // title for idempotency — Dexie only runs this once per database
+    // anyway, but this guards against ever re-inserting a duplicate if the
+    // migration is revisited.
+    this.version(7)
+      .stores({
+        ...storesV1,
+        notationPracticeState: 'id',
+        interactiveExercises: 'id, difficulty, updatedAt',
+      })
+      .upgrade(async (tx) => {
+        const seedExercises = buildInteractiveExerciseSeed()
+        const existingExercises = await tx.table('interactiveExercises').toArray()
+        const now = new Date().toISOString()
+
+        for (const seedExercise of seedExercises) {
+          if (existingExercises.some((exercise) => exercise.title === seedExercise.title)) continue
+          await tx.table('interactiveExercises').add({
+            id: crypto.randomUUID(),
+            ...seedExercise,
+            createdAt: now,
+            updatedAt: now,
+          })
+        }
+      })
+
+    // Version 7's first transcription of the groove had the kick/snare
+    // landing squarely on the beat — wrong; re-reading the source chart
+    // with the user showed the noteheads sit to the right of their hi-hat
+    // column, i.e. on the "and". interactive-exercise-seed.ts's events are
+    // now corrected; this replaces the events on the specific exercise v7
+    // already inserted (matched by title) rather than waiting for a fresh
+    // install that will never happen for an existing database.
+    this.version(8)
+      .stores({
+        ...storesV1,
+        notationPracticeState: 'id',
+        interactiveExercises: 'id, difficulty, updatedAt',
+      })
+      .upgrade(async (tx) => {
+        const seedExercises = buildInteractiveExerciseSeed()
+        for (const seedExercise of seedExercises) {
+          const existing = await tx
+            .table('interactiveExercises')
+            .filter((exercise) => exercise.title === seedExercise.title)
+            .first()
+          if (existing) {
+            await tx.table('interactiveExercises').update(existing.id, { events: seedExercise.events })
+          }
+        }
+      })
+
+    // The user asked for a clean slate on this specific exercise after a
+    // long back-and-forth verifying it (the underlying data was already
+    // confirmed correct three independent ways — this isn't a data fix, it
+    // removes any doubt by deleting every copy (in case duplicates ever
+    // accumulated) and inserting one fresh record with a new id.
+    this.version(9)
+      .stores({
+        ...storesV1,
+        notationPracticeState: 'id',
+        interactiveExercises: 'id, difficulty, updatedAt',
+      })
+      .upgrade(async (tx) => {
+        const seedExercises = buildInteractiveExerciseSeed()
+        const now = new Date().toISOString()
+
+        for (const seedExercise of seedExercises) {
+          await tx
+            .table('interactiveExercises')
+            .filter((exercise) => exercise.title === seedExercise.title)
+            .delete()
+          await tx.table('interactiveExercises').add({
+            id: crypto.randomUUID(),
+            ...seedExercise,
+            createdAt: now,
+            updatedAt: now,
+          })
+        }
+      })
+
+    // The pattern confirmed at v8/v9 (hits only on off-beats) was still
+    // wrong — after enumerating all 8 eighth-note slots explicitly with the
+    // user, the real pattern mixes on-beat and off-beat hits (kick on beat
+    // 1, snare on beat 2, kick on the "and" of beat 2, kick on beat 3,
+    // snare on beat 4). interactive-exercise-seed.ts's events are now
+    // final; this replaces the events on the exercise (matched by title)
+    // one more time.
+    this.version(10)
+      .stores({
+        ...storesV1,
+        notationPracticeState: 'id',
+        interactiveExercises: 'id, difficulty, updatedAt',
+      })
+      .upgrade(async (tx) => {
+        const seedExercises = buildInteractiveExerciseSeed()
+        for (const seedExercise of seedExercises) {
+          const existing = await tx
+            .table('interactiveExercises')
+            .filter((exercise) => exercise.title === seedExercise.title)
+            .first()
+          if (existing) {
+            await tx.table('interactiveExercises').update(existing.id, { events: seedExercise.events })
           }
         }
       })

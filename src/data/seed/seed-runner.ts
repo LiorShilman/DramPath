@@ -5,10 +5,12 @@ import {
   lessonRepository,
   exerciseRepository,
   songRepository,
+  interactiveExerciseRepository,
 } from '../repositories'
 import { buildWeekSeed, buildLessonSeed } from './course-seed'
 import { buildExerciseSeed } from './exercise-seed'
 import { buildSongSeed } from './song-seed'
+import { buildInteractiveExerciseSeed } from './interactive-exercise-seed'
 
 export interface SeedResult {
   seeded: boolean
@@ -60,6 +62,10 @@ export async function runSeedIfNeeded(): Promise<SeedResult> {
 
   for (const songInput of buildSongSeed()) {
     await songRepository.create(songInput)
+  }
+
+  for (const interactiveExerciseInput of buildInteractiveExerciseSeed()) {
+    await interactiveExerciseRepository.create(interactiveExerciseInput)
   }
 
   return { seeded: true }
