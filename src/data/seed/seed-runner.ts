@@ -44,6 +44,7 @@ export async function runSeedIfNeeded(): Promise<SeedResult> {
     await lessonRepository.create({
       order: lessonInput.order,
       title: lessonInput.title,
+      description: lessonInput.description,
       weekId,
       category: lessonInput.category,
       status: lessonInput.status,

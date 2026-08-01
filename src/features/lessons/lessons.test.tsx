@@ -34,7 +34,7 @@ describe('LessonsListPage', () => {
     await runSeedIfNeeded()
     renderList()
 
-    expect(await screen.findByText(/שיעור 1 —/)).toBeInTheDocument()
+    expect(await screen.findByText(/מתחילים ממש בהתחלה/)).toBeInTheDocument()
     const initialCount = (await db.lessons.count())
 
     const user = userEvent.setup()
@@ -71,7 +71,7 @@ describe('LessonsListPage', () => {
   it('creates a new lesson via the repository', async () => {
     await runSeedIfNeeded()
     renderList()
-    await screen.findByText(/שיעור 1 —/)
+    await screen.findByText(/מתחילים ממש בהתחלה/)
 
     const before = await db.lessons.count()
     const user = userEvent.setup()
@@ -85,7 +85,7 @@ describe('LessonsListPage', () => {
   it('duplicates a lesson', async () => {
     await runSeedIfNeeded()
     renderList()
-    await screen.findByText(/שיעור 1 —/)
+    await screen.findByText(/מתחילים ממש בהתחלה/)
 
     const before = await db.lessons.count()
     const user = userEvent.setup()
@@ -103,7 +103,7 @@ describe('LessonsListPage', () => {
   it('deletes a lesson after confirming', async () => {
     await runSeedIfNeeded()
     renderList()
-    await screen.findByText(/שיעור 1 —/)
+    await screen.findByText(/מתחילים ממש בהתחלה/)
 
     const before = await db.lessons.count()
     const user = userEvent.setup()

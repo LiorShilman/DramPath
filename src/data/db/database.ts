@@ -11,6 +11,7 @@ import type { Achievement } from '../../domain/achievement'
 import type { UserSettings } from '../../domain/user-settings'
 import type { NotationPracticeState } from '../../domain/notation-practice-state'
 import type { InteractiveExercise } from '../../domain/interactive-exercise'
+import { buildLessonSeed } from '../seed/course-seed'
 
 // ADR 0003: lessonExercises is a derived join table maintained by
 // lesson-repository, alongside Lesson.exerciseIds (source of truth).
@@ -120,6 +121,54 @@ export class DrumPathDatabase extends Dexie {
           .modify((exercise) => {
             exercise.loopCount = 1
           })
+      })
+
+    // The course's 30 lessons were always structural placeholders
+    // (course-seed.ts's WEEK_PLAN generated titles like "שיעור 12 — ...",
+    // no real description) — the real curriculum has 32 lessons, each with
+    // a real title/description. buildLessonSeed() is the single source of
+    // truth for that content (also used by seed-runner.ts for fresh
+    // installs), reused here so this migration can't drift from it. Only
+    // title/description are overwritten on lessons that already exist —
+    // status/notes/tags/resourceIds/exerciseIds/weekId are live user state
+    // and must survive untouched. Lessons 31/32 are new to every existing
+    // install, so those get inserted in full.
+    this.version(6)
+      .stores({
+        ...storesV1,
+        notationPracticeState: 'id',
+        interactiveExercises: 'id, difficulty, updatedAt',
+      })
+      .upgrade(async (tx) => {
+        const seedLessons = buildLessonSeed()
+        const weeks = await tx.table('weeks').toArray()
+        const weekIdByOrder = new Map(weeks.map((week) => [week.order, week.id]))
+        const now = new Date().toISOString()
+
+        for (const seedLesson of seedLessons) {
+          const existing = await tx.table('lessons').where('order').equals(seedLesson.order).first()
+          if (existing) {
+            await tx.table('lessons').update(existing.id, {
+              title: seedLesson.title,
+              description: seedLesson.description,
+            })
+          } else {
+            await tx.table('lessons').add({
+              id: crypto.randomUUID(),
+              order: seedLesson.order,
+              title: seedLesson.title,
+              description: seedLesson.description,
+              weekId: weekIdByOrder.get(seedLesson.weekOrder),
+              category: seedLesson.category,
+              status: seedLesson.status,
+              resourceIds: seedLesson.resourceIds,
+              exerciseIds: seedLesson.exerciseIds,
+              tags: seedLesson.tags,
+              createdAt: now,
+              updatedAt: now,
+            })
+          }
+        }
       })
   }
 }

@@ -82,8 +82,11 @@ describe('DrumPathDatabase', () => {
 
     const lessons = await upgraded.lessons.toArray()
     const exercises = await upgraded.exercises.toArray()
-    expect(lessons).toHaveLength(1)
-    expect(lessons[0]?.tags).toEqual([])
+    // The v6 migration (separately tested below) also runs here and
+    // backfills the other 31 lessons it doesn't find yet — this test only
+    // cares about the original lesson's tags surviving the v1→v2 upgrade.
+    const originalLesson = lessons.find((lesson) => lesson.order === 1)
+    expect(originalLesson?.tags).toEqual([])
     expect(exercises[0]?.tags).toEqual([])
 
     upgraded.close()
@@ -122,6 +125,70 @@ describe('DrumPathDatabase', () => {
     const exercises = await upgraded.interactiveExercises.toArray()
     expect(exercises).toHaveLength(1)
     expect(exercises[0]?.loopCount).toBe(1)
+
+    upgraded.close()
+    await Dexie.delete(dbName)
+  })
+
+  it('replaces placeholder lesson content with the real curriculum while preserving user state, and adds lessons 31/32', async () => {
+    const dbName = `drumpath-test-migration-${createId()}`
+
+    const legacyDb = new Dexie(dbName)
+    legacyDb.version(5).stores({
+      weeks: 'id, coursePlanId, order, status',
+      lessons: 'id, weekId, order, category, status, updatedAt',
+    })
+    await legacyDb.open()
+    const weekId = createId()
+    await legacyDb.table('weeks').add({
+      id: weekId,
+      coursePlanId: createId(),
+      order: 2,
+      title: 'שבוע 2',
+      focus: 'טכניקה עם מטרונום',
+      status: 'active',
+      createdAt: nowIso(),
+      updatedAt: nowIso(),
+    })
+    // Lesson 5 falls in week 2's range per WEEK_PLAN — pre-migration it only
+    // has the old auto-generated placeholder title and no description, plus
+    // real user state (status/notes/tags) that the migration must not touch.
+    await legacyDb.table('lessons').add({
+      id: createId(),
+      order: 5,
+      title: 'שיעור 5 — טכניקה עם מטרונום',
+      weekId,
+      category: 'technique',
+      status: 'completed',
+      resourceIds: [],
+      exerciseIds: [],
+      tags: ['technique', 'שלי'],
+      notes: 'הערה אישית שלי',
+      createdAt: nowIso(),
+      updatedAt: nowIso(),
+    })
+    legacyDb.close()
+
+    const upgraded = new DrumPathDatabase(dbName)
+    await upgraded.open()
+
+    const lessons = await upgraded.lessons.toArray()
+    const lessonFive = lessons.find((lesson) => lesson.order === 5)
+    expect(lessonFive?.title).toBe('טכניקה ברגל על פדל הבס')
+    expect(lessonFive?.description).toBe(
+      'שתי שיטות לנגינה מהירה, נוחה ויעילה על תוף הבס, לשיפור שליטה וקצב ברגל.',
+    )
+    // Untouched user state.
+    expect(lessonFive?.status).toBe('completed')
+    expect(lessonFive?.notes).toBe('הערה אישית שלי')
+    expect(lessonFive?.tags).toEqual(['technique', 'שלי'])
+    expect(lessonFive?.weekId).toBe(weekId)
+
+    const lesson31 = lessons.find((lesson) => lesson.order === 31)
+    const lesson32 = lessons.find((lesson) => lesson.order === 32)
+    expect(lesson31?.title).toBe('זיהוי מקצבים בשירים ונגינה איתם')
+    expect(lesson32?.title).toBe('סיכום הקורס')
+    expect(lesson31?.status).toBe('not_started')
 
     upgraded.close()
     await Dexie.delete(dbName)

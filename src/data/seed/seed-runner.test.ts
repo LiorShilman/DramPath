@@ -9,7 +9,7 @@ describe('runSeedIfNeeded', () => {
 
     expect(await db.coursePlans.count()).toBe(1)
     expect(await db.weeks.count()).toBe(12)
-    expect(await db.lessons.count()).toBe(30)
+    expect(await db.lessons.count()).toBe(32)
     expect(await db.exercises.count()).toBe(65)
     expect(await db.songs.count()).toBe(7)
 
@@ -23,6 +23,6 @@ describe('runSeedIfNeeded', () => {
 
     expect(await db.coursePlans.count()).toBe(1)
     expect(await db.weeks.count()).toBe(12)
-    expect(await db.lessons.count()).toBe(30)
+    expect(await db.lessons.count()).toBe(32)
   })
 })
