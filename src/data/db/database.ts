@@ -282,5 +282,30 @@ export class DrumPathDatabase extends Dexie {
           }
         }
       })
+
+    // New second exercise — "מילה טובה — Intro/A/B" — added to
+    // interactive-exercise-seed.ts. Same insert-if-missing pattern as v7;
+    // doesn't touch the already-correct "האהבה שלי" exercise.
+    this.version(11)
+      .stores({
+        ...storesV1,
+        notationPracticeState: 'id',
+        interactiveExercises: 'id, difficulty, updatedAt',
+      })
+      .upgrade(async (tx) => {
+        const seedExercises = buildInteractiveExerciseSeed()
+        const existingExercises = await tx.table('interactiveExercises').toArray()
+        const now = new Date().toISOString()
+
+        for (const seedExercise of seedExercises) {
+          if (existingExercises.some((exercise) => exercise.title === seedExercise.title)) continue
+          await tx.table('interactiveExercises').add({
+            id: crypto.randomUUID(),
+            ...seedExercise,
+            createdAt: now,
+            updatedAt: now,
+          })
+        }
+      })
   }
 }

@@ -432,4 +432,57 @@ describe('DrumPathDatabase', () => {
     upgraded.close()
     await Dexie.delete(dbName)
   })
+
+  it('inserts the "מילה טובה" Intro/A/B exercise for an existing database, without touching "האהבה שלי"', async () => {
+    const dbName = `drumpath-test-migration-${createId()}`
+    const ahavaSheliTitle = 'האהבה שלי היא לא האהבה שלו — גרוב ראשי'
+
+    const legacyDb = new Dexie(dbName)
+    legacyDb.version(10).stores({
+      interactiveExercises: 'id, difficulty, updatedAt',
+    })
+    await legacyDb.open()
+    const ahavaSheliId = createId()
+    await legacyDb.table('interactiveExercises').add({
+      id: ahavaSheliId,
+      title: ahavaSheliTitle,
+      difficulty: 'intermediate',
+      bpm: 145,
+      minBpm: 115,
+      maxBpm: 195,
+      timeSignature: { numerator: 4, denominator: 4 },
+      subdivision: 'eighth',
+      bars: 4,
+      loopCount: 1,
+      displayMode: 'note_highway',
+      events: [],
+      createdAt: nowIso(),
+      updatedAt: nowIso(),
+    })
+    legacyDb.close()
+
+    const upgraded = new DrumPathDatabase(dbName)
+    await upgraded.open()
+
+    const exercises = await upgraded.interactiveExercises.toArray()
+    expect(exercises).toHaveLength(2)
+
+    const ahavaSheli = exercises.find((exercise) => exercise.id === ahavaSheliId)
+    expect(ahavaSheli?.title).toBe(ahavaSheliTitle)
+    expect(ahavaSheli?.events).toEqual([])
+
+    const milaTova = exercises.find((exercise) => exercise.title === 'מילה טובה — Intro/A/B')
+    expect(milaTova).toBeDefined()
+    expect(milaTova?.bars).toBe(12)
+    expect(milaTova?.subdivision).toBe('quarter')
+    const bar1Kicks = milaTova?.events.filter((event) => event.bar === 1 && event.instrument === 'kick')
+    expect(bar1Kicks).toHaveLength(0)
+    const bar6Kicks = milaTova?.events.filter((event) => event.bar === 6 && event.instrument === 'kick')
+    expect(bar6Kicks?.map((event) => event.beat).sort()).toEqual([2, 4])
+    const bar10Kicks = milaTova?.events.filter((event) => event.bar === 10 && event.instrument === 'kick')
+    expect(bar10Kicks?.map((event) => event.beat).sort()).toEqual([1, 3])
+
+    upgraded.close()
+    await Dexie.delete(dbName)
+  })
 })

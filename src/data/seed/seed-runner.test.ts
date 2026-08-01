@@ -12,7 +12,7 @@ describe('runSeedIfNeeded', () => {
     expect(await db.lessons.count()).toBe(32)
     expect(await db.exercises.count()).toBe(65)
     expect(await db.songs.count()).toBe(7)
-    expect(await db.interactiveExercises.count()).toBe(1)
+    expect(await db.interactiveExercises.count()).toBe(2)
 
     const week1 = await db.weeks.where('order').equals(1).first()
     expect(week1?.status).toBe('active')
