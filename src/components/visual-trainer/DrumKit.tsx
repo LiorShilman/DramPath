@@ -27,8 +27,14 @@ const CYMBAL_PIECES: ReadonlySet<DrumPiece> = new Set(['ride', 'crash', 'hihat']
 // Front-facing kit shape, tightly grouped like an assembled kit rather than
 // scattered pieces: crash/ride angled at the top corners bookending the two
 // mounted toms (touching each other, directly above the kick), hihat stand
-// at the player's far left, snare/kick/floor-tom overlapping into one front
-// row with the kick largest and centered.
+// at the player's far left, snare/kick in the front row with the kick
+// largest and centered. tom_floor sits further back and to the right
+// (lower top%, higher left% than a naive "same row as kick" placement) —
+// pulled back explicitly per user feedback, since kick and tom_floor
+// overlapping heavily in the same row made kick's rounded edge look like it
+// was cutting into tom_floor's silhouette (DOM/paint order already has
+// tom_floor on top — see the isActive doc comment on DrumKitProps — this
+// was a spacing issue, not a stacking one).
 const PIECE_LAYOUT: Record<DrumPiece, CSSProperties> = {
   crash: { top: '0%', left: '9%', width: '40%' },
   tom_high: { top: '16%', left: '34%', width: '28%' },
@@ -37,7 +43,7 @@ const PIECE_LAYOUT: Record<DrumPiece, CSSProperties> = {
   hihat: { top: '20%', left: '-4%', width: '28%' },
   snare: { top: '34%', left: '12%', width: '32%' },
   kick: { top: '34%', left: '26%', width: '50%' },
-  tom_floor: { top: '34%', left: '55%', width: '38%' },
+  tom_floor: { top: '26%', left: '60%', width: '36%' },
 }
 
 const PIECE_IMAGE_SRC: Record<DrumPiece, string> = {
@@ -64,6 +70,15 @@ const HIT_IMAGE_SRC: Partial<Record<DrumPiece, string>> = {
   tom_high: '/drum-kit/tom-high-hit.png',
 }
 const HIT_FLASH_MS = 150
+
+// Every piece photo is a known fixed size (tom_floor is the only non-square
+// one) — pinning aspect-ratio means the browser reserves the right space
+// immediately, so a freshly-mounted <img> (every hit remounts its piece,
+// see DrumKitProps' isActive comment) can never visibly collapse/pop-in
+// while it decodes, on top of the actual pixel-alignment work below.
+const PIECE_ASPECT_RATIO: Partial<Record<DrumPiece, string>> = {
+  tom_floor: '320 / 480',
+}
 
 const PIECE_ALT: Record<DrumPiece, string> = {
   kick: 'בס דראם',
@@ -111,10 +126,32 @@ function PieceImage({ piece, isActive }: { piece: DrumPiece; isActive: boolean }
   }, [showHitImage])
 
   const src = showHitImage && hitImageSrc ? hitImageSrc : PIECE_IMAGE_SRC[piece]
-  return <img src={src} alt={PIECE_ALT[piece]} className="w-full drop-shadow-lg" />
+  const aspectRatio = PIECE_ASPECT_RATIO[piece]
+  return (
+    <img
+      src={src}
+      alt={PIECE_ALT[piece]}
+      className="w-full drop-shadow-lg"
+      style={aspectRatio ? { aspectRatio } : undefined}
+    />
+  )
 }
 
+// Every hit-image src, warmed into the browser's HTTP cache once on the
+// kit's first mount — a piece's hit image is otherwise only ever requested
+// lazily, the first time that piece is actually hit, which could show as a
+// blank/late-popping-in flash instead of an instant swap, independent of
+// how precisely the image itself is pixel-aligned to the idle photo.
+const HIT_IMAGE_SRCS = Object.values(HIT_IMAGE_SRC)
+
 export function DrumKit({ activeHits }: DrumKitProps) {
+  useEffect(() => {
+    for (const src of HIT_IMAGE_SRCS) {
+      const image = new Image()
+      image.src = src
+    }
+  }, [])
+
   const pieceTokens: Partial<Record<DrumPiece, string>> = {}
   if (activeHits) {
     for (const [instrument, token] of Object.entries(activeHits) as [DrumInstrument, string | undefined][]) {
@@ -128,10 +165,12 @@ export function DrumKit({ activeHits }: DrumKitProps) {
         const token = pieceTokens[piece]
         const isActive = token !== undefined
         // A piece with a HIT_IMAGE_SRC entry gets its feedback from
-        // PieceImage's blue-head image swap instead of the scale animation
-        // every other piece uses.
+        // PieceImage's blue-head image swap plus a lighter glow
+        // (image-hit), instead of the scale animation every other piece
+        // uses.
         const hasHitImage = HIT_IMAGE_SRC[piece] !== undefined
-        const className = `drum-piece${CYMBAL_PIECES.has(piece) ? ' cymbal' : ''}${isActive && !hasHitImage ? ' hit' : ''}`
+        const stateClass = isActive ? (hasHitImage ? ' image-hit' : ' hit') : ''
+        const className = `drum-piece${CYMBAL_PIECES.has(piece) ? ' cymbal' : ''}${stateClass}`
         return (
           <div
             key={isActive ? token : `${piece}-idle`}
@@ -140,6 +179,14 @@ export function DrumKit({ activeHits }: DrumKitProps) {
             style={{ position: 'absolute', ...PIECE_LAYOUT[piece] }}
           >
             <PieceImage piece={piece} isActive={isActive} />
+            {/* A CSS-drawn stick (index.css's .drumstick) rather than
+                another product photo: it's reusable across every piece with
+                one rule instead of needing a per-piece asset sourced and
+                pixel-aligned the way the hit-image photos were. Always
+                rendered — index.css only animates/shows it while the
+                parent has .hit or .image-hit, so it's invisible at rest.
+                Not rendered for kick, which is foot-pedal-operated. */}
+            {piece !== 'kick' && <div className="drumstick" aria-hidden="true" />}
           </div>
         )
       })}

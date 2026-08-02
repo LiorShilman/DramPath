@@ -72,6 +72,29 @@ input[type='radio'] {
   animation: cymbal-hit 400ms ease-out;
 }
 
+/* Pieces that swap to a real "hit" product photo (DrumKit.tsx's
+   HIT_IMAGE_SRC) get a lighter glow alongside the color swap — the color
+   change is already the primary signal there, so this is deliberately
+   weaker than cymbal-hit's (smaller blur radii, lower brightness boost)
+   rather than a matching duplicate. A single thin drop-shadow (the first
+   version here) turned out to be too weak to actually notice against these
+   photos, so this still layers two shadows like cymbal-hit, just smaller. */
+.drum-piece.image-hit {
+  animation: drum-glow 200ms ease-out;
+}
+
+@keyframes drum-glow {
+  0% {
+    filter: drop-shadow(0 0 0 transparent) drop-shadow(0 0 0 transparent) brightness(1);
+  }
+  30% {
+    filter: drop-shadow(0 0 6px var(--color-primary)) drop-shadow(0 0 16px var(--color-primary)) brightness(1.15);
+  }
+  100% {
+    filter: drop-shadow(0 0 0 transparent) drop-shadow(0 0 0 transparent) brightness(1);
+  }
+}
+
 @keyframes drum-hit {
   0% {
     transform: scale(1);
@@ -86,13 +109,101 @@ input[type='radio'] {
 
 @keyframes cymbal-hit {
   0% {
-    filter: drop-shadow(0 0 0 transparent);
+    filter: drop-shadow(0 0 0 transparent) drop-shadow(0 0 0 transparent) brightness(1);
   }
   30% {
-    filter: drop-shadow(0 0 10px var(--color-primary)) brightness(1.3);
+    filter: drop-shadow(0 0 8px var(--color-primary)) drop-shadow(0 0 22px var(--color-primary)) brightness(1.5);
   }
   100% {
-    filter: drop-shadow(0 0 0 transparent);
+    filter: drop-shadow(0 0 0 transparent) drop-shadow(0 0 0 transparent) brightness(1);
+  }
+}
+
+/* CSS-drawn drumstick (DrumKit.tsx's .drumstick div, not rendered at all
+   for kick — that's foot-pedal-operated, no stick) — swings in from the
+   left (the player's own left, holding the stick off to that side) to
+   "strike" the piece and fades out, on every piece's hit (.hit or
+   .image-hit). A CSS shape rather than a photo so one rule covers every
+   piece, instead of sourcing and pixel-aligning a per-piece stick photo the
+   way the hit-image photos needed. Pivots from its own bottom-left corner,
+   near the piece's left edge — a first pass, likely needs per-piece
+   position/angle tuning like tom_floor's layout did. */
+.drumstick {
+  position: absolute;
+  bottom: 40%;
+  left: 8%;
+  width: 4%;
+  height: 55%;
+  background: linear-gradient(to bottom, #e8c39e, #b9814a);
+  border-radius: 999px;
+  transform-origin: bottom left;
+  transform: rotate(-20deg);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.drum-piece.hit .drumstick,
+.drum-piece.image-hit .drumstick {
+  animation: stick-strike 180ms ease-out;
+}
+
+@keyframes stick-strike {
+  0% {
+    transform: rotate(-25deg);
+    opacity: 1;
+  }
+  55% {
+    transform: rotate(35deg);
+    opacity: 1;
+  }
+  100% {
+    transform: rotate(-25deg);
+    opacity: 0;
+  }
+}
+
+/* Right-hand pieces (hi-hat, ride, and the toms — same grouping as the
+   keyboard layout's own hand-crossing fix, which clustered these under the
+   right hand's keys) swing their stick in from the right instead of the
+   left — a horizontal mirror of the base rule/keyframes above. Snare and
+   crash keep the default left-hand origin. Kick has no stick at all (see
+   DrumKit.tsx) — foot-pedal-operated. */
+.drum-piece[data-instrument='hihat'] .drumstick,
+.drum-piece[data-instrument='ride'] .drumstick,
+.drum-piece[data-instrument='tom_high'] .drumstick,
+.drum-piece[data-instrument='tom_mid'] .drumstick,
+.drum-piece[data-instrument='tom_floor'] .drumstick {
+  left: auto;
+  right: 30%;
+  transform-origin: bottom right;
+  transform: rotate(20deg);
+}
+
+.drum-piece[data-instrument='hihat'].hit .drumstick,
+.drum-piece[data-instrument='hihat'].image-hit .drumstick,
+.drum-piece[data-instrument='ride'].hit .drumstick,
+.drum-piece[data-instrument='ride'].image-hit .drumstick,
+.drum-piece[data-instrument='tom_high'].hit .drumstick,
+.drum-piece[data-instrument='tom_high'].image-hit .drumstick,
+.drum-piece[data-instrument='tom_mid'].hit .drumstick,
+.drum-piece[data-instrument='tom_mid'].image-hit .drumstick,
+.drum-piece[data-instrument='tom_floor'].hit .drumstick,
+.drum-piece[data-instrument='tom_floor'].image-hit .drumstick {
+  animation-name: stick-strike-mirrored;
+}
+
+@keyframes stick-strike-mirrored {
+  0% {
+    transform: rotate(25deg);
+    opacity: 1;
+  }
+  55% {
+    transform: rotate(-35deg);
+    opacity: 1;
+  }
+  100% {
+    transform: rotate(25deg);
+    opacity: 0;
   }
 }
 

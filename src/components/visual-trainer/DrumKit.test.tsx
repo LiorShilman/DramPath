@@ -57,6 +57,13 @@ describe('DrumKit', () => {
     expect(container.querySelectorAll('img')).toHaveLength(8)
   })
 
+  it('renders a drumstick for every piece except kick, which is foot-pedal-operated', () => {
+    const { container } = render(<DrumKit />)
+    expect(container.querySelector('[data-instrument="kick"] .drumstick')).not.toBeInTheDocument()
+    expect(container.querySelector('[data-instrument="snare"] .drumstick')).toBeInTheDocument()
+    expect(container.querySelector('[data-instrument="crash"] .drumstick')).toBeInTheDocument()
+  })
+
   describe.each([
     { piece: 'snare', instrument: 'snare', idleSrc: '/drum-kit/snare.png', hitSrc: '/drum-kit/snare-hit.png' },
     { piece: 'kick', instrument: 'kick', idleSrc: '/drum-kit/kick.png', hitSrc: '/drum-kit/kick-hit.png' },
@@ -75,6 +82,14 @@ describe('DrumKit', () => {
     it(`never applies the hit (scale animation) class to the ${piece} piece`, () => {
       const { container } = render(<DrumKit activeHits={{ [instrument]: 'a' }} />)
       expect(container.querySelector(`[data-instrument="${piece}"]`)).not.toHaveClass('hit')
+    })
+
+    it(`applies the image-hit (glow) class to the ${piece} piece only while active`, () => {
+      const { container } = render(<DrumKit activeHits={{ [instrument]: 'a' }} />)
+      expect(container.querySelector(`[data-instrument="${piece}"]`)).toHaveClass('image-hit')
+
+      const { container: idleContainer } = render(<DrumKit />)
+      expect(idleContainer.querySelector(`[data-instrument="${piece}"]`)).not.toHaveClass('image-hit')
     })
 
     it(`swaps to the blue-head image immediately on a ${piece} hit, then reverts after the flash window`, () => {
