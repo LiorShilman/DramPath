@@ -73,12 +73,14 @@ function VisualTrainerRunner({ exercise, highwayRef }: VisualTrainerRunnerProps)
               crash/ride the right — an established DrumKit quirk, see
               FreeNotationPracticePage's 80%-width kit column for the same
               accommodation). pe-3 was just enough for the hihat's resting
-              overflow, but its own "hit" animation (cymbal-hit: scale(1.05)
-              rotate(4deg)) pushes it further left at the animation's peak,
-              enough to cause a real (if brief) page-level horizontal
-              scrollbar every time hi-hat is actually played — confirmed via
-              frame-by-frame measurement, not just at rest. pe-6 covers the
-              animated peak with margin to spare. */}
+              overflow, but caused a real (if brief) page-level horizontal
+              scrollbar every time hi-hat was actually played — confirmed via
+              frame-by-frame measurement — back when cymbal-hit's animation
+              still scaled/rotated the piece past its resting position.
+              cymbal-hit is glow-only now (no transform, so cymbal stands'
+              floor legs don't visibly move on hit), but pe-6 is kept as
+              headroom rather than re-verifying the tighter pe-3 is safe
+              again. */}
           <div className="w-full max-w-2xl shrink-0 pe-6 lg:w-[36rem]">
             <DrumKit activeHits={trainer.activeHits} />
           </div>

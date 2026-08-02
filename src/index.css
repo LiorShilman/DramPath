@@ -51,10 +51,14 @@ input[type='radio'] {
 }
 
 /* VISUAL_DRUM_TRAINER_SPEC.md §13: each drum kit piece bounces briefly on
-   hit; cymbals (ride/crash) additionally rotate and glow. Restarting the
-   animation on rapid repeated hits is handled by the component remounting
-   the element (a new `key`), not by this CSS alone — a class toggle can't
-   restart an animation that's already applied. */
+   hit; cymbal pieces (ride/crash/hihat) glow instead. Cymbal photos include
+   the full stand down to its floor legs, so cymbal-hit deliberately has no
+   scale/rotate transform (unlike drum-hit) — a transform on the whole image
+   would visibly shift the legs, which don't move when the cymbal itself is
+   struck (explicit user request). Restarting the animation on rapid
+   repeated hits is handled by the component remounting the element (a new
+   `key`), not by this CSS alone — a class toggle can't restart an
+   animation that's already applied. */
 .drum-piece {
   transform-box: fill-box;
   transform-origin: center;
@@ -82,15 +86,12 @@ input[type='radio'] {
 
 @keyframes cymbal-hit {
   0% {
-    transform: scale(1) rotate(0deg);
     filter: drop-shadow(0 0 0 transparent);
   }
   30% {
-    transform: scale(1.05) rotate(4deg);
-    filter: drop-shadow(0 0 6px var(--color-primary));
+    filter: drop-shadow(0 0 10px var(--color-primary)) brightness(1.3);
   }
   100% {
-    transform: scale(1) rotate(0deg);
     filter: drop-shadow(0 0 0 transparent);
   }
 }

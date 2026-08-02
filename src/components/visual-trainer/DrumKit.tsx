@@ -1,4 +1,4 @@
-import type { CSSProperties } from 'react'
+import { useEffect, useState, type CSSProperties } from 'react'
 import type { DrumInstrument } from '../../domain'
 
 // 9 instruments share 8 visual pieces — hihat_closed/hihat_open are the
@@ -51,6 +51,20 @@ const PIECE_IMAGE_SRC: Record<DrumPiece, string> = {
   tom_floor: '/drum-kit/tom-floor.png',
 }
 
+// Pieces with a real "hit" product photo (blue head): swap to it for a
+// brief flash instead of the scale animation every other piece uses
+// (explicit user request — "the same resolution as the original, used
+// instead of moving the image"). Matches .drum-hit's 120ms scale animation
+// duration plus a little buffer so the swap doesn't feel cut short.
+const HIT_IMAGE_SRC: Partial<Record<DrumPiece, string>> = {
+  snare: '/drum-kit/snare-hit.png',
+  kick: '/drum-kit/kick-hit.png',
+  tom_floor: '/drum-kit/tom-floor-hit.png',
+  tom_mid: '/drum-kit/tom-mid-hit.png',
+  tom_high: '/drum-kit/tom-high-hit.png',
+}
+const HIT_FLASH_MS = 150
+
 const PIECE_ALT: Record<DrumPiece, string> = {
   kick: 'בס דראם',
   snare: 'סנר',
@@ -81,6 +95,25 @@ export interface DrumKitProps {
  * Key letters are shown in the pinned bottom `KeyboardGuide` bar instead of
  * on the pieces themselves — badges layered on the photos were reported as
  * hurting the kit's look. */
+/** A piece's own image swap (for pieces with a HIT_IMAGE_SRC entry): starts
+ * true exactly when a fresh hit mounts this component (the parent already
+ * remounts on a new `key` per hit — see DrumKit's isActive comment), then
+ * flips itself back after the flash window so the blue-head photo doesn't
+ * stay showing forever. */
+function PieceImage({ piece, isActive }: { piece: DrumPiece; isActive: boolean }) {
+  const hitImageSrc = HIT_IMAGE_SRC[piece]
+  const [showHitImage, setShowHitImage] = useState(isActive && hitImageSrc !== undefined)
+
+  useEffect(() => {
+    if (!showHitImage) return
+    const timeoutId = window.setTimeout(() => setShowHitImage(false), HIT_FLASH_MS)
+    return () => window.clearTimeout(timeoutId)
+  }, [showHitImage])
+
+  const src = showHitImage && hitImageSrc ? hitImageSrc : PIECE_IMAGE_SRC[piece]
+  return <img src={src} alt={PIECE_ALT[piece]} className="w-full drop-shadow-lg" />
+}
+
 export function DrumKit({ activeHits }: DrumKitProps) {
   const pieceTokens: Partial<Record<DrumPiece, string>> = {}
   if (activeHits) {
@@ -94,7 +127,11 @@ export function DrumKit({ activeHits }: DrumKitProps) {
       {(Object.keys(PIECE_LAYOUT) as DrumPiece[]).map((piece) => {
         const token = pieceTokens[piece]
         const isActive = token !== undefined
-        const className = `drum-piece${CYMBAL_PIECES.has(piece) ? ' cymbal' : ''}${isActive ? ' hit' : ''}`
+        // A piece with a HIT_IMAGE_SRC entry gets its feedback from
+        // PieceImage's blue-head image swap instead of the scale animation
+        // every other piece uses.
+        const hasHitImage = HIT_IMAGE_SRC[piece] !== undefined
+        const className = `drum-piece${CYMBAL_PIECES.has(piece) ? ' cymbal' : ''}${isActive && !hasHitImage ? ' hit' : ''}`
         return (
           <div
             key={isActive ? token : `${piece}-idle`}
@@ -102,7 +139,7 @@ export function DrumKit({ activeHits }: DrumKitProps) {
             className={className}
             style={{ position: 'absolute', ...PIECE_LAYOUT[piece] }}
           >
-            <img src={PIECE_IMAGE_SRC[piece]} alt={PIECE_ALT[piece]} className="w-full drop-shadow-lg" />
+            <PieceImage piece={piece} isActive={isActive} />
           </div>
         )
       })}

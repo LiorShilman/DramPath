@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { render } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, render } from '@testing-library/react'
 import { DrumKit } from './DrumKit'
 
 describe('DrumKit', () => {
@@ -13,9 +13,9 @@ describe('DrumKit', () => {
     }
   })
 
-  it('applies the hit class to the kick piece on a kick hit', () => {
-    const { container } = render(<DrumKit activeHits={{ kick: 'a' }} />)
-    expect(container.querySelector('[data-instrument="kick"]')).toHaveClass('hit')
+  it('applies the hit class to the ride piece on a ride hit', () => {
+    const { container } = render(<DrumKit activeHits={{ ride: 'a' }} />)
+    expect(container.querySelector('[data-instrument="ride"]')).toHaveClass('hit')
     expect(container.querySelector('[data-instrument="snare"]')).not.toHaveClass('hit')
   })
 
@@ -36,25 +36,63 @@ describe('DrumKit', () => {
   })
 
   it('remounts the active piece when a new hitToken arrives for the same instrument', () => {
-    const { container, rerender } = render(<DrumKit activeHits={{ kick: 'first' }} />)
-    const firstElement = container.querySelector('[data-instrument="kick"]')
+    const { container, rerender } = render(<DrumKit activeHits={{ ride: 'first' }} />)
+    const firstElement = container.querySelector('[data-instrument="ride"]')
 
-    rerender(<DrumKit activeHits={{ kick: 'second' }} />)
-    const secondElement = container.querySelector('[data-instrument="kick"]')
+    rerender(<DrumKit activeHits={{ ride: 'second' }} />)
+    const secondElement = container.querySelector('[data-instrument="ride"]')
 
     expect(secondElement).not.toBe(firstElement)
     expect(secondElement).toHaveClass('hit')
   })
 
-  it('applies the hit class to two different instruments hit at the same time, without either overwriting the other', () => {
-    const { container } = render(<DrumKit activeHits={{ kick: 'a', snare: 'b' }} />)
-    expect(container.querySelector('[data-instrument="kick"]')).toHaveClass('hit')
-    expect(container.querySelector('[data-instrument="snare"]')).toHaveClass('hit')
-    expect(container.querySelector('[data-instrument="ride"]')).not.toHaveClass('hit')
+  it('applies the hit class to a non-image-swap instrument hit at the same time as a snare hit, without either overwriting the other', () => {
+    const { container } = render(<DrumKit activeHits={{ ride: 'a', snare: 'b' }} />)
+    expect(container.querySelector('[data-instrument="ride"]')).toHaveClass('hit')
+    expect(container.querySelector('[data-instrument="crash"]')).not.toHaveClass('hit')
   })
 
   it('renders a real product photo for every piece', () => {
     const { container } = render(<DrumKit />)
     expect(container.querySelectorAll('img')).toHaveLength(8)
+  })
+
+  describe.each([
+    { piece: 'snare', instrument: 'snare', idleSrc: '/drum-kit/snare.png', hitSrc: '/drum-kit/snare-hit.png' },
+    { piece: 'kick', instrument: 'kick', idleSrc: '/drum-kit/kick.png', hitSrc: '/drum-kit/kick-hit.png' },
+    { piece: 'tom_floor', instrument: 'tom_floor', idleSrc: '/drum-kit/tom-floor.png', hitSrc: '/drum-kit/tom-floor-hit.png' },
+    { piece: 'tom_mid', instrument: 'tom_mid', idleSrc: '/drum-kit/tom-mid.png', hitSrc: '/drum-kit/tom-mid-hit.png' },
+    { piece: 'tom_high', instrument: 'tom_high', idleSrc: '/drum-kit/tom-high.png', hitSrc: '/drum-kit/tom-high-hit.png' },
+  ] as const)('$piece hit feedback (blue-head image swap instead of the scale animation)', ({ piece, instrument, idleSrc, hitSrc }) => {
+    beforeEach(() => {
+      vi.useFakeTimers()
+    })
+
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    it(`never applies the hit (scale animation) class to the ${piece} piece`, () => {
+      const { container } = render(<DrumKit activeHits={{ [instrument]: 'a' }} />)
+      expect(container.querySelector(`[data-instrument="${piece}"]`)).not.toHaveClass('hit')
+    })
+
+    it(`swaps to the blue-head image immediately on a ${piece} hit, then reverts after the flash window`, () => {
+      const { container } = render(<DrumKit activeHits={{ [instrument]: 'a' }} />)
+      const img = container.querySelector(`[data-instrument="${piece}"] img`)
+      expect(img).toHaveAttribute('src', hitSrc)
+
+      act(() => {
+        vi.advanceTimersByTime(200)
+      })
+
+      expect(img).toHaveAttribute('src', idleSrc)
+    })
+
+    it(`shows the normal ${piece} image when idle`, () => {
+      const { container } = render(<DrumKit />)
+      const img = container.querySelector(`[data-instrument="${piece}"] img`)
+      expect(img).toHaveAttribute('src', idleSrc)
+    })
   })
 })
