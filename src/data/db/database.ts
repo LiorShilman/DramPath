@@ -307,5 +307,61 @@ export class DrumPathDatabase extends Dexie {
           })
         }
       })
+
+    // New third exercise — "אלף כבאים — גרוב A" — added to
+    // interactive-exercise-seed.ts. Same insert-if-missing pattern as
+    // v7/v11; doesn't touch the other two exercises.
+    this.version(12)
+      .stores({
+        ...storesV1,
+        notationPracticeState: 'id',
+        interactiveExercises: 'id, difficulty, updatedAt',
+      })
+      .upgrade(async (tx) => {
+        const seedExercises = buildInteractiveExerciseSeed()
+        const existingExercises = await tx.table('interactiveExercises').toArray()
+        const now = new Date().toISOString()
+
+        for (const seedExercise of seedExercises) {
+          if (existingExercises.some((exercise) => exercise.title === seedExercise.title)) continue
+          await tx.table('interactiveExercises').add({
+            id: crypto.randomUUID(),
+            ...seedExercise,
+            createdAt: now,
+            updatedAt: now,
+          })
+        }
+      })
+
+    // v12 inserted "אלף כבאים — גרוב A" as a single 4-bar loop of just the
+    // A section. interactive-exercise-seed.ts now builds a fuller
+    // Intro/A/B/C structure (22 bars, with B and C genuinely distinct from
+    // A rather than cosmetic variations) under the new title "אלף כבאים —
+    // Intro/A/B/C" — this replaces the v12 record (matched by its old
+    // title) with the current title/bars/events. Any database that crosses
+    // straight to v12+ on a fresh upgrade never had the old title in the
+    // first place (v12's upgrade already reads the current
+    // buildInteractiveExerciseSeed() and inserts the new version directly),
+    // so this is a no-op there.
+    this.version(13)
+      .stores({
+        ...storesV1,
+        notationPracticeState: 'id',
+        interactiveExercises: 'id, difficulty, updatedAt',
+      })
+      .upgrade(async (tx) => {
+        const seedExercise = buildInteractiveExerciseSeed().find((exercise) => exercise.title === 'אלף כבאים — Intro/A/B/C')
+        if (!seedExercise) return
+        const existing = await tx
+          .table('interactiveExercises')
+          .filter((exercise) => exercise.title === 'אלף כבאים — גרוב A')
+          .first()
+        if (!existing) return
+        await tx.table('interactiveExercises').update(existing.id, {
+          title: seedExercise.title,
+          bars: seedExercise.bars,
+          events: seedExercise.events,
+        })
+      })
   }
 }

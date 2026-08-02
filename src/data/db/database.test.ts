@@ -464,8 +464,10 @@ describe('DrumPathDatabase', () => {
     const upgraded = new DrumPathDatabase(dbName)
     await upgraded.open()
 
+    // Opening the full DrumPathDatabase from v10 also runs v12 (inserts
+    // "אלף כבאים"), so this no longer asserts an exact count — just the
+    // specific records this test cares about.
     const exercises = await upgraded.interactiveExercises.toArray()
-    expect(exercises).toHaveLength(2)
 
     const ahavaSheli = exercises.find((exercise) => exercise.id === ahavaSheliId)
     expect(ahavaSheli?.title).toBe(ahavaSheliTitle)
@@ -481,6 +483,158 @@ describe('DrumPathDatabase', () => {
     expect(bar6Kicks?.map((event) => event.beat).sort()).toEqual([2, 4])
     const bar10Kicks = milaTova?.events.filter((event) => event.bar === 10 && event.instrument === 'kick')
     expect(bar10Kicks?.map((event) => event.beat).sort()).toEqual([1, 3])
+
+    upgraded.close()
+    await Dexie.delete(dbName)
+  })
+
+  it('inserts the "אלף כבאים" groove for an existing database, without touching the other two exercises', async () => {
+    const dbName = `drumpath-test-migration-${createId()}`
+    const ahavaSheliTitle = 'האהבה שלי היא לא האהבה שלו — גרוב ראשי'
+    const milaTovaTitle = 'מילה טובה — Intro/A/B'
+
+    const legacyDb = new Dexie(dbName)
+    legacyDb.version(11).stores({
+      interactiveExercises: 'id, difficulty, updatedAt',
+    })
+    await legacyDb.open()
+    const ahavaSheliId = createId()
+    await legacyDb.table('interactiveExercises').add({
+      id: ahavaSheliId,
+      title: ahavaSheliTitle,
+      difficulty: 'intermediate',
+      bpm: 145,
+      minBpm: 115,
+      maxBpm: 195,
+      timeSignature: { numerator: 4, denominator: 4 },
+      subdivision: 'eighth',
+      bars: 4,
+      loopCount: 1,
+      displayMode: 'note_highway',
+      events: [],
+      createdAt: nowIso(),
+      updatedAt: nowIso(),
+    })
+    const milaTovaId = createId()
+    await legacyDb.table('interactiveExercises').add({
+      id: milaTovaId,
+      title: milaTovaTitle,
+      difficulty: 'beginner',
+      bpm: 85,
+      minBpm: 55,
+      maxBpm: 135,
+      timeSignature: { numerator: 4, denominator: 4 },
+      subdivision: 'quarter',
+      bars: 12,
+      loopCount: 1,
+      displayMode: 'note_highway',
+      events: [],
+      createdAt: nowIso(),
+      updatedAt: nowIso(),
+    })
+    legacyDb.close()
+
+    const upgraded = new DrumPathDatabase(dbName)
+    await upgraded.open()
+
+    const exercises = await upgraded.interactiveExercises.toArray()
+    expect(exercises).toHaveLength(3)
+
+    const ahavaSheli = exercises.find((exercise) => exercise.id === ahavaSheliId)
+    expect(ahavaSheli?.events).toEqual([])
+    const milaTova = exercises.find((exercise) => exercise.id === milaTovaId)
+    expect(milaTova?.events).toEqual([])
+
+    const elefKabaim = exercises.find((exercise) => exercise.title === 'אלף כבאים — Intro/A/B/C')
+    expect(elefKabaim).toBeDefined()
+    expect(elefKabaim?.bars).toBe(22)
+    expect(elefKabaim?.subdivision).toBe('eighth')
+    // Bar 2 is the first A-section bar (bar 1 is the intro pickup).
+    const bar2Kicks = elefKabaim?.events.filter((event) => event.bar === 2 && event.instrument === 'kick')
+    expect(bar2Kicks?.map((event) => `${event.beat}.${event.subdivisionIndex}`).sort()).toEqual(['1.0', '2.1', '3.0'])
+    const bar2Snare = elefKabaim?.events.filter((event) => event.bar === 2 && event.instrument === 'snare')
+    expect(bar2Snare?.map((event) => `${event.beat}.${event.subdivisionIndex}`).sort()).toEqual(['2.0', '4.0'])
+
+    upgraded.close()
+    await Dexie.delete(dbName)
+  })
+
+  it('v13 corrects the "אלף כבאים" record still under its old v12 title, without touching the other two exercises', async () => {
+    const dbName = `drumpath-test-migration-${createId()}`
+    const ahavaSheliTitle = 'האהבה שלי היא לא האהבה שלו — גרוב ראשי'
+
+    const legacyDb = new Dexie(dbName)
+    legacyDb.version(12).stores({
+      interactiveExercises: 'id, difficulty, updatedAt',
+    })
+    await legacyDb.open()
+    const ahavaSheliId = createId()
+    await legacyDb.table('interactiveExercises').add({
+      id: ahavaSheliId,
+      title: ahavaSheliTitle,
+      difficulty: 'intermediate',
+      bpm: 145,
+      minBpm: 115,
+      maxBpm: 195,
+      timeSignature: { numerator: 4, denominator: 4 },
+      subdivision: 'eighth',
+      bars: 4,
+      loopCount: 1,
+      displayMode: 'note_highway',
+      events: [],
+      createdAt: nowIso(),
+      updatedAt: nowIso(),
+    })
+    const elefKabaimId = createId()
+    await legacyDb.table('interactiveExercises').add({
+      id: elefKabaimId,
+      title: 'אלף כבאים — גרוב A',
+      difficulty: 'intermediate',
+      bpm: 126,
+      minBpm: 96,
+      maxBpm: 176,
+      timeSignature: { numerator: 4, denominator: 4 },
+      subdivision: 'eighth',
+      bars: 4,
+      loopCount: 1,
+      displayMode: 'note_highway',
+      events: [
+        { id: createId(), bar: 1, beat: 1, subdivisionIndex: 0, instrument: 'kick', velocity: 110 },
+        { id: createId(), bar: 1, beat: 3, subdivisionIndex: 0, instrument: 'snare', velocity: 110 },
+      ],
+      createdAt: nowIso(),
+      updatedAt: nowIso(),
+    })
+    legacyDb.close()
+
+    const upgraded = new DrumPathDatabase(dbName)
+    await upgraded.open()
+
+    const exercises = await upgraded.interactiveExercises.toArray()
+    expect(exercises).toHaveLength(2)
+
+    const ahavaSheli = exercises.find((exercise) => exercise.id === ahavaSheliId)
+    expect(ahavaSheli?.events).toEqual([])
+
+    const elefKabaim = exercises.find((exercise) => exercise.id === elefKabaimId)
+    expect(elefKabaim?.title).toBe('אלף כבאים — Intro/A/B/C')
+    expect(elefKabaim?.bars).toBe(22)
+    const bar2Kicks = elefKabaim?.events.filter((event) => event.bar === 2 && event.instrument === 'kick')
+    expect(bar2Kicks?.map((event) => `${event.beat}.${event.subdivisionIndex}`).sort()).toEqual(['1.0', '2.1', '3.0'])
+    // B (bar 10) has the extra kick on the "and" of beat 3 that makes it
+    // distinct from A.
+    const bar10Kicks = elefKabaim?.events.filter((event) => event.bar === 10 && event.instrument === 'kick')
+    expect(bar10Kicks?.map((event) => `${event.beat}.${event.subdivisionIndex}`).sort()).toEqual([
+      '1.0',
+      '2.1',
+      '3.0',
+      '3.1',
+    ])
+    // C (bar 18) is the simpler open-hi-hat backbeat section.
+    const bar18Kicks = elefKabaim?.events.filter((event) => event.bar === 18 && event.instrument === 'kick')
+    expect(bar18Kicks?.map((event) => event.beat).sort()).toEqual([1, 3])
+    const bar18Snare = elefKabaim?.events.filter((event) => event.bar === 18 && event.instrument === 'snare')
+    expect(bar18Snare?.map((event) => event.beat).sort()).toEqual([2, 4])
 
     upgraded.close()
     await Dexie.delete(dbName)
