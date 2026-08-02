@@ -1,12 +1,17 @@
 import type { DrumInstrument } from '../../domain'
+import { ensureDrumSamplesLoading, getDrumSample } from './drum-samples'
 
 // VISUAL_DRUM_TRAINER_SPEC.md §10 asks for real sample files (kick.wav,
-// snare.wav, ...) that don't exist in this project and can't be sourced/
-// generated here. Confirmed with the user: synthesize every drum sound in
-// code instead, same technique the project's existing metronome click
-// already uses (MetronomeEngine.playClick, src/lib/metronome-engine.ts) —
-// oscillators and filtered noise bursts shaped by a short gain envelope,
-// no external file, no network, nothing to preload.
+// snare.wav, ...). None shipped with the project originally, so every drum
+// sound was synthesized in code instead — oscillators and filtered noise
+// bursts shaped by a short gain envelope, same technique the project's
+// existing metronome click already uses (MetronomeEngine.playClick,
+// src/lib/metronome-engine.ts). drum-samples.ts now checks for real files
+// under public/audio/drums/ per instrument; playDrumSound below prefers a
+// loaded sample and only falls back to synthesis when one isn't available,
+// so this still works with zero files present (today's state) and starts
+// sounding more realistic the moment real samples are added — no other
+// code changes needed.
 
 // A short white-noise buffer, cached per AudioContext (a new context needs
 // its own buffer; AudioBuffers aren't portable across contexts) and reused
@@ -63,6 +68,24 @@ function playPitchedHit(
   oscillator.stop(time + durationSeconds + 0.02)
 }
 
+function playSampleHit(
+  audioContext: AudioContext,
+  outputNode: AudioNode,
+  time: number,
+  buffer: AudioBuffer,
+  peakGain: number,
+): void {
+  const source = audioContext.createBufferSource()
+  const gain = audioContext.createGain()
+
+  source.buffer = buffer
+  gain.gain.setValueAtTime(Math.max(peakGain, GAIN_FLOOR), time)
+
+  source.connect(gain)
+  gain.connect(outputNode)
+  source.start(time)
+}
+
 function playNoiseHit(
   audioContext: AudioContext,
   outputNode: AudioNode,
@@ -102,7 +125,15 @@ export function playDrumSound(
   velocity: number,
   accent = false,
 ): void {
+  ensureDrumSamplesLoading(audioContext)
+
   const peakGain = Math.min(1, (velocity / 127) * (accent ? 1.2 : 1))
+
+  const sample = getDrumSample(audioContext, instrument)
+  if (sample) {
+    playSampleHit(audioContext, outputNode, time, sample, peakGain)
+    return
+  }
 
   switch (instrument) {
     case 'kick':
