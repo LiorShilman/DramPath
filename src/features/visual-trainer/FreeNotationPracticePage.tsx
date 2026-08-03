@@ -141,16 +141,103 @@ export function FreeNotationPracticePage() {
   const fileIsPdf = selectedResource?.mimeType === 'application/pdf'
 
   return (
-    <div className="flex flex-col gap-4 pb-12">
+    <div className="flex flex-col gap-4 pb-6">
       <PageHeader title="תרגול חופשי לפי תווים" backTo="/practice/visual" backLabel="← חזרה לרשימת התרגילים" />
 
-      {/* lg:flex-row-reverse: in this RTL app the first DOM child of a row
-          lands on the right — reversing puts the notation column (coded
-          first) on the LEFT and the drum-kit/metronome/keys column (coded
-          second) on the RIGHT, flush against the sidebar, per explicit
-          layout direction. */}
-      <div className="flex flex-col gap-6 lg:flex-row-reverse lg:items-stretch">
-        <div className="flex w-full flex-col gap-2 lg:flex-1">
+      {/* Three columns, explicit user spec (revised from equal thirds to
+          quarter/half/quarter so the kit actually reads as bigger than the
+          side panels): right quarter = metronome + keys, center half =
+          drum kit (large), left quarter = notation. No lg:flex-row-reverse
+          needed here — in this RTL app a row's first DOM child already
+          lands on the right by default (row-reverse was only needed in the
+          old 2-column version to push the first-coded notation column to
+          the non-default left side), so coding right-to-left in that order
+          is enough. lg:w-1/4 on the side columns (not a fixed w-72/w-80):
+          KeyboardGuide's inline variant needs real width to render its two
+          staggered key rows without falling back to horizontal scroll — a
+          fixed narrow column cut it off, confirmed via screenshot. */}
+      <div className="flex flex-col gap-6 lg:flex-row lg:items-stretch">
+        {/* Right quarter: metronome + keyboard legend. */}
+        <div className="flex w-full flex-col gap-4 lg:w-1/4">
+          <Card padding="sm" className="flex flex-col items-stretch gap-3">
+            <div className="flex items-center justify-center gap-3">
+              <button
+                type="button"
+                onClick={() => adjustBpm(-BPM_STEP)}
+                aria-label="הפחת BPM"
+                className="min-h-14 min-w-14 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-primary)]/15 px-4 py-2 text-2xl [box-shadow:var(--shadow-card)] active:shadow-none"
+              >
+                −
+              </button>
+              <span className="text-3xl font-bold tabular-nums">{bpm}</span>
+              <button
+                type="button"
+                onClick={() => adjustBpm(BPM_STEP)}
+                aria-label="הגבר BPM"
+                className="min-h-14 min-w-14 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-primary)]/15 px-4 py-2 text-2xl [box-shadow:var(--shadow-card)] active:shadow-none"
+              >
+                +
+              </button>
+            </div>
+
+            <Button variant="ghost" onClick={handleTap} aria-label="הקשה לקצב">
+              הקשה לקצב
+            </Button>
+
+            <Button onClick={handleToggleMetronome} aria-label={metronome.isPlaying ? 'עצור מטרונום' : 'הפעל מטרונום'}>
+              {metronome.isPlaying ? 'עצור מטרונום' : 'הפעל מטרונום'}
+            </Button>
+
+            <div className="flex items-center justify-center gap-1" aria-hidden="true">
+              {BEATS_PER_BAR.map((beat) => (
+                <span
+                  key={beat}
+                  className={`h-3 w-3 rounded-full border border-[var(--color-border)] ${
+                    metronome.isPlaying && metronome.beatIndex === beat
+                      ? 'bg-[var(--color-primary)]'
+                      : 'bg-[var(--color-text-muted)]/40'
+                  }`}
+                />
+              ))}
+            </div>
+
+            <label className="flex items-center justify-center gap-1 text-sm">
+              חלוקה
+              <select
+                value={subdivision}
+                onChange={(event) => handleSubdivisionChange(event.target.value as Subdivision)}
+                className="rounded-[var(--radius-card)] border border-[var(--color-border)] px-2 py-1"
+              >
+                {Object.entries(SUBDIVISION_LABELS).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </Card>
+
+          <KeyboardGuide variant="inline" pressedInstruments={activeHits} />
+        </div>
+
+        {/* Center half: the drum kit, large — this page's main instrument,
+            per explicit user request. No max-width cap: shrinking the
+            notation column's h-[75vh] down to h-[60vh] below already fixed
+            the real vertical-scroll report, so the kit is free to fill its
+            full half-width column — confirmed by the user as the right
+            call after trying an earlier max-w-5xl cap. w-[90%] (not
+            w-full): the kit's cymbal pieces intentionally overflow their
+            own container a little (crash/ride extend past its right edge)
+            — keeping the kit at 90% and centered leaves real margin on both
+            sides to absorb that. */}
+        <div className="flex w-full items-center justify-center lg:w-1/2">
+          <div className="w-[90%]">
+            <DrumKit activeHits={activeHits} />
+          </div>
+        </div>
+
+        {/* Left quarter: notation viewer. */}
+        <div className="flex w-full flex-col gap-2 lg:w-1/4">
           <FileDropzone
             accept="image/*,application/pdf"
             onFilesSelected={(files) => void handleFilesSelected(files)}
@@ -193,107 +280,32 @@ export function FreeNotationPracticePage() {
               // #view=FitH forces Chrome/Edge's built-in PDF viewer to fit
               // the page to the frame's width — its default "fit page" zoom
               // left large blank margins and could overflow a page taller
-              // than it is wide.
+              // than it is wide. h-[60vh] (was 75vh): this column is now a
+              // quarter-width side panel, not half the page — the taller
+              // 75vh was pushing the row (height-matched to its tallest
+              // column via items-stretch) past the viewport, a real
+              // vertical scroll confirmed by the user once a file was
+              // actually loaded (the empty-state placeholder is much
+              // shorter, so this only showed up with a file open).
               <iframe
                 src={`${fileUrl}#view=FitH`}
                 title={selectedResource?.fileName ?? 'תווים'}
-                className="h-[75vh] w-full rounded-[var(--radius-card)] border border-[var(--color-border)]"
+                className="h-[60vh] w-full rounded-[var(--radius-card)] border border-[var(--color-border)]"
               />
             ) : (
               <div className="flex items-center justify-center overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-2">
                 <img
                   src={fileUrl}
                   alt={selectedResource?.fileName ?? 'תווים'}
-                  className="mx-auto h-[75vh] max-h-[75vh] w-auto max-w-full object-contain"
+                  className="mx-auto h-[60vh] max-h-[60vh] w-auto max-w-full object-contain"
                 />
               </div>
             )
           ) : (
-            // min-h-[50vh] is the mobile/stacked floor (no sibling column to
-            // match there); lg:min-h-0 lg:flex-1 instead grows this to fill
-            // whatever height the row's other column ends up at (drum kit +
-            // metronome + keyboard guide), via lg:items-stretch on the row
-            // above — so this box's bottom edge lands at the same place as
-            // that column's, instead of a fixed vh guess that's disconnected
-            // from the other column's actual content height.
-            <div className="flex min-h-[50vh] items-center justify-center rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] text-sm text-[var(--color-text-muted)] lg:min-h-0 lg:flex-1">
+            <div className="flex min-h-[50vh] items-center justify-center rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] text-center text-sm text-[var(--color-text-muted)]">
               העלו קובץ תווים (תמונה או PDF) כדי להתחיל
             </div>
           )}
-        </div>
-
-        {/* Right column: drum kit -> metronome -> keyboard legend, stacked. */}
-        <div className="flex w-full flex-col gap-4 lg:max-w-2xl">
-          {/* w-[80%] (not w-full): the kit's cymbal pieces are laid out to
-              intentionally overflow their own container a little (crash/ride
-              extend past its right edge) — at full column width that
-              overflow lands directly on the sidebar. Keeping the kit at 80%
-              and centered leaves real margin on both sides to absorb it,
-              while the wider column (max-w-2xl) still nets a bigger kit
-              overall than before. */}
-          <div className="mx-auto w-[80%]">
-            <DrumKit activeHits={activeHits} />
-          </div>
-
-          <Card padding="sm" className="flex flex-wrap items-center gap-6">
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={() => adjustBpm(-BPM_STEP)}
-                aria-label="הפחת BPM"
-                className="min-h-14 min-w-14 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-primary)]/15 px-4 py-2 text-2xl [box-shadow:var(--shadow-card)] active:shadow-none"
-              >
-                −
-              </button>
-              <span className="text-3xl font-bold tabular-nums">{bpm}</span>
-              <button
-                type="button"
-                onClick={() => adjustBpm(BPM_STEP)}
-                aria-label="הגבר BPM"
-                className="min-h-14 min-w-14 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-primary)]/15 px-4 py-2 text-2xl [box-shadow:var(--shadow-card)] active:shadow-none"
-              >
-                +
-              </button>
-            </div>
-
-            <Button variant="ghost" onClick={handleTap} aria-label="הקשה לקצב">
-              הקשה לקצב
-            </Button>
-
-            <Button onClick={handleToggleMetronome} aria-label={metronome.isPlaying ? 'עצור מטרונום' : 'הפעל מטרונום'}>
-              {metronome.isPlaying ? 'עצור מטרונום' : 'הפעל מטרונום'}
-            </Button>
-
-            <div className="flex items-center gap-1" aria-hidden="true">
-              {BEATS_PER_BAR.map((beat) => (
-                <span
-                  key={beat}
-                  className={`h-3 w-3 rounded-full border border-[var(--color-border)] ${
-                    metronome.isPlaying && metronome.beatIndex === beat
-                      ? 'bg-[var(--color-primary)]'
-                      : 'bg-[var(--color-text-muted)]/40'
-                  }`}
-                />
-              ))}
-            </div>
-
-            <label className="flex items-center gap-1 text-sm">
-              חלוקה
-              <select
-                value={subdivision}
-                onChange={(event) => handleSubdivisionChange(event.target.value as Subdivision)}
-                className="rounded-[var(--radius-card)] border border-[var(--color-border)] px-2 py-1"
-              >
-                {Object.entries(SUBDIVISION_LABELS).map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </Card>
-
-          <KeyboardGuide variant="inline" pressedInstruments={activeHits} />
         </div>
       </div>
 
