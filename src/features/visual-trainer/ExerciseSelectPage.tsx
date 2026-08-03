@@ -50,6 +50,12 @@ export function ExerciseSelectPage() {
             >
               תרגול חופשי לפי תווים
             </Link>
+            <Link
+              to="/practice/visual/import"
+              className="rounded-[var(--radius-card)] border border-[var(--color-border)] px-3 py-1.5 text-sm hover:underline"
+            >
+              ייבוא תווים מהקלטה
+            </Link>
           </div>
         }
       />

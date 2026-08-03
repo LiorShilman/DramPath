@@ -13,6 +13,7 @@ describe('DrumPathDatabase', () => {
       [
         'achievements',
         'coursePlans',
+        'drumImportMetadata',
         'exercises',
         'interactiveExercises',
         'lessonExercises',

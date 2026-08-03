@@ -65,3 +65,6 @@ export const FreeNotationPracticePage = lazy(() =>
 export const ExerciseBuilderPage = lazy(() =>
   import('../features/visual-trainer').then((m) => ({ default: m.ExerciseBuilderPage })),
 )
+export const DrumImportPage = lazy(() =>
+  import('../features/drum-import').then((m) => ({ default: m.DrumImportPage })),
+)

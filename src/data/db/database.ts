@@ -11,6 +11,7 @@ import type { Achievement } from '../../domain/achievement'
 import type { UserSettings } from '../../domain/user-settings'
 import type { NotationPracticeState } from '../../domain/notation-practice-state'
 import type { InteractiveExercise } from '../../domain/interactive-exercise'
+import type { DrumImportMetadata } from '../../domain/drum-import-metadata'
 import { buildLessonSeed } from '../seed/course-seed'
 import { buildInteractiveExerciseSeed } from '../seed/interactive-exercise-seed'
 
@@ -40,6 +41,9 @@ export class DrumPathDatabase extends Dexie {
   // User-created graded exercises from the manual builder — same shape as
   // the hardcoded DEMO_EXERCISES, just persisted.
   interactiveExercises!: EntityTable<InteractiveExercise, 'id'>
+  // ADR 0006: one row per approved drum-audio import (provenance, not
+  // per-event data) — see src/domain/drum-import-metadata.ts.
+  drumImportMetadata!: EntityTable<DrumImportMetadata, 'id'>
 
   constructor(name = 'drumpath') {
     super(name)
@@ -363,5 +367,14 @@ export class DrumPathDatabase extends Dexie {
           events: seedExercise.events,
         })
       })
+
+    // Drum Audio Import (ADR 0006) — new table only, no upgrade/backfill
+    // needed, same precedent as v3/v4's notationPracticeState/interactiveExercises.
+    this.version(14).stores({
+      ...storesV1,
+      notationPracticeState: 'id',
+      interactiveExercises: 'id, difficulty, updatedAt',
+      drumImportMetadata: 'id, interactiveExerciseId, createdAt',
+    })
   }
 }

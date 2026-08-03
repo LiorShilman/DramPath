@@ -14,6 +14,8 @@ Stages follow SPEC.md §35.
 | 7 | Library | Resources + songs | ✅ הושלם |
 | 8 | Standalone | Backup/restore + PWA | ✅ הושלם |
 | 9 | Release 1.0 | Tests, accessibility, performance, docs | ✅ הושלם |
+| Import-0 | Drum Audio Import — Stage 0 | Compatibility audit + ADR 0006, per `DRUM_AUDIO_IMPORT_AND_TRANSCRIPTION_SPEC.md` §42/§45 | ✅ הושלם — ראו `docs/drum-import-compatibility-report.md`; טרם נכתב קוד Feature/Migration |
+| Import-1 | Drum Audio Import — Stage 1 (מצומצם) | שירות Python מקומי (`server/drum-import-service`) + מסך ייבוא ב-DrumPath (`/practice/visual/import`), Dexie `version(14)` | ✅ הושלם — קצה-לקצה על 7 קבצי stem אמיתיים תואם בדיוק לפלט הסקריפט המקורי; typecheck/lint/vitest עוברים; **בדיקה ידנית בדפדפן טרם בוצעה** (אין כלי אוטומציה לדפדפן בסביבה זו) |
 
 ## שלב 0 — פירוט
 
