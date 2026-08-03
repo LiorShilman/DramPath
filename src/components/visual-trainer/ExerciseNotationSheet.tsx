@@ -24,8 +24,13 @@ export interface ExerciseNotationSheetProps {
    * (via a CSS animation, not per-frame state) — `bpm` drives the actual
    * playback speed (independent of the arbitrary tempo used for note-x
    * layout above), `sessionId` remounts the fill elements so restarting
-   * playback restarts the animation instead of no-oping on an unchanged style. */
-  playbackProgress?: { bpm: number; sessionId: number }
+   * playback restarts the animation instead of no-oping on an unchanged style.
+   * `startOffsetMs` accounts for a seek: playback that started mid-piece
+   * needs every row's animation-delay shifted back by the same amount, so a
+   * row already behind the seek point renders pre-filled (a negative delay
+   * past its own duration, with fill-mode `both`, simply holds at 100%)
+   * instead of restarting its fill from the wrong (zero) point. */
+  playbackProgress?: { bpm: number; sessionId: number; startOffsetMs?: number }
   /** Off by default (cymbals draw as a plain X, no stem). When on, cymbal
    * (X notehead) instruments also get a stem and join the same beam
    * grouping as normal noteheads — an isolated cymbal note still gets its
@@ -77,12 +82,18 @@ function barDurationMs(exercise: ExerciseNotationSheetProps['exercise']): number
  * per-note duration, so this can't mix durations within one exercise, only
  * reflect the one subdivision the whole exercise shares — and only normal
  * (circle) noteheads beam for now, not cymbals (X noteheads, no stem yet). */
-export function ExerciseNotationSheet({ exercise, highlightedEventIds, playbackProgress, beamCymbals = false }: ExerciseNotationSheetProps) {
+export function ExerciseNotationSheet({
+  exercise,
+  highlightedEventIds,
+  playbackProgress,
+  beamCymbals = false,
+}: ExerciseNotationSheetProps) {
   const hasStem = (instrument: (typeof exercise.events)[number]['instrument']) => {
     const notehead = STAFF_POSITION[instrument].notehead
     return notehead === 'normal' || (beamCymbals && notehead === 'x')
   }
   const rowCount = Math.max(1, Math.ceil(exercise.bars / BARS_PER_ROW))
+
   // Only reserve vertical room up to the highest notehead actually used
   // (e.g. no crash in this exercise = no wasted headroom above the staff),
   // never less than the top staff line so the staff itself always shows in full.
@@ -152,8 +163,9 @@ export function ExerciseNotationSheet({ exercise, highlightedEventIds, playbackP
     const rowDurationMs = playbackProgress
       ? rowBars * calculateBarDurationMs(playbackProgress.bpm, exercise.timeSignature)
       : 0
-    const startMs = cumulativeRealMs
+    const absoluteStartMs = cumulativeRealMs
     cumulativeRealMs += rowDurationMs
+    const startMs = absoluteStartMs - (playbackProgress?.startOffsetMs ?? 0)
     return { startMs, durationMs: rowDurationMs }
   })
 

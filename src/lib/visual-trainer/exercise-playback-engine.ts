@@ -11,6 +11,11 @@ export interface ExercisePlaybackStartOptions {
   countInBars?: number
   /** Fires as each drum event is actually scheduled — lets a later hit-matching stage correlate a HitResult with real audio timing. */
   onEventScheduled?: (event: DrumNoteEvent, audioTimeSeconds: number) => void
+  /** Seek: skip straight to this point in the timeline (ms from the very
+   * start, including any count-in) instead of always starting at 0 — beats/
+   * events before it are simply never scheduled. Lets a caller (e.g. a
+   * builder preview's clickable ruler) jump playback to an arbitrary point. */
+  startOffsetMs?: number
 }
 
 interface QueuedEvent {
@@ -109,13 +114,17 @@ export class ExercisePlaybackEngine {
       timeMs: timeMs + countInDurationMs,
     }))
 
+    const startOffsetMs = Math.max(0, options.startOffsetMs ?? 0)
+
     this.startAudioTime = this.audioContext.currentTime + 0.05
     this.beatQueue = [...countInBeatTimesMs, ...exerciseBeatTimesMs]
+      .filter((timeMs) => timeMs >= startOffsetMs)
       .sort((a, b) => a - b)
-      .map((timeMs) => this.startAudioTime + timeMs / 1000)
+      .map((timeMs) => this.startAudioTime + (timeMs - startOffsetMs) / 1000)
     this.eventQueue = exerciseEventSchedule
+      .filter(({ timeMs }) => timeMs >= startOffsetMs)
       .sort((a, b) => a.timeMs - b.timeMs)
-      .map(({ event, timeMs }) => ({ event, audioTimeSeconds: this.startAudioTime + timeMs / 1000 }))
+      .map(({ event, timeMs }) => ({ event, audioTimeSeconds: this.startAudioTime + (timeMs - startOffsetMs) / 1000 }))
     this.nextEventIndex = 0
     this.nextBeatIndex = 0
 

@@ -36,8 +36,18 @@ export interface UseVisualTrainerResult {
   activeHits: Partial<Record<DrumInstrument, string>>
   currentBar: number
   currentBeat: number
+  /** ms elapsed since the exercise itself started (count-in excluded, same
+   * as currentBar/currentBeat) — clamped to 0, updated on the same
+   * BAR_UPDATE_INTERVAL_MS cadence as the bar/beat indicators. */
+  elapsedMs: number
   start: () => void
   startDemo: () => void
+  /** Jumps a running demo to an arbitrary point in the exercise (ms from
+   * its own start, count-in excluded) — skips any count-in and starts
+   * playing immediately from there. Demo-only: a real run's scoring
+   * depends on hitting every note in order, so seeking is never exposed
+   * outside isDemo. */
+  seekDemo: (offsetMs: number) => void
   pause: () => void
   resume: () => void
   restart: () => void
@@ -85,6 +95,7 @@ export function useVisualTrainer(
   const [activeHits, setActiveHits] = useState<Partial<Record<DrumInstrument, string>>>({})
   const [currentBar, setCurrentBar] = useState(1)
   const [currentBeat, setCurrentBeat] = useState(1)
+  const [elapsedMs, setElapsedMs] = useState(0)
 
   const audioContextRef = useRef<AudioContext | null>(null)
   const engineRef = useRef<ExercisePlaybackEngine | null>(null)
@@ -98,6 +109,11 @@ export function useVisualTrainer(
 
   const clockOffsetMsRef = useRef(0)
   const countInDurationMsRef = useRef(0)
+  // Set when a session starts mid-exercise (seekDemo) — added back into
+  // every elapsedMs computation below, since the engine's own
+  // startAudioTimeSeconds only anchors "0 = when this session started
+  // playing," not "0 = the exercise's own bar 1."
+  const startOffsetMsRef = useRef(0)
   const barDurationMsRef = useRef(0)
   const beatDurationMsRef = useRef(0)
   const beatsPerBarRef = useRef(4)
@@ -148,13 +164,19 @@ export function useVisualTrainer(
       // The beat pulse runs off raw elapsed time (from the very start of
       // count-in), not time-since-count-in — a count-in is meant to visibly
       // tick through its own bar too, not sit frozen on beat 1 until the
-      // real exercise begins.
+      // real exercise begins. startOffsetMsRef keeps this phase continuous
+      // across a seek (rawElapsedMs alone resets to ~0 at the seek point,
+      // but the exercise's own beat phase should pick up from where the
+      // seek landed, not from beat 1).
       if (rawElapsedMs >= 0) {
-        const beatIndexInBar = Math.floor((rawElapsedMs % barDurationMsRef.current) / beatDurationMsRef.current)
+        const beatIndexInBar = Math.floor(
+          ((rawElapsedMs + startOffsetMsRef.current) % barDurationMsRef.current) / beatDurationMsRef.current,
+        )
         setCurrentBeat(Math.min(beatsPerBarRef.current, beatIndexInBar + 1))
       }
 
-      const elapsedMs = rawElapsedMs - countInDurationMsRef.current
+      const elapsedMs = rawElapsedMs - countInDurationMsRef.current + startOffsetMsRef.current
+      setElapsedMs(Math.max(0, elapsedMs))
       if (elapsedMs < 0) return
       setCurrentBar(Math.max(1, Math.floor(elapsedMs / barDurationMsRef.current) + 1))
     }, BAR_UPDATE_INTERVAL_MS)
@@ -194,7 +216,9 @@ export function useVisualTrainer(
     if (!audioContext || !engine) return
 
     const elapsedMs =
-      (audioContext.currentTime - engine.startAudioTimeSeconds) * 1000 - countInDurationMsRef.current
+      (audioContext.currentTime - engine.startAudioTimeSeconds) * 1000 -
+      countInDurationMsRef.current +
+      startOffsetMsRef.current
 
     noteHighwayRef.current?.render(elapsedMs)
 
@@ -284,7 +308,13 @@ export function useVisualTrainer(
   useKeyboardDrums({ enabled: (phase === 'running' || phase === 'count-in') && !isDemo, onHit: handleHit })
 
   const beginPlayback = useCallback(
-    (demo: boolean) => {
+    (demo: boolean, options: { startOffsetMs?: number } = {}) => {
+      const startOffsetMs = Math.max(0, options.startOffsetMs ?? 0)
+      // Seeking mid-exercise skips the count-in entirely — waiting through
+      // a full bar of click before resuming would defeat the point of
+      // jumping straight to a spot in the song.
+      const countInBars = startOffsetMs > 0 ? 0 : COUNT_IN_BARS
+
       if (!audioContextRef.current) audioContextRef.current = new AudioContext()
       if (!engineRef.current) engineRef.current = new ExercisePlaybackEngine(audioContextRef.current)
       const audioContext = audioContextRef.current
@@ -295,11 +325,17 @@ export function useVisualTrainer(
       isDemoRef.current = demo
       setIsDemo(demo)
 
-      pendingRef.current = resolveEventScheduleMs(exercise).map(({ event, timeMs }) => ({
-        eventId: event.id,
-        instrument: event.instrument,
-        expectedTimeMs: timeMs,
-      }))
+      // Events before the seek point are dropped, not just left pending —
+      // otherwise the first tick would see all of them as "due" at once
+      // (their expectedTimeMs already <= the post-seek elapsedMs) and
+      // auto-hit every one of them in an instant burst.
+      pendingRef.current = resolveEventScheduleMs(exercise)
+        .filter(({ timeMs }) => timeMs >= startOffsetMs)
+        .map(({ event, timeMs }) => ({
+          eventId: event.id,
+          instrument: event.instrument,
+          expectedTimeMs: timeMs,
+        }))
       hitResultsRef.current = []
       extraHitsRef.current = []
       totalExpectedEventsRef.current = pendingRef.current.length
@@ -307,19 +343,21 @@ export function useVisualTrainer(
       barDurationMsRef.current = calculateBarDurationMs(exercise.bpm, exercise.timeSignature)
       beatDurationMsRef.current = barDurationMsRef.current / exercise.timeSignature.numerator
       beatsPerBarRef.current = exercise.timeSignature.numerator
-      countInDurationMsRef.current = COUNT_IN_BARS * barDurationMsRef.current
+      countInDurationMsRef.current = countInBars * barDurationMsRef.current
+      startOffsetMsRef.current = startOffsetMs
       clockOffsetMsRef.current = performance.now() - audioContext.currentTime * 1000
 
-      engine.start(exercise, { countInBars: COUNT_IN_BARS })
+      engine.start(exercise, { countInBars, startOffsetMs })
 
       setScoring(EMPTY_SCORING)
       setGradeCounts(EMPTY_GRADE_COUNTS)
       setLastGrade(undefined)
       setActiveHits({})
-      setCurrentBar(1)
+      setCurrentBar(Math.max(1, Math.floor(startOffsetMs / barDurationMsRef.current) + 1))
       setCurrentBeat(1)
+      setElapsedMs(startOffsetMs)
       noteHighwayRef.current?.reset()
-      setPhaseBoth('count-in')
+      setPhaseBoth(countInBars > 0 ? 'count-in' : 'running')
 
       rafIdRef.current = requestAnimationFrame(tick)
       startBarInterval()
@@ -329,6 +367,7 @@ export function useVisualTrainer(
 
   const start = useCallback(() => beginPlayback(false), [beginPlayback])
   const startDemo = useCallback(() => beginPlayback(true), [beginPlayback])
+  const seekDemo = useCallback((offsetMs: number) => beginPlayback(true, { startOffsetMs: offsetMs }), [beginPlayback])
 
   const pause = useCallback(() => {
     if (phaseRef.current !== 'running' && phaseRef.current !== 'count-in') return
@@ -365,8 +404,10 @@ export function useVisualTrainer(
     activeHits,
     currentBar,
     currentBeat,
+    elapsedMs,
     start,
     startDemo,
+    seekDemo,
     pause,
     resume,
     restart,

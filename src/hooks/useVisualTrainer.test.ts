@@ -219,6 +219,32 @@ describe('useVisualTrainer', () => {
     expect(result.current.isDemo).toBe(false)
   })
 
+  it('seekDemo jumps straight into a demo run, skipping count-in and dropping events before the seek point', async () => {
+    vi.stubGlobal('AudioContext', FakeAudioContext)
+    // bpm 240 -> 250ms/beat, 1000ms/bar. Seeking to 400ms lands between the
+    // two events (0ms and 750ms) — only the one after the seek point should
+    // ever be counted.
+    const exercise = makeExercise([
+      { id: createId(), bar: 1, beat: 1, subdivisionIndex: 0, instrument: 'kick', velocity: 100 },
+      { id: createId(), bar: 1, beat: 4, subdivisionIndex: 0, instrument: 'snare', velocity: 100 },
+    ])
+    const { result } = renderHook(() => useVisualTrainer(exercise, noHighwayRef))
+
+    act(() => result.current.seekDemo(400))
+
+    // No count-in when seeking — straight to 'running', not 'count-in'.
+    expect(result.current.phase).toBe('running')
+    expect(result.current.isDemo).toBe(true)
+
+    await waitFor(() => expect(result.current.phase).toBe('finished'), { timeout: 3000 })
+    // Only the post-seek event (beat 4) counted — the skipped beat-1 event
+    // must not silently auto-hit in a burst on the very first tick just
+    // because its expectedTimeMs is already behind the seeked position.
+    expect(result.current.scoring.accuracyPercent).toBe(100)
+    expect(result.current.gradeCounts.perfect).toBe(1)
+    expect(result.current.gradeCounts.miss).toBe(0)
+  })
+
   it('returns to idle on exit', async () => {
     vi.stubGlobal('AudioContext', FakeAudioContext)
     const exercise = makeExercise([

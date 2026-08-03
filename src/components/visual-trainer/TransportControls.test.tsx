@@ -1,14 +1,15 @@
 import { describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { TransportControls } from './TransportControls'
 import type { InteractiveExercise } from '../../domain'
 
-const EXERCISE: Pick<InteractiveExercise, 'title' | 'bpm' | 'timeSignature' | 'bars'> = {
+const EXERCISE: Pick<InteractiveExercise, 'title' | 'bpm' | 'timeSignature' | 'bars' | 'loopCount'> = {
   title: 'תרגיל בדיקה',
   bpm: 100,
   timeSignature: { numerator: 4, denominator: 4 },
   bars: 2,
+  loopCount: 1,
 }
 
 function renderControls(overrides: Partial<Parameters<typeof TransportControls>[0]> = {}) {
@@ -26,6 +27,7 @@ function renderControls(overrides: Partial<Parameters<typeof TransportControls>[
       isDemo={false}
       currentBar={1}
       currentBeat={1}
+      elapsedMs={0}
       {...handlers}
       {...overrides}
     />,
@@ -73,6 +75,12 @@ describe('TransportControls', () => {
     expect(screen.getByText(/תיבה 2 מתוך 2/)).toBeInTheDocument()
   })
 
+  it('shows elapsed / total time as mm:ss, derived from bpm/bars/loopCount', () => {
+    // 100 BPM, 4/4, 2 bars, loopCount 1 -> one bar is 2.4s, total 4.8s.
+    renderControls({ phase: 'running', elapsedMs: 65_000 })
+    expect(screen.getByText('1:05 / 0:04')).toBeInTheDocument()
+  })
+
   it('shows one beat dot per beat in the time signature, without highlighting any while idle', () => {
     renderControls({ phase: 'idle', currentBeat: 1 })
     const dots = screen.getByRole('img', { name: 'פעימות המטרונום' }).children
@@ -102,5 +110,35 @@ describe('TransportControls', () => {
   it('shows no demo badge while idle, even if isDemo is true (leftover from a previous run)', () => {
     renderControls({ phase: 'idle', isDemo: true })
     expect(screen.queryByText('מדגים')).not.toBeInTheDocument()
+  })
+
+  it('shows no seek bar outside demo mode, even while running', () => {
+    const onSeekDemo = vi.fn()
+    renderControls({ phase: 'running', isDemo: false, onSeekDemo })
+    expect(screen.queryByRole('slider', { name: 'דילוג להדגמה' })).not.toBeInTheDocument()
+  })
+
+  it('shows no seek bar while idle, even in demo mode (nothing to seek within yet)', () => {
+    const onSeekDemo = vi.fn()
+    renderControls({ phase: 'idle', isDemo: true, onSeekDemo })
+    expect(screen.queryByRole('slider', { name: 'דילוג להדגמה' })).not.toBeInTheDocument()
+  })
+
+  it('shows a seek bar during an active demo run', () => {
+    renderControls({ phase: 'running', isDemo: true, onSeekDemo: vi.fn() })
+    expect(screen.getByRole('slider', { name: 'דילוג להדגמה' })).toBeInTheDocument()
+  })
+
+  it('does not call onSeekDemo while merely dragging the seek bar, only once released', () => {
+    const onSeekDemo = vi.fn()
+    renderControls({ phase: 'running', isDemo: true, elapsedMs: 0, onSeekDemo })
+    const slider = screen.getByRole('slider', { name: 'דילוג להדגמה' })
+
+    fireEvent.change(slider, { target: { value: '2000' } })
+    expect(onSeekDemo).not.toHaveBeenCalled()
+
+    fireEvent.mouseUp(slider)
+    expect(onSeekDemo).toHaveBeenCalledTimes(1)
+    expect(onSeekDemo).toHaveBeenCalledWith(2000)
   })
 })

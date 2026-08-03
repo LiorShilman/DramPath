@@ -88,6 +88,8 @@ function VisualTrainerRunner({ exercise, highwayRef }: VisualTrainerRunnerProps)
       isDemo={trainer.isDemo}
       currentBar={trainer.currentBar}
       currentBeat={trainer.currentBeat}
+      elapsedMs={trainer.elapsedMs}
+      onSeekDemo={trainer.seekDemo}
       onStart={trainer.start}
       onPause={trainer.pause}
       onResume={trainer.resume}
