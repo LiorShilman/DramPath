@@ -23,6 +23,7 @@ function renderControls(overrides: Partial<Parameters<typeof TransportControls>[
     <TransportControls
       exercise={EXERCISE}
       phase="idle"
+      isDemo={false}
       currentBar={1}
       currentBeat={1}
       {...handlers}
@@ -86,5 +87,20 @@ describe('TransportControls', () => {
     expect(dots[0]).toHaveClass('bg-[var(--color-border)]')
     expect(dots[1]).toHaveClass('bg-[var(--color-border)]')
     expect(dots[3]).toHaveClass('bg-[var(--color-border)]')
+  })
+
+  it('shows a demo badge only while a demo run is active', () => {
+    renderControls({ phase: 'running', isDemo: true })
+    expect(screen.getByText('מדגים')).toBeInTheDocument()
+  })
+
+  it('shows no demo badge for a real (non-demo) run', () => {
+    renderControls({ phase: 'running', isDemo: false })
+    expect(screen.queryByText('מדגים')).not.toBeInTheDocument()
+  })
+
+  it('shows no demo badge while idle, even if isDemo is true (leftover from a previous run)', () => {
+    renderControls({ phase: 'idle', isDemo: true })
+    expect(screen.queryByText('מדגים')).not.toBeInTheDocument()
   })
 })

@@ -5,6 +5,7 @@ import type { VisualTrainerPhase } from '../../hooks/useVisualTrainer'
 export interface TransportControlsProps {
   exercise: Pick<InteractiveExercise, 'title' | 'bpm' | 'timeSignature' | 'bars'>
   phase: VisualTrainerPhase
+  isDemo: boolean
   currentBar: number
   currentBeat: number
   onStart: () => void
@@ -19,6 +20,7 @@ export interface TransportControlsProps {
 export function TransportControls({
   exercise,
   phase,
+  isDemo,
   currentBar,
   currentBeat,
   onStart,
@@ -32,7 +34,14 @@ export function TransportControls({
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-2 [box-shadow:var(--shadow-card)]">
       <div className="flex flex-col gap-1">
-        <span className="font-semibold">{exercise.title}</span>
+        <span className="font-semibold">
+          {exercise.title}
+          {isDemo && isActive && (
+            <span className="ms-2 rounded-[var(--radius-card)] bg-[var(--color-primary)]/15 px-2 py-0.5 text-xs font-normal text-[var(--color-primary)]">
+              מדגים
+            </span>
+          )}
+        </span>
         <span className="text-sm text-[var(--color-text-muted)]">
           {exercise.bpm} BPM · {exercise.timeSignature.numerator}/{exercise.timeSignature.denominator} · תיבה{' '}
           {Math.min(currentBar, exercise.bars)} מתוך {exercise.bars}

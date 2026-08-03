@@ -187,6 +187,38 @@ describe('useVisualTrainer', () => {
     expect(result.current.phase).toBe('running')
   })
 
+  it('startDemo auto-resolves every event as a perfect hit with no keypress, and sets isDemo', async () => {
+    vi.stubGlobal('AudioContext', FakeAudioContext)
+    const exercise = makeExercise([
+      { id: createId(), bar: 1, beat: 1, subdivisionIndex: 0, instrument: 'kick', velocity: 100 },
+    ])
+    const { result } = renderHook(() => useVisualTrainer(exercise, noHighwayRef))
+
+    expect(result.current.isDemo).toBe(false)
+    act(() => result.current.startDemo())
+    expect(result.current.isDemo).toBe(true)
+
+    await waitFor(() => expect(result.current.phase).toBe('finished'), { timeout: 3000 })
+    expect(result.current.lastGrade).toBe('perfect')
+    expect(result.current.scoring.accuracyPercent).toBe(100)
+    expect(result.current.gradeCounts.miss).toBe(0)
+  })
+
+  it('a plain start() after a previous demo run clears isDemo back to false', async () => {
+    vi.stubGlobal('AudioContext', FakeAudioContext)
+    const exercise = makeExercise([
+      { id: createId(), bar: 1, beat: 1, subdivisionIndex: 0, instrument: 'kick', velocity: 100 },
+    ])
+    const { result } = renderHook(() => useVisualTrainer(exercise, noHighwayRef))
+
+    act(() => result.current.startDemo())
+    await waitFor(() => expect(result.current.phase).toBe('finished'), { timeout: 3000 })
+    expect(result.current.isDemo).toBe(true)
+
+    act(() => result.current.start())
+    expect(result.current.isDemo).toBe(false)
+  })
+
   it('returns to idle on exit', async () => {
     vi.stubGlobal('AudioContext', FakeAudioContext)
     const exercise = makeExercise([
