@@ -23,6 +23,7 @@ import {
   ExerciseBuilderPage,
   DrumImportPage,
   TouchDrumKitPage,
+  CurriculumGeneratorPage,
 } from './lazy-pages'
 
 // Route map from SPEC.md §10. "/", "/setup", "/today", "/practice/session",
@@ -43,6 +44,9 @@ export const routes: RouteObject[] = [
       { path: 'course/weeks/:weekId', element: <WeekDetailPage /> },
       { path: 'lessons', element: <LessonsListPage /> },
       { path: 'lessons/:lessonId', element: <LessonDetailPage /> },
+      // Standalone "private teacher" curriculum generator — link-only (not
+      // in NAV_ITEMS), reached via a button on LessonsListPage's header.
+      { path: 'practice/visual/curriculum', element: <CurriculumGeneratorPage /> },
       { path: 'exercises', element: <ExercisesListPage /> },
       { path: 'exercises/:exerciseId', element: <ExerciseDetailPage /> },
       { path: 'songs', element: <SongsListPage /> },

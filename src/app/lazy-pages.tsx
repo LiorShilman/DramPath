@@ -71,3 +71,6 @@ export const DrumImportPage = lazy(() =>
 export const TouchDrumKitPage = lazy(() =>
   import('../features/touch-practice').then((m) => ({ default: m.TouchDrumKitPage })),
 )
+export const CurriculumGeneratorPage = lazy(() =>
+  import('../features/curriculum').then((m) => ({ default: m.CurriculumGeneratorPage })),
+)

@@ -153,7 +153,12 @@ export function LessonsListPage() {
       <PageHeader
         title="ספריית שיעורים"
         actions={
-          <Button onClick={() => void handleCreate()}>+ שיעור חדש</Button>
+          <div className="flex gap-2">
+            <Button variant="secondary" onClick={() => void navigate('/practice/visual/curriculum')}>
+              מסלול שיעורים אוטומטי
+            </Button>
+            <Button onClick={() => void handleCreate()}>+ שיעור חדש</Button>
+          </div>
         }
       />
 

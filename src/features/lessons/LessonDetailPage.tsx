@@ -9,16 +9,19 @@ import {
   exerciseRepository,
   resourceRepository,
   achievementRepository,
+  interactiveExerciseRepository,
 } from '../../data/repositories'
 import { lessonCategorySchema, lessonStatusSchema, nowIso } from '../../domain'
 import { useDebouncedCallback } from '../../hooks/useDebouncedCallback'
+import { useExercisePreviewPlayback } from '../../hooks/useExercisePreviewPlayback'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { ResourceThumbnail } from '../../components/ResourceThumbnail'
 import { FileTypeIcon } from '../../components/FileTypeIcon'
 import { VideoThumbnailButton } from '../../components/VideoThumbnailButton'
-import { Badge, Button, PageHeader } from '../../components/ui'
+import { ExerciseNotationSheet } from '../../components/visual-trainer/ExerciseNotationSheet'
+import { Badge, Button, PageHeader, Card, buttonClassName } from '../../components/ui'
 import { LESSON_CATEGORY_LABELS, LESSON_STATUS_LABELS } from './lesson-labels'
-import type { Exercise, Lesson, Resource, Week } from '../../domain'
+import type { Exercise, InteractiveExercise, Lesson, Resource, Week } from '../../domain'
 
 const lessonFormSchema = z.object({
   title: z.string().min(1, 'שדה חובה'),
@@ -65,6 +68,8 @@ export function LessonDetailPage() {
   const [resourceSearch, setResourceSearch] = useState('')
   const [showResourcePicker, setShowResourcePicker] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [linkedExercise, setLinkedExercise] = useState<InteractiveExercise | undefined>(undefined)
+  const preview = useExercisePreviewPlayback(linkedExercise)
   const [playingVideo, setPlayingVideo] = useState<{ resource: Resource; url: string } | undefined>(undefined)
   const playingVideoRef = useRef(playingVideo)
   playingVideoRef.current = playingVideo
@@ -118,12 +123,13 @@ export function LessonDetailPage() {
     let cancelled = false
 
     async function load() {
-      const [loadedLesson, allWeeks, allExercises, allResources] =
+      const [loadedLesson, allWeeks, allExercises, allResources, linkedExercises] =
         await Promise.all([
           lessonRepository.getById(lessonId as string),
           weekRepository.getAll(),
           exerciseRepository.getAll(),
           resourceRepository.getAll(),
+          interactiveExerciseRepository.findByLessonId(lessonId as string),
         ])
       if (cancelled) return
       if (loadedLesson) {
@@ -135,6 +141,7 @@ export function LessonDetailPage() {
       setResources(
         allResources.sort((a, b) => a.fileName.localeCompare(b.fileName)),
       )
+      setLinkedExercise(linkedExercises[0])
     }
 
     void load()
@@ -309,7 +316,7 @@ export function LessonDetailPage() {
             תיאור
             <textarea
               {...register('description')}
-              rows={2}
+              rows={4}
               className="rounded-[var(--radius-card)] border border-[var(--color-border)] px-3 py-2"
             />
           </label>
@@ -449,6 +456,36 @@ export function LessonDetailPage() {
             />
           </label>
         </form>
+
+        {linkedExercise && (
+          <section>
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <h3 className="text-sm text-[var(--color-text-muted)]">תווי התרגיל</h3>
+              {!preview.isPlaying ? (
+                <Button size="sm" variant="secondary" onClick={preview.play}>
+                  ▶ נגן
+                </Button>
+              ) : (
+                <Button size="sm" variant="ghost" onClick={preview.stop}>
+                  ⏹ עצור
+                </Button>
+              )}
+            </div>
+            <Card padding="md" className="mb-3">
+              <div dir="ltr" className="overflow-x-auto">
+                <ExerciseNotationSheet
+                  exercise={linkedExercise}
+                  playbackProgress={
+                    preview.isPlaying ? { bpm: linkedExercise.bpm, sessionId: preview.playSessionId } : undefined
+                  }
+                />
+              </div>
+            </Card>
+            <Link to={`/practice/visual/${linkedExercise.id}`} className={buttonClassName('primary', 'sm')}>
+              התחל תרגול
+            </Link>
+          </section>
+        )}
 
         <section>
           <div className="mb-2 flex items-center justify-between">

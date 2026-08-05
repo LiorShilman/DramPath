@@ -1,0 +1,1 @@
+export { CurriculumGeneratorPage } from './CurriculumGeneratorPage'
