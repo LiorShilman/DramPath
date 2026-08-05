@@ -1,5 +1,6 @@
 import { useEffect, useState, type CSSProperties } from 'react'
 import type { DrumInstrument } from '../../domain'
+import { withBaseUrl } from '../../lib/asset-url'
 
 // 9 instruments share 8 visual pieces — hihat_closed/hihat_open are the
 // same physical hi-hat, matching the 8 real product photos available
@@ -20,6 +21,20 @@ const INSTRUMENT_TO_PIECE: Record<DrumInstrument, DrumPiece> = {
 }
 
 const CYMBAL_PIECES: ReadonlySet<DrumPiece> = new Set(['ride', 'crash', 'hihat'])
+
+// Reverse of INSTRUMENT_TO_PIECE, for tap targets — hihat has no separate
+// open/closed artwork to distinguish a tap between them, so a tap always
+// resolves to the closed variant (the more common/basic case).
+const PIECE_TO_INSTRUMENT: Record<DrumPiece, DrumInstrument> = {
+  kick: 'kick',
+  snare: 'snare',
+  hihat: 'hihat_closed',
+  ride: 'ride',
+  crash: 'crash',
+  tom_high: 'tom_high',
+  tom_mid: 'tom_mid',
+  tom_floor: 'tom_floor',
+}
 
 // Loose collage layout (percent of the container) approximating a kit from
 // the player's viewpoint — these are real product photos rather than a
@@ -47,14 +62,14 @@ const PIECE_LAYOUT: Record<DrumPiece, CSSProperties> = {
 }
 
 const PIECE_IMAGE_SRC: Record<DrumPiece, string> = {
-  kick: '/drum-kit/kick.png',
-  snare: '/drum-kit/snare.png',
-  hihat: '/drum-kit/hihat.png',
-  ride: '/drum-kit/ride.png',
-  crash: '/drum-kit/crash.png',
-  tom_high: '/drum-kit/tom-high.png',
-  tom_mid: '/drum-kit/tom-mid.png',
-  tom_floor: '/drum-kit/tom-floor.png',
+  kick: withBaseUrl('drum-kit/kick.png'),
+  snare: withBaseUrl('drum-kit/snare.png'),
+  hihat: withBaseUrl('drum-kit/hihat.png'),
+  ride: withBaseUrl('drum-kit/ride.png'),
+  crash: withBaseUrl('drum-kit/crash.png'),
+  tom_high: withBaseUrl('drum-kit/tom-high.png'),
+  tom_mid: withBaseUrl('drum-kit/tom-mid.png'),
+  tom_floor: withBaseUrl('drum-kit/tom-floor.png'),
 }
 
 // Pieces with a real "hit" product photo (blue head): swap to it for a
@@ -63,11 +78,11 @@ const PIECE_IMAGE_SRC: Record<DrumPiece, string> = {
 // instead of moving the image"). Matches .drum-hit's 120ms scale animation
 // duration plus a little buffer so the swap doesn't feel cut short.
 const HIT_IMAGE_SRC: Partial<Record<DrumPiece, string>> = {
-  snare: '/drum-kit/snare-hit.png',
-  kick: '/drum-kit/kick-hit.png',
-  tom_floor: '/drum-kit/tom-floor-hit.png',
-  tom_mid: '/drum-kit/tom-mid-hit.png',
-  tom_high: '/drum-kit/tom-high-hit.png',
+  snare: withBaseUrl('drum-kit/snare-hit.png'),
+  kick: withBaseUrl('drum-kit/kick-hit.png'),
+  tom_floor: withBaseUrl('drum-kit/tom-floor-hit.png'),
+  tom_mid: withBaseUrl('drum-kit/tom-mid-hit.png'),
+  tom_high: withBaseUrl('drum-kit/tom-high-hit.png'),
 }
 const HIT_FLASH_MS = 150
 
@@ -101,6 +116,12 @@ export interface DrumKitProps {
    * of the same instrument — a class toggle alone can't restart an
    * animation that's already applied. */
   activeHits?: Partial<Record<DrumInstrument, string>>
+  /** When provided, every piece becomes a tap/click target — calls this
+   * with the instrument it represents. Optional and purely additive:
+   * existing keyboard-driven callers (VisualTrainerPage,
+   * FreeNotationPracticePage) don't pass it, so their pieces stay
+   * non-interactive, exactly as before. */
+  onPieceHit?: (instrument: DrumInstrument) => void
 }
 
 /** Real product photos (public/drum-kit/) laid out as a kit collage —
@@ -144,7 +165,7 @@ function PieceImage({ piece, isActive }: { piece: DrumPiece; isActive: boolean }
 // how precisely the image itself is pixel-aligned to the idle photo.
 const HIT_IMAGE_SRCS = Object.values(HIT_IMAGE_SRC)
 
-export function DrumKit({ activeHits }: DrumKitProps) {
+export function DrumKit({ activeHits, onPieceHit }: DrumKitProps) {
   useEffect(() => {
     for (const src of HIT_IMAGE_SRCS) {
       const image = new Image()
@@ -175,8 +196,21 @@ export function DrumKit({ activeHits }: DrumKitProps) {
           <div
             key={isActive ? token : `${piece}-idle`}
             data-instrument={piece}
-            className={className}
+            className={`${className}${onPieceHit ? ' touch-manipulation cursor-pointer select-none' : ''}`}
             style={{ position: 'absolute', ...PIECE_LAYOUT[piece] }}
+            role={onPieceHit ? 'button' : undefined}
+            tabIndex={onPieceHit ? 0 : undefined}
+            aria-label={onPieceHit ? PIECE_ALT[piece] : undefined}
+            onPointerDown={onPieceHit ? () => onPieceHit(PIECE_TO_INSTRUMENT[piece]) : undefined}
+            onKeyDown={
+              onPieceHit
+                ? (event) => {
+                    if (event.key !== 'Enter' && event.key !== ' ') return
+                    event.preventDefault()
+                    onPieceHit(PIECE_TO_INSTRUMENT[piece])
+                  }
+                : undefined
+            }
           >
             <PieceImage piece={piece} isActive={isActive} />
             {/* A CSS-drawn stick (index.css's .drumstick) rather than

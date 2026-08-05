@@ -1,4 +1,5 @@
 import type { DrumInstrument } from '../../domain'
+import { withBaseUrl } from '../asset-url'
 
 // Preparation for real drum samples (VISUAL_DRUM_TRAINER_SPEC.md §10's
 // original ask, deferred in drum-synth.ts because no sample files existed
@@ -11,7 +12,7 @@ import type { DrumInstrument } from '../../domain'
 const SAMPLE_EXTENSIONS = ['wav', 'mp3'] as const
 
 function candidatePaths(instrument: DrumInstrument): string[] {
-  return SAMPLE_EXTENSIONS.map((extension) => `/audio/drums/${instrument}.${extension}`)
+  return SAMPLE_EXTENSIONS.map((extension) => withBaseUrl(`audio/drums/${instrument}.${extension}`))
 }
 
 const sampleCache = new WeakMap<AudioContext, Map<DrumInstrument, AudioBuffer>>()

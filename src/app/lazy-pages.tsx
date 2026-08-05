@@ -68,3 +68,6 @@ export const ExerciseBuilderPage = lazy(() =>
 export const DrumImportPage = lazy(() =>
   import('../features/drum-import').then((m) => ({ default: m.DrumImportPage })),
 )
+export const TouchDrumKitPage = lazy(() =>
+  import('../features/touch-practice').then((m) => ({ default: m.TouchDrumKitPage })),
+)

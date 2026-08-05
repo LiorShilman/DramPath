@@ -51,6 +51,31 @@ class FakeAudioContext {
   }
 }
 
+// Same hand-rolled test-double technique as useRemoteDrumInput.test.ts —
+// records every instance so a test can grab the latest one and simulate the
+// relay pushing a message/close event onto it.
+class FakeWebSocket {
+  static instances: FakeWebSocket[] = []
+  onmessage: ((event: { data: string }) => void) | null = null
+  onclose: ((event: { code: number }) => void) | null = null
+
+  constructor() {
+    FakeWebSocket.instances.push(this)
+  }
+
+  close() {}
+
+  simulateMessage(data: unknown) {
+    this.onmessage?.({ data: JSON.stringify(data) })
+  }
+}
+
+function latestSocket(): FakeWebSocket {
+  const socket = FakeWebSocket.instances.at(-1)
+  if (!socket) throw new Error('No FakeWebSocket instance was created')
+  return socket
+}
+
 const noHighwayRef = { current: null as NoteHighwayHandle | null }
 
 function makeExercise(events: DrumNoteEvent[]): InteractiveExercise {
@@ -76,6 +101,12 @@ function makeExercise(events: DrumNoteEvent[]): InteractiveExercise {
 describe('useVisualTrainer', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
+    // isPhoneControlEnabled reads from real (jsdom) localStorage, which
+    // otherwise persists across tests within this file — without clearing
+    // it, a later test could start with the phone-control feature already
+    // enabled and try to construct a real, unstubbed WebSocket.
+    localStorage.clear()
+    FakeWebSocket.instances = []
   })
 
   it('starts idle with empty scoring', () => {
@@ -257,5 +288,80 @@ describe('useVisualTrainer', () => {
 
     act(() => result.current.exit())
     expect(result.current.phase).toBe('idle')
+  })
+
+  it('phone control is off by default, and togglePhoneControl turns it on', () => {
+    vi.stubGlobal('AudioContext', FakeAudioContext)
+    vi.stubGlobal('WebSocket', FakeWebSocket)
+    const exercise = makeExercise([
+      { id: createId(), bar: 1, beat: 1, subdivisionIndex: 0, instrument: 'kick', velocity: 100 },
+    ])
+    const { result } = renderHook(() => useVisualTrainer(exercise, noHighwayRef))
+
+    expect(result.current.isPhoneControlEnabled).toBe(false)
+    expect(result.current.remoteStatus).toBe('disabled')
+
+    act(() => result.current.togglePhoneControl())
+
+    expect(result.current.isPhoneControlEnabled).toBe(true)
+    expect(result.current.remoteStatus).toBe('connecting')
+  })
+
+  it('a remote hit received during running scores identically to a keyboard hit', async () => {
+    vi.stubGlobal('AudioContext', FakeAudioContext)
+    vi.stubGlobal('WebSocket', FakeWebSocket)
+    const exercise = makeExercise([
+      { id: createId(), bar: 1, beat: 1, subdivisionIndex: 0, instrument: 'kick', velocity: 100 },
+    ])
+    const { result } = renderHook(() => useVisualTrainer(exercise, noHighwayRef))
+
+    act(() => result.current.togglePhoneControl())
+    act(() => result.current.start())
+    await waitFor(() => expect(result.current.phase).toBe('running'), { timeout: 3000 })
+
+    act(() => latestSocket().simulateMessage({ type: 'hit', instrument: 'kick' }))
+
+    await waitFor(() => expect(result.current.lastGrade).not.toBeUndefined())
+    expect(result.current.lastGrade).not.toBe('miss')
+    expect(result.current.lastGrade).not.toBe('extra')
+    expect(result.current.scoring.accuracyPercent).toBe(100)
+  })
+
+  it('drops a remote hit received before start() (idle phase) — no scoring change, no crash', () => {
+    vi.stubGlobal('AudioContext', FakeAudioContext)
+    vi.stubGlobal('WebSocket', FakeWebSocket)
+    const exercise = makeExercise([
+      { id: createId(), bar: 1, beat: 1, subdivisionIndex: 0, instrument: 'kick', velocity: 100 },
+    ])
+    const { result } = renderHook(() => useVisualTrainer(exercise, noHighwayRef))
+
+    act(() => result.current.togglePhoneControl())
+    act(() => latestSocket().simulateMessage({ type: 'hit', instrument: 'kick' }))
+
+    expect(result.current.phase).toBe('idle')
+    expect(result.current.lastGrade).toBeUndefined()
+    expect(result.current.scoring.accuracyPercent).toBe(0)
+  })
+
+  it('drops a remote hit during a demo run — demo notes auto-resolve, real hits never count', async () => {
+    vi.stubGlobal('AudioContext', FakeAudioContext)
+    vi.stubGlobal('WebSocket', FakeWebSocket)
+    const exercise = makeExercise([
+      { id: createId(), bar: 1, beat: 1, subdivisionIndex: 0, instrument: 'kick', velocity: 100 },
+    ])
+    const { result } = renderHook(() => useVisualTrainer(exercise, noHighwayRef))
+
+    act(() => result.current.togglePhoneControl())
+    act(() => result.current.startDemo())
+    expect(result.current.isDemo).toBe(true)
+
+    act(() => latestSocket().simulateMessage({ type: 'hit', instrument: 'kick' }))
+
+    // The demo's own auto-hit already grades everything 'perfect' — a
+    // real remote hit arriving mid-demo must not double-count or otherwise
+    // disturb that, i.e. accuracy stays 100 either way. The real assertion
+    // here is that nothing throws when a remote hit arrives during isDemo.
+    await waitFor(() => expect(result.current.phase).toBe('finished'), { timeout: 3000 })
+    expect(result.current.scoring.accuracyPercent).toBe(100)
   })
 })

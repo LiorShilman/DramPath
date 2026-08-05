@@ -131,9 +131,9 @@ input[type='radio'] {
 .drumstick {
   position: absolute;
   bottom: 40%;
-  left: 8%;
-  width: 4%;
-  height: 55%;
+  left: 2%;
+  width: 3%;
+  height: 40%;
   background: linear-gradient(to bottom, #e8c39e, #b9814a);
   border-radius: 999px;
   transform-origin: bottom left;
@@ -174,7 +174,7 @@ input[type='radio'] {
 .drum-piece[data-instrument='tom_mid'] .drumstick,
 .drum-piece[data-instrument='tom_floor'] .drumstick {
   left: auto;
-  right: 30%;
+  right: 2%;
   transform-origin: bottom right;
   transform: rotate(20deg);
 }
@@ -204,6 +204,31 @@ input[type='radio'] {
   100% {
     transform: rotate(25deg);
     opacity: 0;
+  }
+}
+
+/* StickingPatternGuide's hit-pad flash — deliberately not a directional
+   swing/translate animation (three attempts at a CSS-drawn stick swinging
+   in from outside all read wrong without a way to actually see the result
+   rendered): a same-place scale+color pulse has no direction to get wrong.
+   --sticking-pad-flash-color is set inline per hand (right/left use
+   different colors), so this one animation serves both. */
+.sticking-pad-hit {
+  animation: sticking-pad-hit 220ms ease-out;
+}
+
+@keyframes sticking-pad-hit {
+  0% {
+    transform: scale(1);
+    background-color: transparent;
+  }
+  35% {
+    transform: scale(1.15);
+    background-color: var(--sticking-pad-flash-color);
+  }
+  100% {
+    transform: scale(1);
+    background-color: transparent;
   }
 }
 

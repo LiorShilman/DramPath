@@ -85,6 +85,69 @@ describe('resourceRepository', () => {
     expect(saved.checksum).toBeUndefined()
   })
 
+  // The success path (a real link -> real blob conversion) isn't covered
+  // here the way saveLink's own test covers saving: convertLinkToBlob calls
+  // getById internally and then calls .getFile() on the round-tripped
+  // fileHandle, and a real FileSystemFileHandle is a native host object
+  // that a genuine browser's structured-clone knows how to preserve through
+  // IndexedDB — fake-indexeddb doesn't replicate that special-cased native
+  // behavior (functions in general can't survive structured clone at all,
+  // per the existing 'saves a link resource' test's own comment), so a
+  // class-prototype test double loses its .getFile method the moment it's
+  // fetched back out of the fake DB. This is a test-environment gap, not a
+  // production code path — manually verified against the real File System
+  // Access API instead.
+  it('rejects converting a resource that is already blob-backed', async () => {
+    const blobResource = await makeResource('already-blob')
+    await expect(resourceRepository.convertLinkToBlob(blobResource.id)).rejects.toThrow(
+      'is not a linked resource',
+    )
+  })
+
+  it('converts a blob resource back into a linked one, keeping the same id', async () => {
+    const blobResource = await makeResource('big-video')
+
+    class FakeFileHandle {
+      kind = 'file'
+      name = 'big-video.mp4'
+      async getFile() {
+        return new File(['re-picked content'], 'big-video.mp4', { type: 'video/mp4' })
+      }
+    }
+    // Passed directly as an argument (not re-fetched via getById), so this
+    // doesn't hit the fake-indexeddb structured-clone/prototype gap
+    // documented above — convertBlobToLink never reads fileHandle back out
+    // of the DB, unlike convertLinkToBlob.
+    const handle = new FakeFileHandle() as unknown as FileSystemFileHandle
+
+    const converted = await resourceRepository.convertBlobToLink(blobResource.id, handle)
+
+    expect(converted.id).toBe(blobResource.id)
+    expect(converted.sourceType).toBe('link')
+    expect(converted.blob).toBeUndefined()
+    expect(converted.checksum).toBeUndefined()
+  })
+
+  it('rejects converting to link a resource that is already a link', async () => {
+    class FakeFileHandle {
+      kind = 'file'
+      name = 'video.mp4'
+      async getFile() {
+        return new File([], 'video.mp4', { type: 'video/mp4' })
+      }
+    }
+    const linked = await resourceRepository.saveLink({
+      fileHandle: new FakeFileHandle() as unknown as FileSystemFileHandle,
+      fileName: 'video.mp4',
+      mimeType: 'video/mp4',
+      sizeBytes: 300_000_000,
+    })
+
+    await expect(
+      resourceRepository.convertBlobToLink(linked.id, new FakeFileHandle() as unknown as FileSystemFileHandle),
+    ).rejects.toThrow('is not a blob resource')
+  })
+
   it('removes the resource and unlinks it from lessons and exercises', async () => {
     const resource = await makeResource('shared-pdf')
 

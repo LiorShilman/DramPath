@@ -22,6 +22,7 @@ import {
   FreeNotationPracticePage,
   ExerciseBuilderPage,
   DrumImportPage,
+  TouchDrumKitPage,
 } from './lazy-pages'
 
 // Route map from SPEC.md §10. "/", "/setup", "/today", "/practice/session",
@@ -62,4 +63,9 @@ export const routes: RouteObject[] = [
       { path: 'practice/visual/import', element: <DrumImportPage /> },
     ],
   },
+  // Standalone, chrome-free (no AppLayout/sidebar/nav) — a direct,
+  // bookmarkable link for touch-based practice away from the desktop app,
+  // e.g. "Add to Home Screen" on a phone. See TouchDrumKitPage's own doc
+  // comment for the scoping rationale.
+  { path: '/practice/touch', element: <TouchDrumKitPage /> },
 ]

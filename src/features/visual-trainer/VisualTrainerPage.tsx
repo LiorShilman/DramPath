@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode, RefObject } from 'react'
 import { useNavigate, useParams } from 'react-router'
-import { Button, PageHeader } from '../../components/ui'
+import { Badge, Button, PageHeader } from '../../components/ui'
+import type { BadgeVariant } from '../../components/ui'
+import type { RemoteDrumInputStatus } from '../../hooks/useRemoteDrumInput'
 import { DrumKit } from '../../components/visual-trainer/DrumKit'
 import { NoteHighway } from '../../components/visual-trainer/NoteHighway'
 import type { NoteHighwayHandle } from '../../components/visual-trainer/NoteHighway'
@@ -28,6 +30,25 @@ interface VisualTrainerRunnerProps {
 // imprecise/mid-resize fit can't push the row wider) clips the cymbals for
 // real, confirmed via screenshot.
 const FIT_BOX_SAFETY_MARGIN = 0.85
+
+// Phone-as-remote-controller status (ADR 0007) — richer than a flat
+// connected/not boolean would be, since the reason nothing's happening
+// matters here: relay not running vs. no phone connected yet vs. a second
+// tab took over this one are three different things to tell the user.
+const REMOTE_STATUS_LABELS: Record<RemoteDrumInputStatus, string> = {
+  disabled: 'כבוי',
+  connecting: 'מתחבר לשירות…',
+  'waiting-for-phone': 'ממתין לחיבור טלפון',
+  connected: 'טלפון מחובר',
+  superseded: 'הוחלף בכרטיסייה אחרת',
+}
+const REMOTE_STATUS_BADGE_VARIANT: Record<RemoteDrumInputStatus, BadgeVariant> = {
+  disabled: 'neutral',
+  connecting: 'neutral',
+  'waiting-for-phone': 'warning',
+  connected: 'success',
+  superseded: 'danger',
+}
 
 /** Fits `children` into the largest box of the given aspect ratio that
  * fits inside this component's own area, on both axes at once — CSS
@@ -159,6 +180,21 @@ function VisualTrainerRunner({ exercise, highwayRef }: VisualTrainerRunnerProps)
           </div>
           <div className="flex flex-col gap-3">
             {keyboardGuide}
+            {/* Phone-as-remote-controller (ADR 0007) — deliberately not
+                gated by phase: the user needs to see "phone connected"
+                before pressing start, not only during a run, so the toggle
+                and its status are always visible here regardless of
+                trainer.phase. */}
+            <div className="flex items-center gap-2">
+              <Button variant="secondary" onClick={trainer.togglePhoneControl}>
+                {trainer.isPhoneControlEnabled ? 'כבה שליטת טלפון' : 'הפעל שליטת טלפון'}
+              </Button>
+              {trainer.isPhoneControlEnabled && (
+                <Badge variant={REMOTE_STATUS_BADGE_VARIANT[trainer.remoteStatus]}>
+                  {REMOTE_STATUS_LABELS[trainer.remoteStatus]}
+                </Badge>
+              )}
+            </div>
             {/* Only while idle — once a run (demo or real) is active, body
                 itself switches to the demo layout above, which has no
                 button of its own (exit/restart from TransportControls

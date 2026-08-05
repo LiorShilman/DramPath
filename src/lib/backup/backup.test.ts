@@ -27,6 +27,9 @@ async function clearAllTables() {
     db.practiceEntries.clear(),
     db.settings.clear(),
     db.achievements.clear(),
+    db.interactiveExercises.clear(),
+    db.notationPracticeState.clear(),
+    db.drumImportMetadata.clear(),
   ])
 }
 
@@ -46,6 +49,9 @@ function emptyBackupData(): BackupData {
     practiceEntries: [],
     settings: [],
     achievements: [],
+    interactiveExercises: [],
+    notationPracticeState: [],
+    drumImportMetadata: [],
   }
 }
 
@@ -184,5 +190,72 @@ describe('backup export/import round trip', () => {
 
     const afterMerge = await exerciseRepository.getById(exercise.id)
     expect(afterMerge?.name).toBe('שם מעודכן מקומית')
+  })
+
+  it('round-trips interactiveExercises, notationPracticeState and drumImportMetadata', async () => {
+    const now = nowIso()
+    const interactiveExercise = {
+      id: createId(),
+      title: 'תרגיל לבדיקה',
+      difficulty: 'beginner' as const,
+      bpm: 90,
+      minBpm: 60,
+      maxBpm: 120,
+      timeSignature: { numerator: 4, denominator: 4 },
+      subdivision: 'quarter' as const,
+      bars: 1,
+      loopCount: 1,
+      displayMode: 'note_highway' as const,
+      events: [],
+      createdAt: now,
+      updatedAt: now,
+    }
+    const notationState = { id: createId(), lastBpm: 100, updatedAt: now }
+    const drumImportMeta = {
+      id: createId(),
+      interactiveExerciseId: interactiveExercise.id,
+      coreExerciseId: createId(),
+      sourceStemFileNames: ['kick.wav'],
+      algorithmVersion: '1.0',
+      detectedConstantBpm: 100,
+      uncertainTomHitCount: 0,
+      warnings: [],
+      createdAt: now,
+    }
+    await db.interactiveExercises.add(interactiveExercise)
+    await db.notationPracticeState.add(notationState)
+    await db.drumImportMetadata.add(drumImportMeta)
+
+    const archiveBlob = await buildBackupArchive()
+    const file = new File([archiveBlob], 'backup.zip', { type: 'application/zip' })
+
+    await clearAllTables()
+    expect(await db.interactiveExercises.count()).toBe(0)
+
+    const parsed = await parseBackupArchive(file)
+    const resources = await validateBackupData(parsed)
+    await commitImport(parsed.data, resources, 'replace')
+
+    expect(await db.interactiveExercises.get(interactiveExercise.id)).toEqual(interactiveExercise)
+    expect(await db.notationPracticeState.get(notationState.id)).toEqual(notationState)
+    expect(await db.drumImportMetadata.get(drumImportMeta.id)).toEqual(drumImportMeta)
+  })
+
+  it('imports an older archive missing the newer tables entirely without throwing', async () => {
+    const data = emptyBackupData() as Partial<BackupData>
+    delete data.interactiveExercises
+    delete data.notationPracticeState
+    delete data.drumImportMetadata
+
+    const zip = new JSZip()
+    zip.file('manifest.json', JSON.stringify(baseManifest()))
+    zip.file('data.json', JSON.stringify(data))
+    const blob = await zip.generateAsync({ type: 'blob' })
+    const file = new File([blob], 'old-backup.zip', { type: 'application/zip' })
+
+    const parsed = await parseBackupArchive(file)
+    expect(parsed.data.interactiveExercises).toEqual([])
+    const resources = await validateBackupData(parsed)
+    await expect(commitImport(parsed.data, resources, 'replace')).resolves.toBeUndefined()
   })
 })

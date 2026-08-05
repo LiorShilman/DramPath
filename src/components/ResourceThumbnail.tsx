@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { ImageIcon, Link as LinkIcon } from 'lucide-react'
 import { useObjectUrl } from '../hooks/useObjectUrl'
 import { ensureReadPermission } from '../lib/file-system-access'
+import { resourceRepository } from '../data/repositories'
 import type { Resource } from '../domain'
 
 export interface ResourceThumbnailProps {
@@ -48,7 +49,32 @@ export function ResourceThumbnail({
   objectFit = 'cover',
   nativeSize = false,
 }: ResourceThumbnailProps) {
-  const blobUrl = useObjectUrl(resource?.sourceType === 'blob' ? resource.blob : undefined)
+  // Callers (e.g. LibraryPage) commonly pass a metadata-only Resource —
+  // getAllMetadata() strips blob content from every row up front specifically
+  // so a list of many resources doesn't hold all their blobs in memory at
+  // once (see that function's own comment). If `resource.blob` isn't
+  // already a real Blob (either stripped, or the well-known jsdom/
+  // fake-indexeddb round-trip gap noted below), fetch just this one
+  // resource's content on demand instead of expecting it pre-loaded.
+  const [fetchedBlob, setFetchedBlob] = useState<Blob | undefined>(undefined)
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setFetchedBlob(undefined)
+    if (!resource || resource.sourceType !== 'blob') return
+    if (resource.blob instanceof Blob) {
+      setFetchedBlob(resource.blob)
+      return
+    }
+    let cancelled = false
+    void resourceRepository.getById(resource.id).then((full) => {
+      if (!cancelled && full?.blob instanceof Blob) setFetchedBlob(full.blob)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [resource])
+
+  const blobUrl = useObjectUrl(fetchedBlob)
   const [linkUrl, setLinkUrl] = useState<string | undefined>(undefined)
   const [linkNeedsPermission, setLinkNeedsPermission] = useState(false)
 

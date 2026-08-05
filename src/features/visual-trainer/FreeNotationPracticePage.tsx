@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { Trash2 } from 'lucide-react'
-import { PageHeader, Button, Card } from '../../components/ui'
+import { Badge, PageHeader, Button, Card } from '../../components/ui'
+import type { BadgeVariant } from '../../components/ui'
 import { FileDropzone } from '../../components/FileDropzone'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { DrumKit } from '../../components/visual-trainer/DrumKit'
 import { KeyboardGuide } from '../../components/visual-trainer/KeyboardGuide'
+import { StickingPatternGuide } from '../../components/visual-trainer/StickingPatternGuide'
 import { useFreeDrumPlayback } from '../../hooks/useFreeDrumPlayback'
 import { useDebouncedCallback } from '../../hooks/useDebouncedCallback'
 import { useMetronome } from '../practice-session/useMetronome'
@@ -12,6 +14,26 @@ import { resourceRepository, notationPracticeStateRepository } from '../../data/
 import { calculateTapTempoBpm } from '../../lib/metronome-math'
 import { SUBDIVISION_LABELS } from '../exercises/exercise-labels'
 import type { Resource, Subdivision } from '../../domain'
+import type { RemoteDrumInputStatus } from '../../hooks/useRemoteDrumInput'
+
+// Same status labels/variants as VisualTrainerPage's phone-control cluster
+// (ADR 0007) — kept as its own copy here rather than a shared export, since
+// each page's surrounding UI (Card-based here vs. a plain sidebar div
+// there) differs enough that a shared component wasn't a clean fit yet.
+const REMOTE_STATUS_LABELS: Record<RemoteDrumInputStatus, string> = {
+  disabled: 'כבוי',
+  connecting: 'מתחבר לשירות…',
+  'waiting-for-phone': 'ממתין לחיבור טלפון',
+  connected: 'טלפון מחובר',
+  superseded: 'הוחלף בכרטיסייה אחרת',
+}
+const REMOTE_STATUS_BADGE_VARIANT: Record<RemoteDrumInputStatus, BadgeVariant> = {
+  disabled: 'neutral',
+  connecting: 'neutral',
+  'waiting-for-phone': 'warning',
+  connected: 'success',
+  superseded: 'danger',
+}
 
 const BEATS_PER_BAR = [0, 1, 2, 3]
 const DEFAULT_BPM = 90
@@ -95,7 +117,7 @@ export function FreeNotationPracticePage() {
     setPendingRemoval(undefined)
   }
 
-  const { activeHits } = useFreeDrumPlayback()
+  const { activeHits, isPhoneControlEnabled, togglePhoneControl, remoteStatus } = useFreeDrumPlayback()
   const metronome = useMetronome()
   const [bpm, setBpm] = useState(DEFAULT_BPM)
   const [subdivision, setSubdivision] = useState<Subdivision>('quarter')
@@ -215,6 +237,33 @@ export function FreeNotationPracticePage() {
                 ))}
               </select>
             </label>
+
+            {/* Shows the full sticking pattern for the chosen subdivision
+                (which beats/subdivisions are right vs. left hand), not just
+                a single blinking cue — lights up the current one while the
+                metronome plays, matching the beat-dot indicator above. */}
+            <div className="flex flex-col items-center gap-1">
+              <span className="text-xs text-[var(--color-text-muted)]">דפוס הקשה</span>
+              <StickingPatternGuide
+                subdivision={subdivision}
+                activeSubdivisionIndex={metronome.isPlaying ? metronome.subdivisionIndex : undefined}
+                activeTick={metronome.subTickCount}
+              />
+            </div>
+
+            {/* Phone-as-remote-controller (ADR 0007) — this mode is
+                ungraded (no phase/scoring to gate on the way
+                VisualTrainerPage's runner does), so a phone hit here just
+                plays immediately, same as a keyboard hit, whenever this is
+                on. */}
+            <div className="flex flex-col items-center gap-1">
+              <Button variant="secondary" onClick={togglePhoneControl}>
+                {isPhoneControlEnabled ? 'כבה שליטת טלפון' : 'הפעל שליטת טלפון'}
+              </Button>
+              {isPhoneControlEnabled && (
+                <Badge variant={REMOTE_STATUS_BADGE_VARIANT[remoteStatus]}>{REMOTE_STATUS_LABELS[remoteStatus]}</Badge>
+              )}
+            </div>
           </Card>
 
           <KeyboardGuide variant="inline" pressedInstruments={activeHits} />

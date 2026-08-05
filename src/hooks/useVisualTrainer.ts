@@ -8,6 +8,8 @@ import { GRADING_THRESHOLDS, detectMissedEvents, findMatchingEvent, gradeTimingE
 import type { PendingDrumEvent } from '../domain/calculations/hit-matcher'
 import { summarizeScoring } from '../domain/calculations/scoring-engine'
 import { useKeyboardDrums } from './useKeyboardDrums'
+import { useRemoteDrumInput } from './useRemoteDrumInput'
+import type { RemoteDrumInputStatus } from './useRemoteDrumInput'
 import { createId } from '../domain'
 import type { DrumInstrument, ExtraHitEvent, HitGrade, HitResult, InteractiveExercise, ScoringSummary } from '../domain'
 import type { NoteHighwayHandle } from '../components/visual-trainer/NoteHighway'
@@ -52,7 +54,14 @@ export interface UseVisualTrainerResult {
   resume: () => void
   restart: () => void
   exit: () => void
+  /** Phone-as-remote-controller (ADR 0007) — off by default, persisted
+   * across sessions since it's a standing setup choice, not per-run state. */
+  isPhoneControlEnabled: boolean
+  togglePhoneControl: () => void
+  remoteStatus: RemoteDrumInputStatus
 }
+
+const PHONE_CONTROL_ENABLED_STORAGE_KEY = 'drumpath.isPhoneControlEnabled'
 
 const COUNT_IN_BARS = 1
 const BAR_UPDATE_INTERVAL_MS = 200
@@ -86,6 +95,9 @@ export function useVisualTrainer(
 ): UseVisualTrainerResult {
   const [phase, setPhase] = useState<VisualTrainerPhase>('idle')
   const [isDemo, setIsDemo] = useState(false)
+  const [isPhoneControlEnabled, setIsPhoneControlEnabled] = useState(
+    () => localStorage.getItem(PHONE_CONTROL_ENABLED_STORAGE_KEY) === 'true',
+  )
   const [scoring, setScoring] = useState<ScoringSummary>(EMPTY_SCORING)
   const [gradeCounts, setGradeCounts] = useState<GradeCounts>(EMPTY_GRADE_COUNTS)
   const [lastGrade, setLastGrade] = useState<HitGrade | 'extra' | undefined>(undefined)
@@ -307,6 +319,32 @@ export function useVisualTrainer(
 
   useKeyboardDrums({ enabled: (phase === 'running' || phase === 'count-in') && !isDemo, onHit: handleHit })
 
+  const togglePhoneControl = useCallback(() => {
+    setIsPhoneControlEnabled((prev) => {
+      const next = !prev
+      localStorage.setItem(PHONE_CONTROL_ENABLED_STORAGE_KEY, String(next))
+      return next
+    })
+  }, [])
+
+  // A small wrapper around handleHit, not handleHit itself: the remote
+  // connection's own lifecycle is deliberately decoupled from `phase` (see
+  // useRemoteDrumInput's doc comment — the user needs to see "phone
+  // connected" before pressing start, not just during a run), so this reads
+  // the same phaseRef/isDemoRef tick() already reads for this exact reason
+  // to only forward hits into scoring during running/count-in, keeping
+  // remote-hit grading semantics identical to keyboard input.
+  const handleRemoteHit = useCallback(
+    (instrument: DrumInstrument, hitTimeMs: number) => {
+      if (isDemoRef.current) return
+      if (phaseRef.current !== 'running' && phaseRef.current !== 'count-in') return
+      handleHit(instrument, hitTimeMs)
+    },
+    [handleHit],
+  )
+
+  const remoteStatus = useRemoteDrumInput({ enabled: isPhoneControlEnabled, onHit: handleRemoteHit })
+
   const beginPlayback = useCallback(
     (demo: boolean, options: { startOffsetMs?: number } = {}) => {
       const startOffsetMs = Math.max(0, options.startOffsetMs ?? 0)
@@ -412,5 +450,8 @@ export function useVisualTrainer(
     resume,
     restart,
     exit,
+    isPhoneControlEnabled,
+    togglePhoneControl,
+    remoteStatus,
   }
 }

@@ -1,0 +1,1 @@
+export { TouchDrumKitPage } from './TouchDrumKitPage'

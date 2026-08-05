@@ -1,0 +1,21 @@
+{
+  "name": "DrumPath — תרגול טאץ׳",
+  "short_name": "DrumPath Touch",
+  "description": "תרגול תופים במסך מלא בטלפון, ללא מקלדת",
+  "lang": "he",
+  "dir": "rtl",
+  "id": "touch",
+  "start_url": "touch.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#0b6e75",
+  "icons": [
+    {
+      "src": "favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

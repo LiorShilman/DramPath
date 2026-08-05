@@ -1,12 +1,11 @@
 import { useEffect, useState } from 'react'
 import { resourceRepository, settingsRepository } from '../../data/repositories'
 import { useDebouncedCallback } from '../../hooks/useDebouncedCallback'
-import { useObjectUrl } from '../../hooks/useObjectUrl'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { ResourceThumbnail } from '../../components/ResourceThumbnail'
 import { FileTypeIcon } from '../../components/FileTypeIcon'
 import { FileDropzone } from '../../components/FileDropzone'
-import { Button, Badge, PageHeader, buttonClassName } from '../../components/ui'
+import { Button, Badge, PageHeader } from '../../components/ui'
 import {
   isFileSystemAccessSupported,
   pickLinkableFiles,
@@ -19,16 +18,24 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
+// A resources table holding many blobs above this size makes getAll()-based
+// views (the whole Library list) slow to load or hang the tab outright —
+// large video/image files were meant to stay linked (saveLink's own
+// comment), not copied into IndexedDB. Resources above this offer a
+// "convert back to link" action.
+const LARGE_BLOB_THRESHOLD_BYTES = 20 * 1024 * 1024
+
 interface ResourceCardProps {
   resource: Resource
   onDeleted: (id: string) => void
+  onConvertedToLink: (resource: Resource) => void
 }
 
-function ResourceCard({ resource, onDeleted }: ResourceCardProps) {
+function ResourceCard({ resource, onDeleted, onConvertedToLink }: ResourceCardProps) {
   const [tagsText, setTagsText] = useState(resource.tags.join(', '))
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [openError, setOpenError] = useState<string | null>(null)
-  const objectUrl = useObjectUrl(resource.blob)
+  const [convertToLinkError, setConvertToLinkError] = useState<string | null>(null)
 
   const debouncedSaveTags = useDebouncedCallback(async (value: string) => {
     const tags = value
@@ -65,8 +72,46 @@ function ResourceCard({ resource, onDeleted }: ResourceCardProps) {
     }
   }
 
+  // Blob content is deliberately NOT part of `resource` here (the Library
+  // list is loaded via getAllMetadata(), not getAll() — see its own
+  // comment) — fetched fresh on click instead of held in memory for every
+  // card the whole time the page is open, same "only when actually needed"
+  // principle as handleOpenLink above.
+  async function handleOpenBlob() {
+    setOpenError(null)
+    const full = await resourceRepository.getById(resource.id)
+    if (!full?.blob) {
+      setOpenError('הקובץ לא נמצא.')
+      return
+    }
+    const url = URL.createObjectURL(full.blob)
+    window.open(url, '_blank', 'noopener,noreferrer')
+    setTimeout(() => URL.revokeObjectURL(url), 60_000)
+  }
+
+  // Reverts a large blob-backed resource back to a link — the original
+  // FileSystemFileHandle was never kept after converting forward, so this
+  // re-picks the file from disk instead. Same id, so lesson/exercise
+  // references keep working; only relevant for blob resources large enough
+  // to matter (see LARGE_BLOB_THRESHOLD_BYTES) — a resources table holding
+  // many large blobs makes the whole Library list slow to load or hang the
+  // tab outright.
+  async function handleConvertToLink() {
+    setConvertToLinkError(null)
+    const handles = await pickLinkableFiles()
+    const handle = handles[0]
+    if (!handle) return
+    try {
+      const updated = await resourceRepository.convertBlobToLink(resource.id, handle)
+      onConvertedToLink(updated)
+    } catch (error) {
+      setConvertToLinkError(error instanceof Error ? error.message : 'ההמרה נכשלה.')
+    }
+  }
+
   const isImage = resource.mimeType.startsWith('image/')
   const isLink = resource.sourceType === 'link'
+  const isLargeBlob = !isLink && resource.sizeBytes > LARGE_BLOB_THRESHOLD_BYTES
 
   return (
     <li className="flex flex-col gap-2 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-3 [box-shadow:var(--shadow-card)]">
@@ -108,21 +153,21 @@ function ResourceCard({ resource, onDeleted }: ResourceCardProps) {
             פתח קובץ
           </Button>
         ) : (
-          objectUrl && (
-            <a
-              href={objectUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className={buttonClassName('ghost', 'sm')}
-            >
-              פתח קובץ
-            </a>
-          )
+          <Button size="sm" variant="ghost" onClick={() => void handleOpenBlob()}>
+            פתח קובץ
+          </Button>
+        )}
+        {isLargeBlob && isFileSystemAccessSupported() && (
+          <Button size="sm" variant="ghost" onClick={() => void handleConvertToLink()}>
+            🔗 המר לקישור
+          </Button>
         )}
         <Button size="sm" variant="danger-outline" onClick={() => setConfirmDelete(true)}>
           מחיקה
         </Button>
       </div>
+
+      {convertToLinkError && <p className="text-xs text-[var(--color-danger-text)]">{convertToLinkError}</p>}
 
       <ConfirmDialog
         open={confirmDelete}
@@ -145,11 +190,13 @@ export function LibraryPage() {
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [linkError, setLinkError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [convertProgress, setConvertProgress] = useState<{ done: number; total: number } | null>(null)
+  const [convertErrors, setConvertErrors] = useState<string[]>([])
 
   useEffect(() => {
     async function load() {
       const [allResources, settings] = await Promise.all([
-        resourceRepository.getAll(),
+        resourceRepository.getAllMetadata(),
         settingsRepository.getSettings(),
       ])
       setResources(allResources.sort((a, b) => b.createdAt.localeCompare(a.createdAt)))
@@ -225,8 +272,52 @@ export function LibraryPage() {
     }
   }
 
+  // Linked resources (FileSystemFileHandle) can never be included in a
+  // backup archive — a file handle can't be serialized across origins or
+  // devices, so it's excluded entirely (see docs/backup-guide.md). This
+  // reads each linked file's current content once and re-saves it as a
+  // blob resource (same id, so lesson/exercise references keep working),
+  // so it becomes normally backup-able going forward — the practical way
+  // to move a large linked library to a different origin (e.g. from a local
+  // dev server to a deployed site) without manually re-linking every file
+  // there one at a time. Sequential, not parallel: each conversion is its
+  // own permission/read round-trip, and running many at once risks
+  // overlapping native file-picker-adjacent prompts.
+  async function handleConvertAllLinksToBlobs() {
+    const linked = resources.filter((resource) => resource.sourceType === 'link')
+    if (linked.length === 0) return
+
+    setConvertErrors([])
+    setConvertProgress({ done: 0, total: linked.length })
+    const errors: string[] = []
+
+    for (const [index, resource] of linked.entries()) {
+      try {
+        if (!resource.fileHandle) throw new Error('חסרה הפניה לקובץ.')
+        const granted = await ensureReadPermission(resource.fileHandle)
+        if (!granted) throw new Error('ההרשאה לגישה לקובץ נדחתה.')
+        const converted = await resourceRepository.convertLinkToBlob(resource.id)
+        // Strip the blob before it enters this page's list state — same
+        // reasoning as getAllMetadata() above: this state should never hold
+        // more than one large blob in memory at a time.
+        const metadata: Resource = { ...converted }
+        delete metadata.blob
+        setResources((prev) => prev.map((item) => (item.id === metadata.id ? metadata : item)))
+      } catch (error) {
+        errors.push(error instanceof Error ? `${resource.fileName}: ${error.message}` : `${resource.fileName}: המרה נכשלה.`)
+      }
+      setConvertProgress({ done: index + 1, total: linked.length })
+    }
+
+    setConvertErrors(errors)
+  }
+
   function handleDeleted(id: string) {
     setResources((prev) => prev.filter((resource) => resource.id !== id))
+  }
+
+  function handleConvertedToLink(updated: Resource) {
+    setResources((prev) => prev.map((resource) => (resource.id === updated.id ? updated : resource)))
   }
 
   if (loading) {
@@ -270,12 +361,44 @@ export function LibraryPage() {
         )}
       </div>
 
+      {isFileSystemAccessSupported() && resources.some((resource) => resource.sourceType === 'link') && (
+        <div className="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+          <p className="mb-2 text-sm text-[var(--color-text-muted)]">
+            קבצים מקושרים לא נכללים בגיבוי (הפניה לקובץ בדיסק אינה ניתנת להעברה בין אתרים/מכשירים) — כדי
+            שהם ייכללו בגיבוי הבא, אפשר להמיר אותם לאחסון פנימי. הקבצים המקוריים במחשב לא יימחקו.
+          </p>
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => void handleConvertAllLinksToBlobs()}
+            disabled={convertProgress !== null && convertProgress.done < convertProgress.total}
+          >
+            {convertProgress && convertProgress.done < convertProgress.total
+              ? `ממיר… (${convertProgress.done}/${convertProgress.total})`
+              : 'המרת כל הקבצים המקושרים לאחסון פנימי'}
+          </Button>
+          {convertProgress && convertProgress.done === convertProgress.total && convertErrors.length === 0 && (
+            <p className="mt-2 text-sm text-[var(--color-success-text)]">
+              הומרו {convertProgress.total} קבצים בהצלחה.
+            </p>
+          )}
+          {convertErrors.length > 0 && (
+            <p className="mt-2 text-sm text-[var(--color-danger-text)]">{convertErrors.join(' ')}</p>
+          )}
+        </div>
+      )}
+
       {resources.length === 0 ? (
         <p className="text-[var(--color-text-muted)]">עדיין לא הועלו קבצים.</p>
       ) : (
         <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3">
           {resources.map((resource) => (
-            <ResourceCard key={resource.id} resource={resource} onDeleted={handleDeleted} />
+            <ResourceCard
+              key={resource.id}
+              resource={resource}
+              onDeleted={handleDeleted}
+              onConvertedToLink={handleConvertedToLink}
+            />
           ))}
         </ul>
       )}

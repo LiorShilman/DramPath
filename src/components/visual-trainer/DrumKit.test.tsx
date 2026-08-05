@@ -110,4 +110,30 @@ describe('DrumKit', () => {
       expect(img).toHaveAttribute('src', idleSrc)
     })
   })
+
+  describe('onPieceHit (touch/tap targets)', () => {
+    it('pieces are not interactive (no button role) when onPieceHit is not provided', () => {
+      const { container } = render(<DrumKit />)
+      expect(container.querySelector('[data-instrument="snare"]')).not.toHaveAttribute('role')
+    })
+
+    it('marks every piece as a button and fires onPieceHit with its instrument on tap', () => {
+      const onPieceHit = vi.fn()
+      const { container } = render(<DrumKit onPieceHit={onPieceHit} />)
+
+      const snare = container.querySelector('[data-instrument="snare"]')
+      expect(snare).toHaveAttribute('role', 'button')
+
+      snare!.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+      expect(onPieceHit).toHaveBeenCalledWith('snare')
+    })
+
+    it('resolves a tap on the shared hihat piece to hihat_closed (no separate open artwork to tap)', () => {
+      const onPieceHit = vi.fn()
+      const { container } = render(<DrumKit onPieceHit={onPieceHit} />)
+
+      container.querySelector('[data-instrument="hihat"]')!.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+      expect(onPieceHit).toHaveBeenCalledWith('hihat_closed')
+    })
+  })
 })

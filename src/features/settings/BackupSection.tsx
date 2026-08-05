@@ -27,6 +27,9 @@ const ENTITY_LABELS: Record<string, string> = {
   practiceSessions: 'אימונים',
   practiceEntries: 'רשומות תרגול',
   achievements: 'הישגים',
+  interactiveExercises: 'תרגילים אינטראקטיביים',
+  notationPracticeState: 'טמפו שמור לתרגול חופשי',
+  drumImportMetadata: 'מקור ייבוא תופים',
 }
 
 export function BackupSection() {

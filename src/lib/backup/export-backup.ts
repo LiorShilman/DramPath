@@ -25,6 +25,9 @@ export async function buildBackupArchive(): Promise<Blob> {
     practiceEntries,
     settings,
     achievements,
+    interactiveExercises,
+    notationPracticeState,
+    drumImportMetadata,
   ] = await Promise.all([
     db.coursePlans.toArray(),
     db.weeks.toArray(),
@@ -36,6 +39,9 @@ export async function buildBackupArchive(): Promise<Blob> {
     db.practiceEntries.toArray(),
     db.settings.toArray(),
     db.achievements.toArray(),
+    db.interactiveExercises.toArray(),
+    db.notationPracticeState.toArray(),
+    db.drumImportMetadata.toArray(),
   ])
 
   // Linked resources (sourceType 'link') are excluded from backup entirely —
@@ -56,6 +62,9 @@ export async function buildBackupArchive(): Promise<Blob> {
     practiceEntries,
     settings,
     achievements,
+    interactiveExercises,
+    notationPracticeState,
+    drumImportMetadata,
   }
 
   const dataJsonText = JSON.stringify(data, null, 2)

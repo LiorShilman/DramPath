@@ -1,0 +1,120 @@
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { buildProductionRelayWsUrl } from '../lib/visual-trainer/remote-drum-protocol'
+import type { DrumInstrument } from '../domain'
+
+export type RemoteDrumSenderStatus = 'disconnected' | 'connecting' | 'connected' | 'error'
+
+export interface UseRemoteDrumSenderResult {
+  status: RemoteDrumSenderStatus
+  /** relayUrl (a LAN "host:port", dev-mode only) is optional — omit it to
+   * auto-connect to the fixed always-on production relay instead (ADR
+   * 0007), which is what this page does whenever it was itself loaded over
+   * https (the deployed site). */
+  connect: (relayUrl?: string) => void
+  disconnect: () => void
+  sendHit: (instrument: DrumInstrument) => void
+}
+
+/** Where the phone's remembered relay address (desktop LAN host:port,
+ * e.g. "192.168.1.59:8001") is persisted — this codebase's first use of
+ * localStorage (confirmed via search: everything else durable goes through
+ * Dexie repositories), a deliberate exception since this is a UI/session
+ * preference specific to this device, not domain data. */
+export const REMOTE_RELAY_URL_STORAGE_KEY = 'drumpath.remoteRelayUrl'
+
+const RETRY_INTERVAL_MS = 2000
+const MAX_QUIET_RETRIES = 3
+
+/** Phone/"controller" side of the phone-as-remote-controller feature (ADR
+ * 0007) — mirrors useTouchDrumPlayback's playHit shape, just sending over a
+ * WebSocket to server/remote-drum-relay instead of playing local audio.
+ * Two ways to connect: pass a relayUrl (dev mode only — the phone is a
+ * genuinely different machine than whatever's running the local relay, so
+ * needs a manually-typed LAN address there) or call connect() with no
+ * argument, which auto-derives the fixed always-on production relay address
+ * (this is what TouchDrumKitPage does whenever it was itself loaded over
+ * https — the deployed site). Retry policy is deliberately conservative in
+ * both cases: a first connection attempt that never succeeds (wrong IP,
+ * relay not running/reachable) goes straight to 'error' with no auto-retry,
+ * since silently spinning would hide an ambiguous, likely-user-fixable
+ * problem. Only a connection that HAD been established gets a small number
+ * of quiet retries (a Wi-Fi hiccup is worth smoothing over automatically). */
+export function useRemoteDrumSender(): UseRemoteDrumSenderResult {
+  const [status, setStatus] = useState<RemoteDrumSenderStatus>('disconnected')
+  const socketRef = useRef<WebSocket | undefined>(undefined)
+  const retryTimeoutIdRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const hasConnectedOnceRef = useRef(false)
+  const retryCountRef = useRef(0)
+
+  const clearRetryTimeout = useCallback(() => {
+    if (retryTimeoutIdRef.current !== undefined) {
+      clearTimeout(retryTimeoutIdRef.current)
+      retryTimeoutIdRef.current = undefined
+    }
+  }, [])
+
+  // A quiet retry needs to call openSocket again, from inside openSocket's
+  // own onclose handler — a direct recursive reference to the `const
+  // openSocket` being defined below would access it before its declaration
+  // finishes, which the React Compiler's linter flags. Routing the
+  // self-call through a ref sidesteps that: the ref already exists (empty)
+  // by the time openSocket's body runs, and is filled in right after.
+  const openSocketRef = useRef<(wsUrl: string) => void>(() => {})
+
+  const openSocket = useCallback((wsUrl: string) => {
+    setStatus('connecting')
+    const socket = new WebSocket(wsUrl)
+    socketRef.current = socket
+
+    socket.onopen = () => {
+      hasConnectedOnceRef.current = true
+      retryCountRef.current = 0
+      setStatus('connected')
+    }
+
+    socket.onclose = () => {
+      if (socketRef.current !== socket) return // superseded by a newer connect()/disconnect()
+      if (hasConnectedOnceRef.current && retryCountRef.current < MAX_QUIET_RETRIES) {
+        retryCountRef.current += 1
+        setStatus('connecting')
+        retryTimeoutIdRef.current = setTimeout(() => openSocketRef.current(wsUrl), RETRY_INTERVAL_MS)
+      } else {
+        setStatus('error')
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    openSocketRef.current = openSocket
+  }, [openSocket])
+
+  const connect = useCallback(
+    (relayUrl?: string) => {
+      clearRetryTimeout()
+      hasConnectedOnceRef.current = false
+      retryCountRef.current = 0
+      if (relayUrl) {
+        localStorage.setItem(REMOTE_RELAY_URL_STORAGE_KEY, relayUrl)
+        openSocket(`ws://${relayUrl}/ws/controller`)
+      } else {
+        openSocket(buildProductionRelayWsUrl('controller'))
+      }
+    },
+    [clearRetryTimeout, openSocket],
+  )
+
+  const disconnect = useCallback(() => {
+    clearRetryTimeout()
+    socketRef.current?.close()
+    socketRef.current = undefined
+    setStatus('disconnected')
+  }, [clearRetryTimeout])
+
+  const sendHit = useCallback((instrument: DrumInstrument) => {
+    const socket = socketRef.current
+    if (!socket || socket.readyState !== WebSocket.OPEN) return
+    socket.send(JSON.stringify({ type: 'hit', instrument }))
+  }, [])
+
+  return { status, connect, disconnect, sendHit }
+}

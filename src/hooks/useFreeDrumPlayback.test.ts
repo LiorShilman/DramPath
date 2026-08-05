@@ -1,7 +1,30 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { renderHook } from '@testing-library/react'
+import { act, renderHook } from '@testing-library/react'
 import { fireEvent } from '@testing-library/react'
 import { useFreeDrumPlayback } from './useFreeDrumPlayback'
+
+// Same hand-rolled test double as useRemoteDrumInput.test.ts.
+class FakeWebSocket {
+  static instances: FakeWebSocket[] = []
+  onmessage: ((event: { data: string }) => void) | null = null
+  onclose: ((event: { code: number }) => void) | null = null
+
+  constructor() {
+    FakeWebSocket.instances.push(this)
+  }
+
+  close() {}
+
+  simulateMessage(data: unknown) {
+    this.onmessage?.({ data: JSON.stringify(data) })
+  }
+}
+
+function latestSocket(): FakeWebSocket {
+  const socket = FakeWebSocket.instances.at(-1)
+  if (!socket) throw new Error('No FakeWebSocket instance was created')
+  return socket
+}
 
 // Same FakeAudioContext technique already established in useVisualTrainer.test.ts.
 class FakeAudioContext {
@@ -46,6 +69,10 @@ describe('useFreeDrumPlayback', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals()
+    // isPhoneControlEnabled reads from real (jsdom) localStorage, which
+    // otherwise persists across tests within this file.
+    localStorage.clear()
+    FakeWebSocket.instances = []
   })
 
   it('sets activeHits with the mapped instrument when a mapped key is pressed', () => {
@@ -85,5 +112,28 @@ describe('useFreeDrumPlayback', () => {
     const { result } = renderHook(() => useFreeDrumPlayback())
     fireEvent.keyDown(window, { code: 'KeyZ' })
     expect(Object.keys(result.current.activeHits)).toHaveLength(0)
+  })
+
+  it('phone control is off by default, and togglePhoneControl turns it on', () => {
+    vi.stubGlobal('WebSocket', FakeWebSocket)
+    const { result } = renderHook(() => useFreeDrumPlayback())
+
+    expect(result.current.isPhoneControlEnabled).toBe(false)
+    expect(result.current.remoteStatus).toBe('disabled')
+
+    act(() => result.current.togglePhoneControl())
+
+    expect(result.current.isPhoneControlEnabled).toBe(true)
+    expect(result.current.remoteStatus).toBe('connecting')
+  })
+
+  it('a remote hit plays immediately (no phase to gate on, unlike the graded runner)', () => {
+    vi.stubGlobal('WebSocket', FakeWebSocket)
+    const { result } = renderHook(() => useFreeDrumPlayback())
+
+    act(() => result.current.togglePhoneControl())
+    act(() => latestSocket().simulateMessage({ type: 'hit', instrument: 'crash' }))
+
+    expect(result.current.activeHits.crash).toBeTruthy()
   })
 })

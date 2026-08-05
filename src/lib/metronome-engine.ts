@@ -13,6 +13,12 @@ export interface MetronomeStartOptions {
   countInBars: number
   /** Fires once per beat (not per subdivision tick), timed to the audio clock. */
   onBeat?: (beatIndexInBar: number, isCountIn: boolean) => void
+  /** Fires on every scheduled click, including the "and" subdivisions
+   * onBeat skips — e.g. a sticking-pattern display that needs to know
+   * which subdivision within the beat is playing right now, not just which
+   * beat. subdivisionIndexInBeat matches DrumNoteEvent's own convention
+   * (0-indexed, 0 = the beat itself). */
+  onSubTick?: (beatIndexInBar: number, subdivisionIndexInBeat: number, isCountIn: boolean) => void
 }
 
 /**
@@ -31,6 +37,7 @@ export class MetronomeEngine {
   private subdivision: Subdivision = 'quarter'
   private accentFirstBeat = true
   private onBeat?: (beatIndexInBar: number, isCountIn: boolean) => void
+  private onSubTick?: (beatIndexInBar: number, subdivisionIndexInBeat: number, isCountIn: boolean) => void
   private readonly audioContext: AudioContext
 
   constructor(audioContext: AudioContext) {
@@ -43,6 +50,7 @@ export class MetronomeEngine {
     this.subdivision = options.subdivision
     this.accentFirstBeat = options.accentFirstBeat
     this.onBeat = options.onBeat
+    this.onSubTick = options.onSubTick
     this.subTickIndex = 0
     this.countInTicks = options.countInBars * BEATS_PER_BAR * NOTES_PER_BEAT[options.subdivision]
     this.nextNoteTime = this.audioContext.currentTime + 0.05
@@ -93,10 +101,17 @@ export class MetronomeEngine {
 
     this.playClick(time, isAccent)
 
+    const delayMs = Math.max(0, (time - this.audioContext.currentTime) * 1000)
+
     if (isFirstSubTickOfBeat && this.onBeat) {
-      const delayMs = Math.max(0, (time - this.audioContext.currentTime) * 1000)
       const onBeat = this.onBeat
       setTimeout(() => onBeat(beatIndexInBar, isCountIn), delayMs)
+    }
+
+    if (this.onSubTick) {
+      const subdivisionIndexInBeat = subTickIndex % notesPerBeat
+      const onSubTick = this.onSubTick
+      setTimeout(() => onSubTick(beatIndexInBar, subdivisionIndexInBeat, isCountIn), delayMs)
     }
   }
 

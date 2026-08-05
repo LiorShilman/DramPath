@@ -1,8 +1,11 @@
 import type {
   Achievement,
   CoursePlan,
+  DrumImportMetadata,
   Exercise,
+  InteractiveExercise,
   Lesson,
+  NotationPracticeState,
   PracticeEntry,
   PracticeSession,
   Resource,
@@ -54,4 +57,7 @@ export interface BackupData {
   // entity collection in a backup shares the same shape.
   settings: UserSettings[]
   achievements: Achievement[]
+  interactiveExercises: InteractiveExercise[]
+  notationPracticeState: NotationPracticeState[]
+  drumImportMetadata: DrumImportMetadata[]
 }

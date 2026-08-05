@@ -13,6 +13,9 @@ import {
   practiceEntrySchema,
   userSettingsSchema,
   achievementSchema,
+  interactiveExerciseSchema,
+  notationPracticeStateSchema,
+  drumImportMetadataSchema,
   type Resource,
 } from '../../domain'
 import { BACKUP_SCHEMA_VERSION, stripBlob, type BackupData, type BackupManifest } from './types'
@@ -59,6 +62,16 @@ export async function parseBackupArchive(file: File): Promise<ParsedBackup> {
     )
   }
 
+  // interactiveExercises/notationPracticeState/drumImportMetadata were added
+  // to BackupData after schemaVersion 1 shipped — an archive exported before
+  // that simply won't have these keys in its parsed JSON. Defaulting to []
+  // here (once, centrally) keeps those older archives importable without
+  // every downstream reader needing its own fallback, and without forcing a
+  // schema version bump for what's a purely additive, backward-readable change.
+  data.interactiveExercises ??= []
+  data.notationPracticeState ??= []
+  data.drumImportMetadata ??= []
+
   return { manifest, data, zip }
 }
 
@@ -91,6 +104,9 @@ export async function validateBackupData(parsed: ParsedBackup): Promise<Resource
     data.practiceEntries.forEach((item) => practiceEntrySchema.parse(item))
     data.settings.forEach((item) => userSettingsSchema.parse(item))
     data.achievements.forEach((item) => achievementSchema.parse(item))
+    data.interactiveExercises.forEach((item) => interactiveExerciseSchema.parse(item))
+    data.notationPracticeState.forEach((item) => notationPracticeStateSchema.parse(item))
+    data.drumImportMetadata.forEach((item) => drumImportMetadataSchema.parse(item))
   } catch {
     throw new BackupImportError('תוכן הגיבוי אינו תקין (נכשלה ולידציה).')
   }
@@ -167,6 +183,9 @@ export async function previewImport(data: BackupData, mode: ImportMode): Promise
         practiceSessions: allNew(data.practiceSessions),
         practiceEntries: allNew(data.practiceEntries),
         achievements: allNew(data.achievements),
+        interactiveExercises: allNew(data.interactiveExercises),
+        notationPracticeState: allNew(data.notationPracticeState),
+        drumImportMetadata: allNew(data.drumImportMetadata),
       },
     }
   }
@@ -181,6 +200,9 @@ export async function previewImport(data: BackupData, mode: ImportMode): Promise
     existingSessions,
     existingEntries,
     existingAchievements,
+    existingInteractiveExercises,
+    existingNotationPracticeState,
+    existingDrumImportMetadata,
   ] = await Promise.all([
     db.coursePlans.toArray(),
     db.weeks.toArray(),
@@ -191,6 +213,9 @@ export async function previewImport(data: BackupData, mode: ImportMode): Promise
     db.practiceSessions.toArray(),
     db.practiceEntries.toArray(),
     db.achievements.toArray(),
+    db.interactiveExercises.toArray(),
+    db.notationPracticeState.toArray(),
+    db.drumImportMetadata.toArray(),
   ])
 
   return {
@@ -205,6 +230,9 @@ export async function previewImport(data: BackupData, mode: ImportMode): Promise
       practiceSessions: summarize(data.practiceSessions, existingSessions),
       practiceEntries: summarize(data.practiceEntries, existingEntries),
       achievements: summarize(data.achievements, existingAchievements),
+      interactiveExercises: summarize(data.interactiveExercises, existingInteractiveExercises),
+      notationPracticeState: summarize(data.notationPracticeState, existingNotationPracticeState),
+      drumImportMetadata: summarize(data.drumImportMetadata, existingDrumImportMetadata),
     },
   }
 }
@@ -255,6 +283,9 @@ export async function commitImport(
       db.practiceEntries,
       db.settings,
       db.achievements,
+      db.interactiveExercises,
+      db.notationPracticeState,
+      db.drumImportMetadata,
     ],
     async () => {
       if (mode === 'replace') {
@@ -269,6 +300,9 @@ export async function commitImport(
           db.practiceSessions.clear(),
           db.practiceEntries.clear(),
           db.achievements.clear(),
+          db.interactiveExercises.clear(),
+          db.notationPracticeState.clear(),
+          db.drumImportMetadata.clear(),
         ])
       }
 
@@ -277,6 +311,8 @@ export async function commitImport(
       await upsertTimestamped(db.exercises, data.exercises, mode)
       await upsertTimestamped(db.songs, data.songs, mode)
       await upsertTimestamped(db.practiceSessions, data.practiceSessions, mode)
+      await upsertTimestamped(db.interactiveExercises, data.interactiveExercises, mode)
+      await upsertTimestamped(db.notationPracticeState, data.notationPracticeState, mode)
 
       // Lessons go through a manual upsert (not lessonRepository) so this
       // stays inside the single outer transaction, but still re-syncs the
@@ -305,6 +341,13 @@ export async function commitImport(
       for (const achievement of data.achievements) {
         const existing = mode === 'merge' ? await db.achievements.get(achievement.id) : undefined
         if (!existing) await db.achievements.add(achievement)
+      }
+      // drumImportMetadata has no updatedAt (ADR 0006: immutable provenance
+      // record, same treatment as resources/practiceEntries/achievements
+      // above) — added if missing, never overwritten.
+      for (const metadata of data.drumImportMetadata) {
+        const existing = mode === 'merge' ? await db.drumImportMetadata.get(metadata.id) : undefined
+        if (!existing) await db.drumImportMetadata.add(metadata)
       }
 
       const incomingSettings = data.settings[0]
