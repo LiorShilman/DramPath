@@ -495,8 +495,15 @@ export function LessonDetailPage() {
                 off the actual AudioContext clock, so the piece that flashes
                 always matches the sound and the notation's own fill
                 animation, not just an approximation. */}
-            <Card padding="md" className="mb-3 max-w-sm">
-              <DrumKit activeHits={preview.activeHits} />
+            {/* DrumKit's artwork intentionally draws a little past its own
+                box on both sides (hihat pokes out the left, crash/ride the
+                right) — every other usage in the app absorbs that with
+                margin (see FreeNotationPracticePage's 90%-width kit column),
+                never placing it flush against a bordered edge. */}
+            <Card padding="md" className="mb-3">
+              <div className="mx-auto w-[90%] max-w-sm">
+                <DrumKit activeHits={preview.activeHits} />
+              </div>
             </Card>
 
             <Card padding="md" className="mb-3">
