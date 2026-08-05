@@ -14,6 +14,8 @@ import {
 import { lessonCategorySchema, lessonStatusSchema, nowIso } from '../../domain'
 import { useDebouncedCallback } from '../../hooks/useDebouncedCallback'
 import { useExercisePreviewPlayback } from '../../hooks/useExercisePreviewPlayback'
+import type { RemoteDrumInputStatus } from '../../hooks/useRemoteDrumInput'
+import { useMetronome } from '../practice-session/useMetronome'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { ResourceThumbnail } from '../../components/ResourceThumbnail'
 import { FileTypeIcon } from '../../components/FileTypeIcon'
@@ -21,6 +23,7 @@ import { VideoThumbnailButton } from '../../components/VideoThumbnailButton'
 import { ExerciseNotationSheet } from '../../components/visual-trainer/ExerciseNotationSheet'
 import { DrumKit } from '../../components/visual-trainer/DrumKit'
 import { Badge, Button, PageHeader, Card, buttonClassName } from '../../components/ui'
+import type { BadgeVariant } from '../../components/ui'
 import { LESSON_CATEGORY_LABELS, LESSON_STATUS_LABELS } from './lesson-labels'
 import { DIFFICULTY_LABELS, DIFFICULTY_VARIANTS } from '../visual-trainer/exercise-difficulty-labels'
 import type { Exercise, InteractiveExercise, Lesson, Resource, Week } from '../../domain'
@@ -30,6 +33,27 @@ const SUBDIVISION_LABELS: Record<InteractiveExercise['subdivision'], string> = {
   eighth: 'שמיניות',
   sixteenth: 'שש-עשריות',
 }
+
+// Same convention as VisualTrainerPage/FreeNotationPracticePage's own copy
+// of these labels — richer than a flat connected/not boolean since the
+// reason nothing's happening matters (relay down vs. no phone yet vs. a
+// second tab took over).
+const REMOTE_STATUS_LABELS: Record<RemoteDrumInputStatus, string> = {
+  disabled: 'כבוי',
+  connecting: 'מתחבר לשירות…',
+  'waiting-for-phone': 'ממתין לחיבור טלפון',
+  connected: 'טלפון מחובר',
+  superseded: 'הוחלף בכרטיסייה אחרת',
+}
+const REMOTE_STATUS_BADGE_VARIANT: Record<RemoteDrumInputStatus, BadgeVariant> = {
+  disabled: 'neutral',
+  connecting: 'neutral',
+  'waiting-for-phone': 'warning',
+  connected: 'success',
+  superseded: 'danger',
+}
+
+const BEATS_PER_BAR = 4
 
 const lessonFormSchema = z.object({
   title: z.string().min(1, 'שדה חובה'),
@@ -78,6 +102,7 @@ export function LessonDetailPage() {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [linkedExercise, setLinkedExercise] = useState<InteractiveExercise | undefined>(undefined)
   const preview = useExercisePreviewPlayback(linkedExercise)
+  const metronome = useMetronome()
   const [playingVideo, setPlayingVideo] = useState<{ resource: Resource; url: string } | undefined>(undefined)
   const playingVideoRef = useRef(playingVideo)
   playingVideoRef.current = playingVideo
@@ -488,6 +513,52 @@ export function LessonDetailPage() {
               <Badge variant={DIFFICULTY_VARIANTS[linkedExercise.difficulty]}>
                 {DIFFICULTY_LABELS[linkedExercise.difficulty]}
               </Badge>
+            </div>
+
+            <div className="mb-3 flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant={metronome.isPlaying ? 'ghost' : 'secondary'}
+                  onClick={() => {
+                    if (metronome.isPlaying) {
+                      metronome.stop()
+                    } else {
+                      metronome.start({
+                        bpm: linkedExercise.bpm,
+                        subdivision: linkedExercise.subdivision,
+                        accentFirstBeat: true,
+                        countInBars: 0,
+                      })
+                    }
+                  }}
+                >
+                  {metronome.isPlaying ? '⏹ עצור מטרונום' : '🎵 מטרונום'}
+                </Button>
+                {metronome.isPlaying && (
+                  <div className="flex gap-1" aria-hidden="true">
+                    {Array.from({ length: BEATS_PER_BAR }, (_, beat) => (
+                      <span
+                        key={beat}
+                        className={`h-2.5 w-2.5 rounded-full ${
+                          metronome.beatIndex === beat ? 'bg-[var(--color-primary)]' : 'bg-[var(--color-text-muted)]/40'
+                        }`}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Button size="sm" variant={preview.isPhoneControlEnabled ? 'ghost' : 'secondary'} onClick={preview.togglePhoneControl}>
+                  {preview.isPhoneControlEnabled ? '📴 כבה שליטת טלפון' : '📱 הפעל שליטת טלפון'}
+                </Button>
+                {preview.isPhoneControlEnabled && (
+                  <Badge variant={REMOTE_STATUS_BADGE_VARIANT[preview.remoteStatus]}>
+                    {REMOTE_STATUS_LABELS[preview.remoteStatus]}
+                  </Badge>
+                )}
+              </div>
             </div>
 
             {/* Same DrumKit used by the real note-highway runner — its
