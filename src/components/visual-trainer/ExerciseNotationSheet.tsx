@@ -36,6 +36,14 @@ export interface ExerciseNotationSheetProps {
    * grouping as normal noteheads — an isolated cymbal note still gets its
    * own individual flag(s), same as a normal notehead would. */
   beamCymbals?: boolean
+  /** Off by default. When on, draws a small beat number (1, 2, 3…) under
+   * each beat position in every bar — for a standalone sheet with no grid
+   * ruler alongside it (e.g. LessonDetailPage's read-only preview), a sparse
+   * pattern (e.g. quarter notes on beats 1 and 3 only) otherwise gives no
+   * visual cue at all for which beat a note falls on, or that beats 2/4 are
+   * silent rather than just "not part of the bar". ExerciseBuilderPage keeps
+   * this off — its own grid ruler above the sheet already serves that role. */
+  showBeatLabels?: boolean
 }
 
 const BARS_PER_ROW = 4
@@ -47,6 +55,8 @@ const STEM_LENGTH_PX = 12
 const FLAG_GAP_PX = 4
 const BASE_BOTTOM_PADDING_PX = 6
 const ROW_GAP_PX = 12
+const BEAT_LABEL_ROW_HEIGHT_PX = 10
+const BEAT_LABEL_FONT_SIZE = 7
 // The whole exercise shares one subdivision (no per-note duration yet), so
 // every note gets the same flag count — reflecting the real note-duration
 // shape (quarter/eighth/sixteenth), not just a plain circle.
@@ -87,6 +97,7 @@ export function ExerciseNotationSheet({
   highlightedEventIds,
   playbackProgress,
   beamCymbals = false,
+  showBeatLabels = false,
 }: ExerciseNotationSheetProps) {
   const hasStem = (instrument: (typeof exercise.events)[number]['instrument']) => {
     const notehead = STAFF_POSITION[instrument].notehead
@@ -112,7 +123,9 @@ export function ExerciseNotationSheet({
   // stem + flags extend *below* the notehead instead of above it, so it
   // needs its own reserved room at the bottom, only when actually used.
   const hasDownStemNote = feetPositions.length > 0
-  const bottomPadding = hasDownStemNote ? BASE_BOTTOM_PADDING_PX + TOP_PADDING_PX : BASE_BOTTOM_PADDING_PX
+  const bottomPadding =
+    (hasDownStemNote ? BASE_BOTTOM_PADDING_PX + TOP_PADDING_PX : BASE_BOTTOM_PADDING_PX) +
+    (showBeatLabels ? BEAT_LABEL_ROW_HEIGHT_PX : 0)
   const rowHeight = TOP_PADDING_PX + staffPositionToOffsetPx(highestPosition, LINE_SPACING_PX) + bottomPadding
   const totalHeight = rowCount * rowHeight + (rowCount - 1) * ROW_GAP_PX
   const barMs = barDurationMs(exercise)
@@ -314,6 +327,36 @@ export function ExerciseNotationSheet({
                 opacity={0.5}
               />
             ))}
+
+            {/* A sparse pattern (e.g. quarter notes on beats 1 and 3 only)
+                otherwise gives no visual cue for which beat a note falls on,
+                or that beats 2/4 are silent rather than simply "not part of
+                the bar" — see this file's showBeatLabels doc comment. */}
+            {showBeatLabels &&
+              Array.from({ length: rowBars }, (_, barIndexInRow) =>
+                Array.from({ length: exercise.timeSignature.numerator }, (_, beatIndex) => (
+                  <text
+                    key={`${barIndexInRow}-${beatIndex}`}
+                    data-testid="notation-beat-label"
+                    // Same x formula real notes use (noteX above): beat 1
+                    // isn't at the bar's literal left edge, it's inset by
+                    // NOTE_INSET_PX — matching that here is what keeps a
+                    // label lined up under its actual note.
+                    x={
+                      barIndexInRow * BAR_WIDTH_PX +
+                      NOTE_INSET_PX +
+                      (beatIndex / exercise.timeSignature.numerator) * (BAR_WIDTH_PX - NOTE_INSET_PX)
+                    }
+                    y={rowTopY + rowHeight - 2}
+                    textAnchor="middle"
+                    fontSize={BEAT_LABEL_FONT_SIZE}
+                    fill="currentColor"
+                    opacity={0.5}
+                  >
+                    {beatIndex + 1}
+                  </text>
+                )),
+              )}
 
             {rowEvents.map((event, eventIndex) => {
               const staff = STAFF_POSITION[event.instrument]

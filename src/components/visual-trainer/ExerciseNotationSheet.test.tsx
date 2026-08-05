@@ -224,4 +224,29 @@ describe('ExerciseNotationSheet', () => {
     expect(container.querySelectorAll('[data-testid^="notation-row-"]')).toHaveLength(2)
     expect(container.querySelector('[data-testid="notation-row-1"] [data-instrument="kick"]')).toBeTruthy()
   })
+
+  it('renders no beat labels by default', () => {
+    const { container } = render(<ExerciseNotationSheet exercise={EXERCISE} />)
+    expect(container.querySelectorAll('[data-testid="notation-beat-label"]')).toHaveLength(0)
+  })
+
+  it('renders one numbered beat label per beat per bar when showBeatLabels is on', () => {
+    const twoBarExercise = {
+      ...EXERCISE,
+      bars: 2,
+      events: [makeEvent({ instrument: 'kick', bar: 1, beat: 1 }), makeEvent({ instrument: 'snare', bar: 2, beat: 3 })],
+    }
+    const { container } = render(<ExerciseNotationSheet exercise={twoBarExercise} showBeatLabels />)
+    const labels = container.querySelectorAll('[data-testid="notation-beat-label"]')
+    // 4 beats (numerator) per bar x 2 bars
+    expect(labels).toHaveLength(8)
+    expect(Array.from(labels).map((label) => label.textContent)).toEqual(['1', '2', '3', '4', '1', '2', '3', '4'])
+  })
+
+  it('lines a beat label up under its own note (same x as beat 1\'s note)', () => {
+    const { container } = render(<ExerciseNotationSheet exercise={EXERCISE} showBeatLabels />)
+    const kickX = Number(container.querySelector('[data-instrument="kick"] circle')!.getAttribute('cx'))
+    const beat1LabelX = Number(container.querySelector('[data-testid="notation-beat-label"]')!.getAttribute('x'))
+    expect(beat1LabelX).toBeCloseTo(kickX)
+  })
 })

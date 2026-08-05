@@ -495,7 +495,18 @@ export function LessonDetailPage() {
             <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
               <h3 className="text-sm text-[var(--color-text-muted)]">תווי התרגיל</h3>
               {!preview.isPlaying ? (
-                <Button size="sm" variant="secondary" onClick={preview.play}>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => {
+                    // The pattern playback already includes its own synced
+                    // metronome click (ExercisePlaybackEngine) — running the
+                    // standalone metronome at the same time would be a
+                    // second, unsynced click track.
+                    metronome.stop()
+                    preview.play()
+                  }}
+                >
                   ▶ נגן
                 </Button>
               ) : (
@@ -524,6 +535,10 @@ export function LessonDetailPage() {
                     if (metronome.isPlaying) {
                       metronome.stop()
                     } else {
+                      // Same reasoning as the ▶ נגן button above, in
+                      // reverse — a click-only metronome and the pattern's
+                      // own baked-in click must never run at once.
+                      preview.stop()
                       metronome.start({
                         bpm: linkedExercise.bpm,
                         subdivision: linkedExercise.subdivision,
@@ -584,6 +599,7 @@ export function LessonDetailPage() {
                   playbackProgress={
                     preview.isPlaying ? { bpm: linkedExercise.bpm, sessionId: preview.playSessionId } : undefined
                   }
+                  showBeatLabels
                 />
               </div>
             </Card>
