@@ -19,9 +19,17 @@ import { ResourceThumbnail } from '../../components/ResourceThumbnail'
 import { FileTypeIcon } from '../../components/FileTypeIcon'
 import { VideoThumbnailButton } from '../../components/VideoThumbnailButton'
 import { ExerciseNotationSheet } from '../../components/visual-trainer/ExerciseNotationSheet'
+import { DrumKit } from '../../components/visual-trainer/DrumKit'
 import { Badge, Button, PageHeader, Card, buttonClassName } from '../../components/ui'
 import { LESSON_CATEGORY_LABELS, LESSON_STATUS_LABELS } from './lesson-labels'
+import { DIFFICULTY_LABELS, DIFFICULTY_VARIANTS } from '../visual-trainer/exercise-difficulty-labels'
 import type { Exercise, InteractiveExercise, Lesson, Resource, Week } from '../../domain'
+
+const SUBDIVISION_LABELS: Record<InteractiveExercise['subdivision'], string> = {
+  quarter: 'רבעים',
+  eighth: 'שמיניות',
+  sixteenth: 'שש-עשריות',
+}
 
 const lessonFormSchema = z.object({
   title: z.string().min(1, 'שדה חובה'),
@@ -471,6 +479,26 @@ export function LessonDetailPage() {
                 </Button>
               )}
             </div>
+
+            <div className="mb-3 flex flex-wrap items-center gap-2 text-sm text-[var(--color-text-muted)]">
+              <span>{linkedExercise.bpm} BPM</span>
+              <span>·</span>
+              <span>{SUBDIVISION_LABELS[linkedExercise.subdivision]}</span>
+              <span>·</span>
+              <Badge variant={DIFFICULTY_VARIANTS[linkedExercise.difficulty]}>
+                {DIFFICULTY_LABELS[linkedExercise.difficulty]}
+              </Badge>
+            </div>
+
+            {/* Same DrumKit used by the real note-highway runner — its
+                activeHits prop (from useExercisePreviewPlayback) is timed
+                off the actual AudioContext clock, so the piece that flashes
+                always matches the sound and the notation's own fill
+                animation, not just an approximation. */}
+            <Card padding="md" className="mb-3 max-w-sm">
+              <DrumKit activeHits={preview.activeHits} />
+            </Card>
+
             <Card padding="md" className="mb-3">
               <div dir="ltr" className="overflow-x-auto">
                 <ExerciseNotationSheet
