@@ -143,7 +143,7 @@ export function TouchDrumKitPage() {
           kit stuck small even though there was plenty of space beside it;
           overflow-y-auto is a safety net in case a narrow phone still can't
           fit every control in the available height. */}
-      <div className="flex shrink-0 flex-wrap items-center justify-center gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 [box-shadow:var(--shadow-card)] landscape:h-full landscape:w-36 landscape:flex-col landscape:flex-nowrap landscape:justify-start landscape:overflow-y-auto">
+      <div className="flex shrink-0 flex-wrap items-center justify-center gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 [box-shadow:var(--shadow-card)] landscape:h-full landscape:w-40 landscape:flex-col landscape:flex-nowrap landscape:justify-start landscape:overflow-y-auto">
         <button
           type="button"
           onClick={handleToggleMetronome}
@@ -215,36 +215,45 @@ export function TouchDrumKitPage() {
               className="w-28 rounded-[var(--radius-card)] border border-[var(--color-border)] px-2 py-1 text-center text-xs"
             />
           )}
-          <button
-            type="button"
-            onClick={handleToggleRemoteConnection}
-            aria-label={remoteSender.status === 'connected' ? 'התנתק מהמחשב' : 'התחבר למחשב'}
-            className={`flex h-9 w-9 items-center justify-center rounded-full text-white ${
-              remoteSender.status === 'connected' ? 'bg-[var(--color-success)]' : 'bg-[var(--color-text-muted)]'
-            }`}
-          >
-            {remoteSender.status === 'connected' ? (
-              <Wifi className="h-4 w-4" aria-hidden="true" />
-            ) : (
-              <WifiOff className="h-4 w-4" aria-hidden="true" />
-            )}
-          </button>
+          {/* Connect + mute share one row (not stacked) — this toolbar
+              becomes a narrow, tall, non-wrapping column in landscape (see
+              this block's own w-40/flex-col/overflow-y-auto above), so every
+              extra row directly eats into the vertical room a short
+              landscape phone screen actually has; pairing these two related
+              controls avoids adding a whole new row for the mute button. */}
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={handleToggleRemoteConnection}
+              aria-label={remoteSender.status === 'connected' ? 'התנתק מהמחשב' : 'התחבר למחשב'}
+              className={`flex h-9 w-9 items-center justify-center rounded-full text-white ${
+                remoteSender.status === 'connected' ? 'bg-[var(--color-success)]' : 'bg-[var(--color-text-muted)]'
+              }`}
+            >
+              {remoteSender.status === 'connected' ? (
+                <Wifi className="h-4 w-4" aria-hidden="true" />
+              ) : (
+                <WifiOff className="h-4 w-4" aria-hidden="true" />
+              )}
+            </button>
+            {/* Mutes only this phone's own sound — taps still flash the kit
+                and still get sent to the desktop when connected, so it stays
+                a fully usable remote controller, just silent (avoids hearing
+                the hit twice — once here, once from the desktop it's
+                controlling). */}
+            <button
+              type="button"
+              onClick={() => setIsLocalSoundMuted((current) => !current)}
+              aria-label={isLocalSoundMuted ? 'בטל השתקת קול בפלאפון' : 'השתק קול בפלאפון'}
+              className={`flex h-9 w-9 items-center justify-center rounded-full text-white ${
+                isLocalSoundMuted ? 'bg-[var(--color-warning)]' : 'bg-[var(--color-text-muted)]'
+              }`}
+            >
+              {isLocalSoundMuted ? <VolumeX className="h-4 w-4" aria-hidden="true" /> : <Volume2 className="h-4 w-4" aria-hidden="true" />}
+            </button>
+          </div>
           <span className="text-[10px] text-[var(--color-text-muted)]">{REMOTE_STATUS_LABELS[remoteSender.status]}</span>
         </div>
-        {/* Mutes only this phone's own sound — taps still flash the kit and
-            still get sent to the desktop when connected, so it stays a fully
-            usable remote controller, just silent (avoids hearing the hit
-            twice — once here, once from the desktop it's controlling). */}
-        <button
-          type="button"
-          onClick={() => setIsLocalSoundMuted((current) => !current)}
-          aria-label={isLocalSoundMuted ? 'בטל השתקת קול בפלאפון' : 'השתק קול בפלאפון'}
-          className={`flex h-9 w-9 items-center justify-center rounded-full text-white ${
-            isLocalSoundMuted ? 'bg-[var(--color-warning)]' : 'bg-[var(--color-text-muted)]'
-          }`}
-        >
-          {isLocalSoundMuted ? <VolumeX className="h-4 w-4" aria-hidden="true" /> : <Volume2 className="h-4 w-4" aria-hidden="true" />}
-        </button>
       </div>
 
       {/* flex-1 + min-h-0/min-w-0: takes exactly whatever space is left
