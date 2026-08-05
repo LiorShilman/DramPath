@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, Link } from 'react-router'
 import { lessonRepository, weekRepository, resourceRepository } from '../../data/repositories'
+import { GENERATED_TRACK_TAG } from '../curriculum/use-cases/generate-curriculum-track'
 import { useDebouncedCallback } from '../../hooks/useDebouncedCallback'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { ResourceThumbnail } from '../../components/ResourceThumbnail'
@@ -240,7 +241,9 @@ export function LessonsListPage() {
               onDragStart={() => setDraggingId(lesson.id)}
               onDragOver={(event) => reorderEnabled && event.preventDefault()}
               onDrop={() => handleDrop(lesson.id)}
-              className="flex flex-col gap-1 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-3 [box-shadow:var(--shadow-card)] sm:flex-row sm:items-center sm:justify-start sm:gap-4"
+              className={`flex flex-col gap-1 rounded-[var(--radius-card)] border border-[var(--color-border)] p-3 [box-shadow:var(--shadow-card)] sm:flex-row sm:items-center sm:justify-start sm:gap-4 ${
+                lesson.tags.includes(GENERATED_TRACK_TAG) ? 'bg-[var(--color-primary)]/10' : 'bg-[var(--color-surface-raised)]'
+              }`}
             >
               <Link
                 to={`/lessons/${lesson.id}`}
