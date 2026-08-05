@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ArrowLeft, Maximize2, Minimize2, Pause, Play, Wifi, WifiOff } from 'lucide-react'
+import { ArrowLeft, Maximize2, Minimize2, Pause, Play, Volume2, VolumeX, Wifi, WifiOff } from 'lucide-react'
 import { DrumKit } from '../../components/visual-trainer/DrumKit'
 import { StickingPatternGuide } from '../../components/visual-trainer/StickingPatternGuide'
 import { useTouchDrumPlayback } from '../../hooks/useTouchDrumPlayback'
@@ -66,6 +66,12 @@ export function TouchDrumKitPage() {
   const [bpm, setBpm] = useState(DEFAULT_BPM)
   const [subdivision, setSubdivision] = useState<Subdivision>('quarter')
   const [relayUrlInput, setRelayUrlInput] = useState(() => localStorage.getItem(REMOTE_RELAY_URL_STORAGE_KEY) ?? '')
+  // Off by default — most solo practice still wants to hear the phone
+  // itself. Meant for when connected to the desktop (so it's not sounding
+  // twice), but left independently toggleable rather than tied to
+  // remoteSender.status: a silent tap still flashes the kit, which is also
+  // useful stand-alone (e.g. practicing quietly).
+  const [isLocalSoundMuted, setIsLocalSoundMuted] = useState(false)
   const { containerRef: kitAreaRef, width: fitWidth } = useFitSize<HTMLDivElement>(KIT_WRAPPER_ASPECT_RATIO)
 
   function adjustBpm(delta: number) {
@@ -75,7 +81,7 @@ export function TouchDrumKitPage() {
   }
 
   function handlePieceHit(instrument: Parameters<typeof playHit>[0]) {
-    playHit(instrument)
+    playHit(instrument, { silent: isLocalSoundMuted })
     if (remoteSender.status === 'connected') remoteSender.sendHit(instrument)
   }
 
@@ -225,6 +231,20 @@ export function TouchDrumKitPage() {
           </button>
           <span className="text-[10px] text-[var(--color-text-muted)]">{REMOTE_STATUS_LABELS[remoteSender.status]}</span>
         </div>
+        {/* Mutes only this phone's own sound — taps still flash the kit and
+            still get sent to the desktop when connected, so it stays a fully
+            usable remote controller, just silent (avoids hearing the hit
+            twice — once here, once from the desktop it's controlling). */}
+        <button
+          type="button"
+          onClick={() => setIsLocalSoundMuted((current) => !current)}
+          aria-label={isLocalSoundMuted ? 'בטל השתקת קול בפלאפון' : 'השתק קול בפלאפון'}
+          className={`flex h-9 w-9 items-center justify-center rounded-full text-white ${
+            isLocalSoundMuted ? 'bg-[var(--color-warning)]' : 'bg-[var(--color-text-muted)]'
+          }`}
+        >
+          {isLocalSoundMuted ? <VolumeX className="h-4 w-4" aria-hidden="true" /> : <Volume2 className="h-4 w-4" aria-hidden="true" />}
+        </button>
       </div>
 
       {/* flex-1 + min-h-0/min-w-0: takes exactly whatever space is left

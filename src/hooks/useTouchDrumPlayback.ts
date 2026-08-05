@@ -2,9 +2,17 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { playDrumSound } from '../lib/visual-trainer/drum-synth'
 import type { DrumInstrument } from '../domain'
 
+export interface PlayHitOptions {
+  /** Skips the actual sound, still flashes the piece — for a phone acting
+   * as a silent remote controller (see TouchDrumKitPage's mute toggle),
+   * where the desktop it's connected to is already the one making sound
+   * and hearing both at once is the whole problem being solved. */
+  silent?: boolean
+}
+
 export interface UseTouchDrumPlaybackResult {
   activeHits: Partial<Record<DrumInstrument, string>>
-  playHit: (instrument: DrumInstrument) => void
+  playHit: (instrument: DrumInstrument, options?: PlayHitOptions) => void
 }
 
 /** Touch-driven counterpart to useFreeDrumPlayback — same lazy AudioContext
@@ -22,14 +30,16 @@ export function useTouchDrumPlayback(): UseTouchDrumPlaybackResult {
     }
   }, [])
 
-  const playHit = useCallback((instrument: DrumInstrument) => {
-    if (!audioContextRef.current) {
-      audioContextRef.current = new AudioContext()
-      outputNodeRef.current = audioContextRef.current.createGain()
-      outputNodeRef.current.connect(audioContextRef.current.destination)
+  const playHit = useCallback((instrument: DrumInstrument, options?: PlayHitOptions) => {
+    if (!options?.silent) {
+      if (!audioContextRef.current) {
+        audioContextRef.current = new AudioContext()
+        outputNodeRef.current = audioContextRef.current.createGain()
+        outputNodeRef.current.connect(audioContextRef.current.destination)
+      }
+      void audioContextRef.current.resume()
+      playDrumSound(audioContextRef.current, outputNodeRef.current!, audioContextRef.current.currentTime, instrument, 100)
     }
-    void audioContextRef.current.resume()
-    playDrumSound(audioContextRef.current, outputNodeRef.current!, audioContextRef.current.currentTime, instrument, 100)
     setActiveHits((prev) => ({ ...prev, [instrument]: crypto.randomUUID() }))
   }, [])
 
