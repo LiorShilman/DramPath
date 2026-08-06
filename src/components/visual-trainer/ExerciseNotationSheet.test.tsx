@@ -243,7 +243,7 @@ describe('ExerciseNotationSheet', () => {
     expect(Array.from(labels).map((label) => label.textContent)).toEqual(['1', '2', '3', '4', '1', '2', '3', '4'])
   })
 
-  it('labels every off-beat slot too for eighth subdivision, using "+" count-out syllables', () => {
+  it('labels every off-beat slot too for eighth subdivision, using "&" count-out syllables', () => {
     const eighthExercise = {
       ...EXERCISE,
       subdivision: 'eighth' as const,
@@ -256,10 +256,10 @@ describe('ExerciseNotationSheet', () => {
     // — matches the 8 x-noteheads a fully-filled eighth-note hihat pattern
     // would show, unlike the old "4 labels under 8 notes" mismatch.
     expect(labels).toHaveLength(8)
-    expect(Array.from(labels).map((label) => label.textContent)).toEqual(['1', '+', '2', '+', '3', '+', '4', '+'])
+    expect(Array.from(labels).map((label) => label.textContent)).toEqual(['1', '&', '2', '&', '3', '&', '4', '&'])
   })
 
-  it('labels every off-beat slot for sixteenth subdivision with 1-e-+-a count-out syllables', () => {
+  it('labels every off-beat slot for sixteenth subdivision with 1-e-&-a count-out syllables', () => {
     const sixteenthExercise = {
       ...EXERCISE,
       subdivision: 'sixteenth' as const,
@@ -270,10 +270,10 @@ describe('ExerciseNotationSheet', () => {
     const labels = container.querySelectorAll('[data-testid="notation-beat-label"]')
     expect(labels).toHaveLength(16)
     expect(Array.from(labels).map((label) => label.textContent)).toEqual([
-      '1', 'e', '+', 'a',
-      '2', 'e', '+', 'a',
-      '3', 'e', '+', 'a',
-      '4', 'e', '+', 'a',
+      '1', 'e', '&', 'a',
+      '2', 'e', '&', 'a',
+      '3', 'e', '&', 'a',
+      '4', 'e', '&', 'a',
     ])
   })
 

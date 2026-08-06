@@ -57,14 +57,14 @@ const BASE_BOTTOM_PADDING_PX = 6
 const ROW_GAP_PX = 12
 const BEAT_LABEL_ROW_HEIGHT_PX = 10
 const BEAT_LABEL_FONT_SIZE = 7
-// Standard drum-count-out syllables for each off-beat subdivision slot
-// (index 0, the beat itself, always gets its number instead — see the
-// render site). "e"/"a" are the traditional spoken syllables for sixteenth
-// notes' 2nd/4th subdivisions, matching how a teacher would count it aloud.
+// Drum-count-out syllables for each off-beat subdivision slot (index 0, the
+// beat itself, always gets its number instead — see the render site) —
+// "1 2 3 4" / "1 & 2 & 3 & 4 &" / "1 e & a 2 e & a…", matching the course's
+// own counting convention exactly (confirmed with the user — "&", not "+").
 const SUBDIVISION_COUNT_SYLLABLES: Record<Subdivision, string[]> = {
   quarter: [''],
-  eighth: ['', '+'],
-  sixteenth: ['', 'e', '+', 'a'],
+  eighth: ['', '&'],
+  sixteenth: ['', 'e', '&', 'a'],
 }
 // The whole exercise shares one subdivision (no per-note duration yet), so
 // every note gets the same flag count — reflecting the real note-duration
