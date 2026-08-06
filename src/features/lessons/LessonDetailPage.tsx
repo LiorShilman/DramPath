@@ -600,6 +600,7 @@ export function LessonDetailPage() {
                     preview.isPlaying ? { bpm: linkedExercise.bpm, sessionId: preview.playSessionId } : undefined
                   }
                   showBeatLabels
+                  barsPerRow={2}
                 />
               </div>
             </Card>

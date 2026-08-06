@@ -44,6 +44,13 @@ export interface ExerciseNotationSheetProps {
    * silent rather than just "not part of the bar". ExerciseBuilderPage keeps
    * this off — its own grid ruler above the sheet already serves that role. */
   showBeatLabels?: boolean
+  /** How many bars share one row before wrapping — defaults to 4
+   * (BARS_PER_ROW), which is what ExerciseBuilderPage keeps relying on.
+   * A standalone preview with no grid ruler alongside it benefits from
+   * fewer, bigger bars per row instead (e.g. LessonDetailPage passes 2) —
+   * every note/stem/flag gets more horizontal room, which matters more
+   * there since there's nothing else on the page competing for width. */
+  barsPerRow?: number
 }
 
 const BARS_PER_ROW = 4
@@ -107,12 +114,13 @@ export function ExerciseNotationSheet({
   playbackProgress,
   beamCymbals = false,
   showBeatLabels = false,
+  barsPerRow = BARS_PER_ROW,
 }: ExerciseNotationSheetProps) {
   const hasStem = (instrument: (typeof exercise.events)[number]['instrument']) => {
     const notehead = STAFF_POSITION[instrument].notehead
     return notehead === 'normal' || (beamCymbals && notehead === 'x')
   }
-  const rowCount = Math.max(1, Math.ceil(exercise.bars / BARS_PER_ROW))
+  const rowCount = Math.max(1, Math.ceil(exercise.bars / barsPerRow))
 
   // Only reserve vertical room up to the highest notehead actually used
   // (e.g. no crash in this exercise = no wasted headroom above the staff),
@@ -151,8 +159,8 @@ export function ExerciseNotationSheet({
 
   for (const event of exercise.events) {
     const barGlobalIndex = event.bar - 1
-    const rowIndex = Math.floor(barGlobalIndex / BARS_PER_ROW)
-    const barIndexInRow = barGlobalIndex % BARS_PER_ROW
+    const rowIndex = Math.floor(barGlobalIndex / barsPerRow)
+    const barIndexInRow = barGlobalIndex % barsPerRow
     const totalBarPosition = calculateEventTimeMs(event, {
       bpm: ARBITRARY_BPM,
       timeSignature: exercise.timeSignature,
@@ -172,16 +180,16 @@ export function ExerciseNotationSheet({
 
   // The viewBox must match the widest row actually drawn — row 0 always has
   // the most bars (later rows only ever have fewer, on the last row), so
-  // sizing it any wider than that (e.g. always BARS_PER_ROW) leaves a blank
+  // sizing it any wider than that (e.g. always barsPerRow) leaves a blank
   // strip when the exercise is shorter than a full row.
-  const viewBoxWidth = Math.min(BARS_PER_ROW, exercise.bars) * BAR_WIDTH_PX
+  const viewBoxWidth = Math.min(barsPerRow, exercise.bars) * BAR_WIDTH_PX
 
   // Real-time (not ARBITRARY_BPM) duration of each row, and each row's own
   // start offset — lets every row's fill animation run purely in CSS, with
   // `animation-delay` doing the cross-row sequencing instead of JS polling.
   let cumulativeRealMs = 0
   const rowRealTimings = Array.from({ length: rowCount }, (_, rowIndex) => {
-    const rowBars = Math.min(BARS_PER_ROW, exercise.bars - rowIndex * BARS_PER_ROW)
+    const rowBars = Math.min(barsPerRow, exercise.bars - rowIndex * barsPerRow)
     const rowDurationMs = playbackProgress
       ? rowBars * calculateBarDurationMs(playbackProgress.bpm, exercise.timeSignature)
       : 0
@@ -207,7 +215,7 @@ export function ExerciseNotationSheet({
       aria-label="תווי התרגיל"
     >
       {eventsByRow.map((rowEvents, rowIndex) => {
-        const rowBars = Math.min(BARS_PER_ROW, exercise.bars - rowIndex * BARS_PER_ROW)
+        const rowBars = Math.min(barsPerRow, exercise.bars - rowIndex * barsPerRow)
         const rowTopY = rowIndex * (rowHeight + ROW_GAP_PX)
         const baselineY = rowTopY + rowHeight - bottomPadding
         const toY = (position: number) => baselineY - staffPositionToOffsetPx(position, LINE_SPACING_PX)

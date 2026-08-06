@@ -225,6 +225,22 @@ describe('ExerciseNotationSheet', () => {
     expect(container.querySelector('[data-testid="notation-row-1"] [data-instrument="kick"]')).toBeTruthy()
   })
 
+  it('wraps sooner with a smaller barsPerRow, so each bar renders wider (bigger notes)', () => {
+    const fourBarExercise = {
+      ...EXERCISE,
+      bars: 4,
+      events: [makeEvent({ instrument: 'kick', bar: 3, beat: 1 })],
+    }
+    const { container: defaultContainer } = render(<ExerciseNotationSheet exercise={fourBarExercise} />)
+    expect(defaultContainer.querySelectorAll('[data-testid^="notation-row-"]')).toHaveLength(1)
+
+    const { container: narrowContainer } = render(<ExerciseNotationSheet exercise={fourBarExercise} barsPerRow={2} />)
+    // 4 bars at 2 bars/row = 2 rows, and the row-1 bar-3 kick lands in the
+    // now-earlier second row instead of still fitting in row 0.
+    expect(narrowContainer.querySelectorAll('[data-testid^="notation-row-"]')).toHaveLength(2)
+    expect(narrowContainer.querySelector('[data-testid="notation-row-1"] [data-instrument="kick"]')).toBeTruthy()
+  })
+
   it('renders no beat labels by default', () => {
     const { container } = render(<ExerciseNotationSheet exercise={EXERCISE} />)
     expect(container.querySelectorAll('[data-testid="notation-beat-label"]')).toHaveLength(0)
