@@ -230,7 +230,7 @@ describe('ExerciseNotationSheet', () => {
     expect(container.querySelectorAll('[data-testid="notation-beat-label"]')).toHaveLength(0)
   })
 
-  it('renders one numbered beat label per beat per bar when showBeatLabels is on', () => {
+  it('renders one numbered beat label per beat per bar for quarter subdivision when showBeatLabels is on', () => {
     const twoBarExercise = {
       ...EXERCISE,
       bars: 2,
@@ -238,9 +238,43 @@ describe('ExerciseNotationSheet', () => {
     }
     const { container } = render(<ExerciseNotationSheet exercise={twoBarExercise} showBeatLabels />)
     const labels = container.querySelectorAll('[data-testid="notation-beat-label"]')
-    // 4 beats (numerator) per bar x 2 bars
+    // 4 beats (numerator) per bar x 2 bars, 1 subdivision per beat (quarter)
     expect(labels).toHaveLength(8)
     expect(Array.from(labels).map((label) => label.textContent)).toEqual(['1', '2', '3', '4', '1', '2', '3', '4'])
+  })
+
+  it('labels every off-beat slot too for eighth subdivision, using "+" count-out syllables', () => {
+    const eighthExercise = {
+      ...EXERCISE,
+      subdivision: 'eighth' as const,
+      bars: 1,
+      events: [makeEvent({ instrument: 'kick', beat: 1, subdivisionIndex: 0 })],
+    }
+    const { container } = render(<ExerciseNotationSheet exercise={eighthExercise} showBeatLabels />)
+    const labels = container.querySelectorAll('[data-testid="notation-beat-label"]')
+    // 4 beats x 2 subdivisions per beat (eighth) = 8 labels for a single bar
+    // — matches the 8 x-noteheads a fully-filled eighth-note hihat pattern
+    // would show, unlike the old "4 labels under 8 notes" mismatch.
+    expect(labels).toHaveLength(8)
+    expect(Array.from(labels).map((label) => label.textContent)).toEqual(['1', '+', '2', '+', '3', '+', '4', '+'])
+  })
+
+  it('labels every off-beat slot for sixteenth subdivision with 1-e-+-a count-out syllables', () => {
+    const sixteenthExercise = {
+      ...EXERCISE,
+      subdivision: 'sixteenth' as const,
+      bars: 1,
+      events: [makeEvent({ instrument: 'kick', beat: 1, subdivisionIndex: 0 })],
+    }
+    const { container } = render(<ExerciseNotationSheet exercise={sixteenthExercise} showBeatLabels />)
+    const labels = container.querySelectorAll('[data-testid="notation-beat-label"]')
+    expect(labels).toHaveLength(16)
+    expect(Array.from(labels).map((label) => label.textContent)).toEqual([
+      '1', 'e', '+', 'a',
+      '2', 'e', '+', 'a',
+      '3', 'e', '+', 'a',
+      '4', 'e', '+', 'a',
+    ])
   })
 
   it('lines a beat label up under its own note (same x as beat 1\'s note)', () => {

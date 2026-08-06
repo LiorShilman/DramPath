@@ -57,6 +57,15 @@ const BASE_BOTTOM_PADDING_PX = 6
 const ROW_GAP_PX = 12
 const BEAT_LABEL_ROW_HEIGHT_PX = 10
 const BEAT_LABEL_FONT_SIZE = 7
+// Standard drum-count-out syllables for each off-beat subdivision slot
+// (index 0, the beat itself, always gets its number instead — see the
+// render site). "e"/"a" are the traditional spoken syllables for sixteenth
+// notes' 2nd/4th subdivisions, matching how a teacher would count it aloud.
+const SUBDIVISION_COUNT_SYLLABLES: Record<Subdivision, string[]> = {
+  quarter: [''],
+  eighth: ['', '+'],
+  sixteenth: ['', 'e', '+', 'a'],
+}
 // The whole exercise shares one subdivision (no per-note duration yet), so
 // every note gets the same flag count — reflecting the real note-duration
 // shape (quarter/eighth/sixteenth), not just a plain circle.
@@ -331,31 +340,41 @@ export function ExerciseNotationSheet({
             {/* A sparse pattern (e.g. quarter notes on beats 1 and 3 only)
                 otherwise gives no visual cue for which beat a note falls on,
                 or that beats 2/4 are silent rather than simply "not part of
-                the bar" — see this file's showBeatLabels doc comment. */}
+                the bar" — see this file's showBeatLabels doc comment. One
+                label per actual subdivision SLOT, not just per beat: at
+                eighth/sixteenth subdivision there are 2/4 noteheads per
+                beat, and labeling only the 4 downbeats among 8 or 16 visible
+                marks read as mismatched/wrong (confirmed against a real
+                screenshot) — standard count-out syllables ("1 + 2 + 3 + 4 +"
+                for eighths, "1 e + a…" for sixteenths) label every slot. */}
             {showBeatLabels &&
               Array.from({ length: rowBars }, (_, barIndexInRow) =>
-                Array.from({ length: exercise.timeSignature.numerator }, (_, beatIndex) => (
-                  <text
-                    key={`${barIndexInRow}-${beatIndex}`}
-                    data-testid="notation-beat-label"
-                    // Same x formula real notes use (noteX above): beat 1
-                    // isn't at the bar's literal left edge, it's inset by
-                    // NOTE_INSET_PX — matching that here is what keeps a
-                    // label lined up under its actual note.
-                    x={
-                      barIndexInRow * BAR_WIDTH_PX +
-                      NOTE_INSET_PX +
-                      (beatIndex / exercise.timeSignature.numerator) * (BAR_WIDTH_PX - NOTE_INSET_PX)
-                    }
-                    y={rowTopY + rowHeight - 2}
-                    textAnchor="middle"
-                    fontSize={BEAT_LABEL_FONT_SIZE}
-                    fill="currentColor"
-                    opacity={0.5}
-                  >
-                    {beatIndex + 1}
-                  </text>
-                )),
+                Array.from({ length: exercise.timeSignature.numerator }, (_, beatIndex) =>
+                  Array.from({ length: SUBDIVISIONS_PER_BEAT[exercise.subdivision] }, (_, subdivisionIndex) => (
+                    <text
+                      key={`${barIndexInRow}-${beatIndex}-${subdivisionIndex}`}
+                      data-testid="notation-beat-label"
+                      // Same x formula real notes use (noteX above): beat 1
+                      // isn't at the bar's literal left edge, it's inset by
+                      // NOTE_INSET_PX — matching that here is what keeps a
+                      // label lined up under its actual note.
+                      x={
+                        barIndexInRow * BAR_WIDTH_PX +
+                        NOTE_INSET_PX +
+                        (beatIndex / exercise.timeSignature.numerator +
+                          subdivisionIndex / (exercise.timeSignature.numerator * SUBDIVISIONS_PER_BEAT[exercise.subdivision])) *
+                          (BAR_WIDTH_PX - NOTE_INSET_PX)
+                      }
+                      y={rowTopY + rowHeight - 2}
+                      textAnchor="middle"
+                      fontSize={BEAT_LABEL_FONT_SIZE}
+                      fill="currentColor"
+                      opacity={0.5}
+                    >
+                      {subdivisionIndex === 0 ? beatIndex + 1 : SUBDIVISION_COUNT_SYLLABLES[exercise.subdivision][subdivisionIndex]}
+                    </text>
+                  )),
+                ),
               )}
 
             {rowEvents.map((event, eventIndex) => {
