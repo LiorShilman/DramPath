@@ -3,16 +3,18 @@ import type { DrumNoteEvent, InteractiveExercise, Lesson } from '../../../domain
 import { CURRICULUM_STAGES } from './curriculum-stages'
 import { CURRICULUM_PATTERNS } from './pattern-library'
 
-// A generated pair's bar count — the same one-bar pattern is simply repeated
-// across all 8 bars (a plain AAAAAAAA loop), giving a substantially longer
-// practice pass than a single bar without needing loopCount > 1. Per user
-// request: spans more than one notation row (ExerciseNotationSheet wraps at
-// BARS_PER_ROW=4 bars), i.e. "double" a single row's worth. loopCount is
-// always kept at 1, matching ExerciseBuilderPage's own fixed convention: the
-// grid/notation preview and NoteHighway's falling-note animation only ever
-// show a single playthrough, so a loopCount > 1 there previously caused a
-// real scoring bug (see database.ts's v5 migration comment) — this
-// generator avoids that class of bug entirely by never relying on loopCount.
+// A generated pair's bar count — pattern.bars' variants cycle across all 8
+// bars (e.g. a 2-variant pattern plays ABABABAB, not a plain AAAAAAAA loop —
+// see CurriculumPattern's own doc comment for why), giving a substantially
+// longer, less monotonous practice pass than a single bar without needing
+// loopCount > 1. Per user request: spans more than one notation row
+// (ExerciseNotationSheet wraps at BARS_PER_ROW=4 bars), i.e. "double" a
+// single row's worth. loopCount is always kept at 1, matching
+// ExerciseBuilderPage's own fixed convention: the grid/notation preview and
+// NoteHighway's falling-note animation only ever show a single playthrough,
+// so a loopCount > 1 there previously caused a real scoring bug (see
+// database.ts's v5 migration comment) — this generator avoids that class of
+// bug entirely by never relying on loopCount.
 const BARS = 8
 const NOTE_VELOCITY = 100
 
@@ -35,7 +37,8 @@ export function generateCurriculumTrack(): GeneratedCurriculumItem[] {
     for (const pattern of patterns) {
       const events: DrumNoteEvent[] = []
       for (let bar = 1; bar <= BARS; bar += 1) {
-        for (const step of pattern.steps) {
+        const barVariant = pattern.bars[(bar - 1) % pattern.bars.length]!
+        for (const step of barVariant) {
           events.push({
             id: createId(),
             bar,
