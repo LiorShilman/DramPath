@@ -81,8 +81,8 @@ export const CURRICULUM_PATTERNS: Record<number, CurriculumPattern[]> = {
         { beat: 1, subdivisionIndex: 1, instrument: 'hihat_closed' },
         { beat: 2, subdivisionIndex: 0, instrument: 'hihat_closed' },
         { beat: 2, subdivisionIndex: 1, instrument: 'hihat_closed' },
-        { beat: 3, subdivisionIndex: 0, instrument: 'hihat_closed' },
-        { beat: 3, subdivisionIndex: 1, instrument: 'hihat_closed' },
+        // Beat 3's hihat rests entirely (kick alone carries it) — a real
+        // gap before the closing hihat_open, not just "no notes left to add".
         { beat: 4, subdivisionIndex: 0, instrument: 'hihat_closed' },
         { beat: 4, subdivisionIndex: 1, instrument: 'hihat_open' },
         { beat: 1, subdivisionIndex: 0, instrument: 'kick' },
@@ -101,8 +101,8 @@ export const CURRICULUM_PATTERNS: Record<number, CurriculumPattern[]> = {
         { beat: 2, subdivisionIndex: 1, instrument: 'hihat_open' },
         { beat: 3, subdivisionIndex: 0, instrument: 'hihat_closed' },
         { beat: 3, subdivisionIndex: 1, instrument: 'hihat_open' },
-        { beat: 4, subdivisionIndex: 0, instrument: 'hihat_closed' },
-        { beat: 4, subdivisionIndex: 1, instrument: 'hihat_open' },
+        // Beat 4's hihat rests entirely — just the closing snare, a breath
+        // before the bar loops back to the crash.
         { beat: 1, subdivisionIndex: 0, instrument: 'kick' },
         { beat: 2, subdivisionIndex: 0, instrument: 'snare' },
         { beat: 3, subdivisionIndex: 0, instrument: 'kick' },
@@ -116,8 +116,7 @@ export const CURRICULUM_PATTERNS: Record<number, CurriculumPattern[]> = {
       steps: [
         { beat: 1, subdivisionIndex: 0, instrument: 'hihat_closed' },
         { beat: 1, subdivisionIndex: 1, instrument: 'hihat_closed' },
-        { beat: 2, subdivisionIndex: 0, instrument: 'hihat_closed' },
-        { beat: 2, subdivisionIndex: 1, instrument: 'hihat_closed' },
+        // Beat 2's hihat rests — just the snare backbeat alone.
         { beat: 3, subdivisionIndex: 0, instrument: 'hihat_closed' },
         { beat: 3, subdivisionIndex: 1, instrument: 'hihat_closed' },
         { beat: 1, subdivisionIndex: 0, instrument: 'kick' },
@@ -132,8 +131,7 @@ export const CURRICULUM_PATTERNS: Record<number, CurriculumPattern[]> = {
       steps: [
         { beat: 1, subdivisionIndex: 0, instrument: 'crash', accent: true },
         { beat: 1, subdivisionIndex: 1, instrument: 'hihat_closed' },
-        { beat: 2, subdivisionIndex: 0, instrument: 'hihat_closed' },
-        { beat: 2, subdivisionIndex: 1, instrument: 'hihat_closed' },
+        // Beat 2's hihat rests — just the snare backbeat alone.
         { beat: 3, subdivisionIndex: 0, instrument: 'hihat_closed' },
         { beat: 3, subdivisionIndex: 1, instrument: 'hihat_closed' },
         { beat: 1, subdivisionIndex: 0, instrument: 'kick' },
@@ -155,8 +153,7 @@ export const CURRICULUM_PATTERNS: Record<number, CurriculumPattern[]> = {
         { beat: 2, subdivisionIndex: 2, instrument: 'hihat_closed' },
         { beat: 3, subdivisionIndex: 0, instrument: 'hihat_closed' },
         { beat: 3, subdivisionIndex: 2, instrument: 'hihat_closed' },
-        { beat: 4, subdivisionIndex: 0, instrument: 'hihat_closed' },
-        { beat: 4, subdivisionIndex: 2, instrument: 'hihat_closed' },
+        // Beat 4's hihat rests entirely — just the closing snare backbeat.
         { beat: 1, subdivisionIndex: 0, instrument: 'kick' },
         { beat: 3, subdivisionIndex: 2, instrument: 'kick' },
         { beat: 2, subdivisionIndex: 0, instrument: 'snare' },
@@ -172,8 +169,8 @@ export const CURRICULUM_PATTERNS: Record<number, CurriculumPattern[]> = {
         { beat: 2, subdivisionIndex: 2, instrument: 'ride' },
         { beat: 3, subdivisionIndex: 0, instrument: 'ride' },
         { beat: 3, subdivisionIndex: 2, instrument: 'ride' },
-        { beat: 4, subdivisionIndex: 0, instrument: 'ride' },
-        { beat: 4, subdivisionIndex: 2, instrument: 'ride' },
+        // Beat 4's ride rests — makes the closing accented hihat_open (below)
+        // stand out on its own instead of blending into a continuous ride.
         { beat: 1, subdivisionIndex: 0, instrument: 'kick' },
         { beat: 3, subdivisionIndex: 0, instrument: 'kick' },
         { beat: 2, subdivisionIndex: 0, instrument: 'snare' },
@@ -191,8 +188,7 @@ export const CURRICULUM_PATTERNS: Record<number, CurriculumPattern[]> = {
         { beat: 1, subdivisionIndex: 2, instrument: 'hihat_closed' },
         { beat: 2, subdivisionIndex: 0, instrument: 'hihat_closed' },
         { beat: 2, subdivisionIndex: 2, instrument: 'hihat_closed' },
-        { beat: 3, subdivisionIndex: 0, instrument: 'hihat_closed' },
-        { beat: 3, subdivisionIndex: 2, instrument: 'hihat_closed' },
+        // Beat 3's hihat rests — the syncopated kick carries it alone.
         { beat: 4, subdivisionIndex: 0, instrument: 'hihat_closed' },
         { beat: 4, subdivisionIndex: 2, instrument: 'hihat_closed' },
         { beat: 1, subdivisionIndex: 0, instrument: 'kick' },
@@ -208,8 +204,7 @@ export const CURRICULUM_PATTERNS: Record<number, CurriculumPattern[]> = {
         { beat: 1, subdivisionIndex: 0, instrument: 'crash', accent: true },
         { beat: 1, subdivisionIndex: 0, instrument: 'hihat_closed' },
         { beat: 1, subdivisionIndex: 2, instrument: 'hihat_closed' },
-        { beat: 2, subdivisionIndex: 0, instrument: 'hihat_closed' },
-        { beat: 2, subdivisionIndex: 2, instrument: 'hihat_closed' },
+        // Beat 2's hihat rests — just the snare backbeat alone.
         { beat: 3, subdivisionIndex: 0, instrument: 'hihat_closed' },
         { beat: 3, subdivisionIndex: 2, instrument: 'hihat_closed' },
         { beat: 4, subdivisionIndex: 0, instrument: 'hihat_closed' },
@@ -231,8 +226,7 @@ export const CURRICULUM_PATTERNS: Record<number, CurriculumPattern[]> = {
         { beat: 1, subdivisionIndex: 0, instrument: 'crash', accent: true },
         { beat: 1, subdivisionIndex: 0, instrument: 'hihat_closed' },
         { beat: 1, subdivisionIndex: 2, instrument: 'hihat_closed' },
-        { beat: 2, subdivisionIndex: 0, instrument: 'hihat_closed' },
-        { beat: 2, subdivisionIndex: 2, instrument: 'hihat_closed' },
+        // Beat 2's hihat rests — just the snare backbeat alone.
         { beat: 3, subdivisionIndex: 0, instrument: 'hihat_closed' },
         { beat: 3, subdivisionIndex: 2, instrument: 'hihat_closed' },
         { beat: 1, subdivisionIndex: 0, instrument: 'kick' },
@@ -250,8 +244,8 @@ export const CURRICULUM_PATTERNS: Record<number, CurriculumPattern[]> = {
         { beat: 1, subdivisionIndex: 0, instrument: 'crash', accent: true },
         { beat: 1, subdivisionIndex: 0, instrument: 'hihat_closed' },
         { beat: 1, subdivisionIndex: 2, instrument: 'hihat_closed' },
-        { beat: 2, subdivisionIndex: 0, instrument: 'hihat_closed' },
-        { beat: 2, subdivisionIndex: 2, instrument: 'hihat_closed' },
+        // Beat 2's hihat rests too — silence right before the tom cascade
+        // that fills beats 3-4 makes the fill's entrance land harder.
         { beat: 1, subdivisionIndex: 3, instrument: 'kick' },
         { beat: 2, subdivisionIndex: 0, instrument: 'snare' },
         { beat: 3, subdivisionIndex: 0, instrument: 'tom_high' },
@@ -272,8 +266,8 @@ export const CURRICULUM_PATTERNS: Record<number, CurriculumPattern[]> = {
         { beat: 1, subdivisionIndex: 0, instrument: 'crash', accent: true },
         { beat: 1, subdivisionIndex: 0, instrument: 'hihat_closed' },
         { beat: 1, subdivisionIndex: 2, instrument: 'hihat_closed' },
-        { beat: 2, subdivisionIndex: 0, instrument: 'hihat_closed' },
-        { beat: 2, subdivisionIndex: 2, instrument: 'hihat_closed' },
+        // Beat 2's hihat rests — classic waltz "boom-CHICK", the snare
+        // stands alone instead of being buried under continuous hihat.
         { beat: 3, subdivisionIndex: 0, instrument: 'hihat_closed' },
         { beat: 3, subdivisionIndex: 2, instrument: 'hihat_closed' },
         { beat: 1, subdivisionIndex: 0, instrument: 'kick' },
@@ -287,8 +281,8 @@ export const CURRICULUM_PATTERNS: Record<number, CurriculumPattern[]> = {
         { beat: 1, subdivisionIndex: 0, instrument: 'crash', accent: true },
         { beat: 1, subdivisionIndex: 0, instrument: 'hihat_closed' },
         { beat: 1, subdivisionIndex: 2, instrument: 'hihat_closed' },
-        { beat: 2, subdivisionIndex: 0, instrument: 'hihat_closed' },
-        { beat: 2, subdivisionIndex: 2, instrument: 'hihat_closed' },
+        // Beat 2's hihat rests — same "boom-CHICK" breath as the first
+        // waltz pattern.
         { beat: 3, subdivisionIndex: 0, instrument: 'hihat_closed' },
         { beat: 3, subdivisionIndex: 2, instrument: 'hihat_closed' },
         { beat: 1, subdivisionIndex: 0, instrument: 'kick' },
