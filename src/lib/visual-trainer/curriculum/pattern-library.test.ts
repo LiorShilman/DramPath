@@ -35,7 +35,8 @@ describe('CURRICULUM_PATTERNS', () => {
           expect(step.subdivisionIndex).toBeGreaterThanOrEqual(0)
           expect(step.subdivisionIndex).toBeLessThan(maxIndex)
           expect(step.beat).toBeGreaterThanOrEqual(1)
-          expect(step.beat).toBeLessThanOrEqual(4)
+          // Not hardcoded to 4 — stage 8's 3/4 meter only has beats 1-3.
+          expect(step.beat).toBeLessThanOrEqual(stage.timeSignature.numerator)
         }
       }
     }
