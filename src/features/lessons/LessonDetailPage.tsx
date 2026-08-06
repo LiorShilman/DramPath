@@ -599,6 +599,7 @@ export function LessonDetailPage() {
                   playbackProgress={
                     preview.isPlaying ? { bpm: linkedExercise.bpm, sessionId: preview.playSessionId } : undefined
                   }
+                  highlightedEventIds={preview.highlightedEventIds}
                   showBeatLabels
                   barsPerRow={2}
                 />

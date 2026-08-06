@@ -9,6 +9,10 @@ import type { DrumInstrument, InteractiveExercise } from '../domain'
 
 const PHONE_CONTROL_ENABLED_STORAGE_KEY = 'drumpath.lessonPreview.isPhoneControlEnabled'
 const PHONE_HIT_VELOCITY = 100
+// How long a single note stays highlighted in the notation after it plays —
+// same brief-flash feel as DrumKit's own HIT_FLASH_MS, just for the
+// notehead instead of the kit piece.
+const NOTE_HIGHLIGHT_DURATION_MS = 150
 
 export interface ExercisePreviewPlayback {
   isPlaying: boolean
@@ -20,6 +24,13 @@ export interface ExercisePreviewPlayback {
    * playback's own scheduled hits and any live phone hits below, so one
    * DrumKit reacts to either source. */
   activeHits: Partial<Record<DrumInstrument, string>>
+  /** Which notation noteheads to draw in the highlight color right now —
+   * same idea as ExerciseBuilderPage's own playingStepEventIds, just driven
+   * by real audio-scheduling time (onEventScheduled below) instead of a
+   * polled cursor position. Each id is added the instant its sound actually
+   * plays and removed again after NOTE_HIGHLIGHT_DURATION_MS — a brief
+   * flash per note, not a lingering one. */
+  highlightedEventIds: ReadonlySet<string>
   play: () => void
   stop: () => void
   /** Phone-as-remote-controller (ADR 0007) — same opt-in/persisted pattern
@@ -48,6 +59,7 @@ export function useExercisePreviewPlayback(exercise: InteractiveExercise | undef
   const [isPlaying, setIsPlaying] = useState(false)
   const [playSessionId, setPlaySessionId] = useState(0)
   const [activeHits, setActiveHits] = useState<Partial<Record<DrumInstrument, string>>>({})
+  const [highlightedEventIds, setHighlightedEventIds] = useState<Set<string>>(new Set())
   const audioContextRef = useRef<AudioContext | null>(null)
   const outputNodeRef = useRef<GainNode | null>(null)
   const playbackEngineRef = useRef<ExercisePlaybackEngine | null>(null)
@@ -81,6 +93,7 @@ export function useExercisePreviewPlayback(exercise: InteractiveExercise | undef
     playbackEngineRef.current?.stop()
     setIsPlaying(false)
     setActiveHits({})
+    setHighlightedEventIds(new Set())
   }
 
   useEffect(() => stop, [])
@@ -103,6 +116,17 @@ export function useExercisePreviewPlayback(exercise: InteractiveExercise | undef
         const timeoutId = setTimeout(() => {
           hitTimeoutIdsRef.current.delete(timeoutId)
           setActiveHits((current) => ({ ...current, [event.instrument]: createId() }))
+          setHighlightedEventIds((current) => new Set(current).add(event.id))
+
+          const unhighlightTimeoutId = setTimeout(() => {
+            hitTimeoutIdsRef.current.delete(unhighlightTimeoutId)
+            setHighlightedEventIds((current) => {
+              const next = new Set(current)
+              next.delete(event.id)
+              return next
+            })
+          }, NOTE_HIGHLIGHT_DURATION_MS)
+          hitTimeoutIdsRef.current.add(unhighlightTimeoutId)
         }, delayMs)
         hitTimeoutIdsRef.current.add(timeoutId)
       },
@@ -135,6 +159,7 @@ export function useExercisePreviewPlayback(exercise: InteractiveExercise | undef
     isPlaying,
     playSessionId,
     activeHits,
+    highlightedEventIds,
     play,
     stop,
     isPhoneControlEnabled,
