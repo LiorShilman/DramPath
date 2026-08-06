@@ -191,14 +191,25 @@ export class ExercisePlaybackEngine {
 
   // Same synthesis technique as MetronomeEngine.playClick (src/lib/metronome-engine.ts),
   // duplicated in miniature rather than exporting a private method from that
-  // unrelated, already-shipped class.
+  // unrelated, already-shipped class — but boosted well past that original
+  // click's own gain/pitch (0.6 peak @ 900Hz). Unlike the standalone
+  // metronome (which always plays alone), this one has to be heard *under*
+  // real recorded drum-sample WAVs (public/audio/drums/) that frequently
+  // land on the exact same beat (e.g. hihat covering every subdivision from
+  // stage 2 onward) — a thin sine tone at a modest peak gain was getting
+  // completely buried under that far richer/louder material (confirmed by
+  // the user: no lesson had an audibly distinguishable click). A higher,
+  // sharper pitch cuts through a mix better than a soft tone, and a gain
+  // past 1.0 is safe for a ~30ms transient (GainNode isn't destructive-clip
+  // limited the way analog gear is) — the same deliberate "let a short
+  // click distort a little for attack" trick real click generators use.
   private playMetronomeClick(time: number): void {
     const oscillator = this.audioContext.createOscillator()
     const gain = this.audioContext.createGain()
 
-    oscillator.frequency.value = 900
+    oscillator.frequency.value = 1400
     gain.gain.setValueAtTime(0.001, time)
-    gain.gain.exponentialRampToValueAtTime(0.6, time + 0.005)
+    gain.gain.exponentialRampToValueAtTime(1.5, time + 0.003)
     gain.gain.exponentialRampToValueAtTime(0.001, time + CLICK_DURATION_SECONDS)
 
     oscillator.connect(gain)
