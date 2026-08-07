@@ -50,11 +50,16 @@ export const CURRICULUM_PATTERNS: Record<number, CurriculumPattern[]> = {
           { beat: 3, subdivisionIndex: 0, instrument: 'kick' },
           { beat: 4, subdivisionIndex: 0, instrument: 'snare' },
         ],
-        // B swaps the closing snare for a kick.
+        // B adds a kick under the closing snare (a unison hit) instead of
+        // just swapping instruments on the same single note — a one-note
+        // substitution between two similar-looking noteheads read as
+        // "the same bar" at a glance (confirmed against a real screenshot);
+        // an extra notehead stacked on the beat is unambiguous.
         [
           { beat: 1, subdivisionIndex: 0, instrument: 'kick' },
           { beat: 2, subdivisionIndex: 0, instrument: 'snare' },
           { beat: 3, subdivisionIndex: 0, instrument: 'kick' },
+          { beat: 4, subdivisionIndex: 0, instrument: 'snare' },
           { beat: 4, subdivisionIndex: 0, instrument: 'kick' },
         ],
       ],
@@ -210,16 +215,21 @@ export const CURRICULUM_PATTERNS: Record<number, CurriculumPattern[]> = {
           { beat: 4, subdivisionIndex: 0, instrument: 'tom_high' },
           { beat: 4, subdivisionIndex: 1, instrument: 'tom_floor' },
         ],
-        // B varies the closing fill's voicing (tom_mid instead of tom_high).
+        // B fills beat 2's hihat rest instead of swapping the closing fill's
+        // tom voicing (tom_high->tom_mid) — a same-position instrument swap
+        // between two adjacent, similar-looking toms read as "the same bar"
+        // at a glance (confirmed against a real screenshot); a new notehead
+        // appearing where there was silence is unambiguous.
         [
           { beat: 1, subdivisionIndex: 0, instrument: 'hihat_closed' },
           { beat: 1, subdivisionIndex: 1, instrument: 'hihat_closed' },
+          { beat: 2, subdivisionIndex: 0, instrument: 'hihat_closed' },
           { beat: 3, subdivisionIndex: 0, instrument: 'hihat_closed' },
           { beat: 3, subdivisionIndex: 1, instrument: 'hihat_closed' },
           { beat: 1, subdivisionIndex: 0, instrument: 'kick' },
           { beat: 2, subdivisionIndex: 0, instrument: 'snare' },
           { beat: 3, subdivisionIndex: 0, instrument: 'kick' },
-          { beat: 4, subdivisionIndex: 0, instrument: 'tom_mid' },
+          { beat: 4, subdivisionIndex: 0, instrument: 'tom_high' },
           { beat: 4, subdivisionIndex: 1, instrument: 'tom_floor' },
         ],
       ],

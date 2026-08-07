@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, Link } from 'react-router'
 import { lessonRepository, weekRepository, resourceRepository } from '../../data/repositories'
 import { GENERATED_TRACK_TAG } from '../curriculum/use-cases/generate-curriculum-track'
+import { CUSTOM_LESSON_TAG, generateSnareHihatLessonUseCase } from './use-cases/generate-snare-hihat-lesson'
 import { useDebouncedCallback } from '../../hooks/useDebouncedCallback'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { ResourceThumbnail } from '../../components/ResourceThumbnail'
@@ -94,6 +95,20 @@ export function LessonsListPage() {
     void navigate(`/lessons/${created.id}`)
   }
 
+  // Idempotent, not guarded-with-an-error like the curriculum generator —
+  // this is a single hand-authored lesson, not a batch, so re-clicking just
+  // takes you to the one that already exists instead of piling up
+  // duplicates.
+  async function handleGenerateSnareHihatLesson() {
+    const existing = lessons.find((lesson) => lesson.tags.includes(CUSTOM_LESSON_TAG))
+    if (existing) {
+      void navigate(`/lessons/${existing.id}`)
+      return
+    }
+    const { lessonId } = await generateSnareHihatLessonUseCase()
+    void navigate(`/lessons/${lessonId}`)
+  }
+
   async function handleDuplicate(lesson: Lesson) {
     const nextOrder = Math.max(...lessons.map((l) => l.order)) + 1
     const created = await lessonRepository.create({
@@ -157,6 +172,9 @@ export function LessonsListPage() {
           <div className="flex gap-2">
             <Button variant="secondary" onClick={() => void navigate('/practice/visual/curriculum')}>
               מסלול שיעורים אוטומטי
+            </Button>
+            <Button variant="secondary" onClick={() => void handleGenerateSnareHihatLesson()}>
+              שיעור סנר + היי-הט מתקדם
             </Button>
             <Button onClick={() => void handleCreate()}>+ שיעור חדש</Button>
           </div>
