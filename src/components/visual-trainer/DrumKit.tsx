@@ -116,6 +116,19 @@ export interface DrumKitProps {
    * of the same instrument — a class toggle alone can't restart an
    * animation that's already applied. */
   activeHits?: Partial<Record<DrumInstrument, string>>
+  /** True for the whole count-in (not per-beat) — shows the held left stick
+   * continuously for the entire count-in, not flickering on/off with every
+   * beat (explicit user request: only the right stick's strike should
+   * flash per beat; the left one just stays visible throughout, like a
+   * drummer actually holding it there). */
+  isCountingIn?: boolean
+  /** A fresh id on every count-in beat — plays the right stick's "strike"
+   * animation once per beat (a new token remounts it so its CSS animation
+   * restarts, same trick activeHits uses for rapid repeated hits of the
+   * same instrument). Only rendered while isCountingIn is also true.
+   * Optional: pages without a count-in (or that don't care to show one)
+   * simply never pass either prop. */
+  stickClickToken?: string
   /** When provided, every piece becomes a tap/click target — calls this
    * with the instrument it represents. Optional and purely additive:
    * existing keyboard-driven callers (VisualTrainerPage,
@@ -165,7 +178,7 @@ function PieceImage({ piece, isActive }: { piece: DrumPiece; isActive: boolean }
 // how precisely the image itself is pixel-aligned to the idle photo.
 const HIT_IMAGE_SRCS = Object.values(HIT_IMAGE_SRC)
 
-export function DrumKit({ activeHits, onPieceHit }: DrumKitProps) {
+export function DrumKit({ activeHits, isCountingIn, stickClickToken, onPieceHit }: DrumKitProps) {
   useEffect(() => {
     for (const src of HIT_IMAGE_SRCS) {
       const image = new Image()
@@ -224,6 +237,19 @@ export function DrumKit({ activeHits, onPieceHit }: DrumKitProps) {
           </div>
         )
       })}
+      {/* The count-off gesture drummers do before playing starts (see
+          index.css's .stick-click-* rules) — right stick strikes left
+          (explicit user request), centered above the kit rather than
+          anchored to any one piece. The left stick mounts once and stays
+          for the whole count-in (isCountingIn, no per-beat remount); only
+          the right stick remounts per stickClickToken, so only it re-plays
+          its strike animation on every beat — the left one never flickers. */}
+      {isCountingIn && (
+        <div className="stick-click-overlay" aria-hidden="true">
+          <div className="stick-click stick-click-left" />
+          {stickClickToken && <div key={stickClickToken} className="stick-click stick-click-right" />}
+        </div>
+      )}
     </div>
   )
 }

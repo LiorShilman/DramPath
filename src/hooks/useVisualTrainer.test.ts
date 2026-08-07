@@ -127,7 +127,7 @@ describe('useVisualTrainer', () => {
     ])
     const { result } = renderHook(() => useVisualTrainer(exercise, noHighwayRef))
 
-    act(() => result.current.start())
+    await act(() => result.current.start())
     expect(result.current.phase).toBe('count-in')
 
     await waitFor(() => expect(result.current.phase).toBe('running'), { timeout: 3000 })
@@ -140,7 +140,7 @@ describe('useVisualTrainer', () => {
     ])
     const { result } = renderHook(() => useVisualTrainer(exercise, noHighwayRef))
 
-    act(() => result.current.start())
+    await act(() => result.current.start())
     expect(result.current.phase).toBe('count-in')
 
     // 240bpm/4-4 = a 250ms beat, 1000ms count-in bar — plenty of time for
@@ -156,7 +156,7 @@ describe('useVisualTrainer', () => {
     ])
     const { result } = renderHook(() => useVisualTrainer(exercise, noHighwayRef))
 
-    act(() => result.current.start())
+    await act(() => result.current.start())
     await waitFor(() => expect(result.current.phase).toBe('running'), { timeout: 3000 })
 
     // The exercise's only event is at bar1/beat1 (elapsedMs 0) — 'running'
@@ -179,7 +179,7 @@ describe('useVisualTrainer', () => {
     ])
     const { result } = renderHook(() => useVisualTrainer(exercise, noHighwayRef))
 
-    act(() => result.current.start())
+    await act(() => result.current.start())
 
     await waitFor(() => expect(result.current.phase).toBe('finished'), { timeout: 3000 })
     expect(result.current.lastGrade).toBe('miss')
@@ -194,7 +194,7 @@ describe('useVisualTrainer', () => {
     ])
     const { result } = renderHook(() => useVisualTrainer(exercise, noHighwayRef))
 
-    act(() => result.current.start())
+    await act(() => result.current.start())
     await waitFor(() => expect(result.current.phase).toBe('finished'), { timeout: 3000 })
 
     expect(stopSpy).toHaveBeenCalled()
@@ -208,7 +208,7 @@ describe('useVisualTrainer', () => {
     ])
     const { result } = renderHook(() => useVisualTrainer(exercise, noHighwayRef))
 
-    act(() => result.current.start())
+    await act(() => result.current.start())
     await waitFor(() => expect(result.current.phase).toBe('running'), { timeout: 3000 })
 
     act(() => result.current.pause())
@@ -226,7 +226,7 @@ describe('useVisualTrainer', () => {
     const { result } = renderHook(() => useVisualTrainer(exercise, noHighwayRef))
 
     expect(result.current.isDemo).toBe(false)
-    act(() => result.current.startDemo())
+    await act(() => result.current.startDemo())
     expect(result.current.isDemo).toBe(true)
 
     await waitFor(() => expect(result.current.phase).toBe('finished'), { timeout: 3000 })
@@ -242,11 +242,11 @@ describe('useVisualTrainer', () => {
     ])
     const { result } = renderHook(() => useVisualTrainer(exercise, noHighwayRef))
 
-    act(() => result.current.startDemo())
+    await act(() => result.current.startDemo())
     await waitFor(() => expect(result.current.phase).toBe('finished'), { timeout: 3000 })
     expect(result.current.isDemo).toBe(true)
 
-    act(() => result.current.start())
+    await act(() => result.current.start())
     expect(result.current.isDemo).toBe(false)
   })
 
@@ -261,7 +261,7 @@ describe('useVisualTrainer', () => {
     ])
     const { result } = renderHook(() => useVisualTrainer(exercise, noHighwayRef))
 
-    act(() => result.current.seekDemo(400))
+    await act(() => result.current.seekDemo(400))
 
     // No count-in when seeking — straight to 'running', not 'count-in'.
     expect(result.current.phase).toBe('running')
@@ -283,7 +283,7 @@ describe('useVisualTrainer', () => {
     ])
     const { result } = renderHook(() => useVisualTrainer(exercise, noHighwayRef))
 
-    act(() => result.current.start())
+    await act(() => result.current.start())
     await waitFor(() => expect(result.current.phase).toBe('running'), { timeout: 3000 })
 
     act(() => result.current.exit())
@@ -316,7 +316,7 @@ describe('useVisualTrainer', () => {
     const { result } = renderHook(() => useVisualTrainer(exercise, noHighwayRef))
 
     act(() => result.current.togglePhoneControl())
-    act(() => result.current.start())
+    await act(() => result.current.start())
     await waitFor(() => expect(result.current.phase).toBe('running'), { timeout: 3000 })
 
     act(() => latestSocket().simulateMessage({ type: 'hit', instrument: 'kick' }))
@@ -352,7 +352,7 @@ describe('useVisualTrainer', () => {
     const { result } = renderHook(() => useVisualTrainer(exercise, noHighwayRef))
 
     act(() => result.current.togglePhoneControl())
-    act(() => result.current.startDemo())
+    await act(() => result.current.startDemo())
     expect(result.current.isDemo).toBe(true)
 
     act(() => latestSocket().simulateMessage({ type: 'hit', instrument: 'kick' }))

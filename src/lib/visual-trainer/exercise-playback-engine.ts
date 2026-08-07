@@ -1,6 +1,7 @@
 import { calculateBarDurationMs } from '../../domain/calculations/event-timing'
 import { resolveEventScheduleMs, resolveMetronomeBeatScheduleMs } from '../../domain/calculations/exercise-schedule'
 import { playDrumSound } from './drum-synth'
+import { ensureStickClickSampleLoading, getStickClickSample } from './stick-click-sample'
 import type { DrumNoteEvent, InteractiveExercise } from '../../domain'
 
 const SCHEDULER_INTERVAL_MS = 25
@@ -11,6 +12,11 @@ export interface ExercisePlaybackStartOptions {
   countInBars?: number
   /** Fires as each drum event is actually scheduled — lets a later hit-matching stage correlate a HitResult with real audio timing. */
   onEventScheduled?: (event: DrumNoteEvent, audioTimeSeconds: number) => void
+  /** Fires as each count-in beat (not a regular exercise beat) is actually
+   * scheduled — lets a caller drive a "sticks clicking together" visual cue
+   * in sync with the real audio, same lookahead-compensation pattern as
+   * onEventScheduled above. Never fires when countInBars is 0. */
+  onCountInBeatScheduled?: (audioTimeSeconds: number) => void
   /** Seek: skip straight to this point in the timeline (ms from the very
    * start, including any count-in) instead of always starting at 0 — beats/
    * events before it are simply never scheduled. Lets a caller (e.g. a
@@ -49,9 +55,15 @@ export class ExercisePlaybackEngine {
   private startAudioTime = 0
   private eventQueue: QueuedEvent[] = []
   private beatQueue: number[] = []
+  // Kept separate from beatQueue (not just tagged) — count-in beats get a
+  // distinct "sticks clicking together" sound/visual cue instead of the
+  // regular metronome click, so tick() needs to tell the two apart.
+  private countInBeatQueue: number[] = []
   private nextEventIndex = 0
   private nextBeatIndex = 0
+  private nextCountInBeatIndex = 0
   private onEventScheduled?: (event: DrumNoteEvent, audioTimeSeconds: number) => void
+  private onCountInBeatScheduled?: (audioTimeSeconds: number) => void
 
   constructor(audioContext: AudioContext) {
     this.audioContext = audioContext
@@ -95,6 +107,8 @@ export class ExercisePlaybackEngine {
     this.stop()
     this.paused = false
     this.onEventScheduled = options.onEventScheduled
+    this.onCountInBeatScheduled = options.onCountInBeatScheduled
+    ensureStickClickSampleLoading(this.audioContext)
 
     const countInBars = options.countInBars ?? 0
     const barDurationMs = calculateBarDurationMs(exercise.bpm, exercise.timeSignature)
@@ -117,7 +131,11 @@ export class ExercisePlaybackEngine {
     const startOffsetMs = Math.max(0, options.startOffsetMs ?? 0)
 
     this.startAudioTime = this.audioContext.currentTime + 0.05
-    this.beatQueue = [...countInBeatTimesMs, ...exerciseBeatTimesMs]
+    this.countInBeatQueue = countInBeatTimesMs
+      .filter((timeMs) => timeMs >= startOffsetMs)
+      .sort((a, b) => a - b)
+      .map((timeMs) => this.startAudioTime + (timeMs - startOffsetMs) / 1000)
+    this.beatQueue = exerciseBeatTimesMs
       .filter((timeMs) => timeMs >= startOffsetMs)
       .sort((a, b) => a - b)
       .map((timeMs) => this.startAudioTime + (timeMs - startOffsetMs) / 1000)
@@ -127,6 +145,7 @@ export class ExercisePlaybackEngine {
       .map(({ event, timeMs }) => ({ event, audioTimeSeconds: this.startAudioTime + (timeMs - startOffsetMs) / 1000 }))
     this.nextEventIndex = 0
     this.nextBeatIndex = 0
+    this.nextCountInBeatIndex = 0
 
     this.schedulerId = setInterval(() => this.tick(), SCHEDULER_INTERVAL_MS)
   }
@@ -166,6 +185,16 @@ export class ExercisePlaybackEngine {
   private tick(): void {
     const scheduleUntil = this.audioContext.currentTime + LOOKAHEAD_SECONDS
 
+    while (
+      this.nextCountInBeatIndex < this.countInBeatQueue.length &&
+      this.countInBeatQueue[this.nextCountInBeatIndex]! < scheduleUntil
+    ) {
+      const audioTimeSeconds = this.countInBeatQueue[this.nextCountInBeatIndex]!
+      this.playStickClick(audioTimeSeconds)
+      this.onCountInBeatScheduled?.(audioTimeSeconds)
+      this.nextCountInBeatIndex += 1
+    }
+
     while (this.nextBeatIndex < this.beatQueue.length && this.beatQueue[this.nextBeatIndex]! < scheduleUntil) {
       this.playMetronomeClick(this.beatQueue[this.nextBeatIndex]!)
       this.nextBeatIndex += 1
@@ -184,7 +213,11 @@ export class ExercisePlaybackEngine {
     // Every beat/event has been handed off to the Web Audio scheduler —
     // nothing left for this JS-side poller to do (already-scheduled sounds
     // keep playing on their own; this only stops us from looking for more).
-    if (this.nextBeatIndex >= this.beatQueue.length && this.nextEventIndex >= this.eventQueue.length) {
+    if (
+      this.nextCountInBeatIndex >= this.countInBeatQueue.length &&
+      this.nextBeatIndex >= this.beatQueue.length &&
+      this.nextEventIndex >= this.eventQueue.length
+    ) {
       this.stop()
     }
   }
@@ -216,5 +249,68 @@ export class ExercisePlaybackEngine {
     gain.connect(this.metronomeGain)
     oscillator.start(time)
     oscillator.stop(time + CLICK_DURATION_SECONDS + 0.01)
+  }
+
+  // Count-in only (never the exercise's own beats) — a real recorded
+  // stick-click sample (public/audio/drums/stick_click.wav, same
+  // load-and-cache pattern as drum-samples.ts) when one's been added, same
+  // "prefer sample, fall back to synthesis" contract as playDrumSound so
+  // this never breaks before that file exists. The synthesized fallback is
+  // a short high-passed noise knock — percussive and wood-like, deliberately
+  // distinct from playMetronomeClick's sine tone so a click and a stick
+  // click are never confused even without a real sample.
+  private playStickClick(time: number): void {
+    const sample = getStickClickSample(this.audioContext)
+    if (sample) {
+      const source = this.audioContext.createBufferSource()
+      const gain = this.audioContext.createGain()
+      source.buffer = sample
+      gain.gain.setValueAtTime(1, time)
+      source.connect(gain)
+      gain.connect(this.metronomeGain)
+      source.start(time)
+      return
+    }
+
+    const durationSeconds = 0.05
+    const source = this.audioContext.createBufferSource()
+    const filter = this.audioContext.createBiquadFilter()
+    const gain = this.audioContext.createGain()
+
+    source.buffer = this.getOrCreateNoiseBuffer()
+    filter.type = 'highpass'
+    filter.frequency.value = 3000
+    gain.gain.setValueAtTime(0.0001, time)
+    gain.gain.exponentialRampToValueAtTime(1, time + 0.002)
+    gain.gain.exponentialRampToValueAtTime(0.0001, time + durationSeconds)
+
+    source.connect(filter)
+    filter.connect(gain)
+    gain.connect(this.metronomeGain)
+    source.start(time)
+    source.stop(time + durationSeconds + 0.01)
+  }
+
+  // Reused across every synthesized stick-click hit (a source node is
+  // single-use, but the underlying buffer data isn't) — same idea as
+  // drum-synth.ts's own module-level noise buffer, kept private to this
+  // class instead since it's the only synthesized sound this class needs
+  // noise for.
+  private noiseBuffer: AudioBuffer | null = null
+
+  private getOrCreateNoiseBuffer(): AudioBuffer {
+    if (this.noiseBuffer) return this.noiseBuffer
+    const durationSeconds = 0.2
+    const buffer = this.audioContext.createBuffer(
+      1,
+      this.audioContext.sampleRate * durationSeconds,
+      this.audioContext.sampleRate,
+    )
+    const data = buffer.getChannelData(0)
+    for (let i = 0; i < data.length; i += 1) {
+      data[i] = Math.random() * 2 - 1
+    }
+    this.noiseBuffer = buffer
+    return buffer
   }
 }

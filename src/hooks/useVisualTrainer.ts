@@ -36,6 +36,10 @@ export interface UseVisualTrainerResult {
   gradeCounts: GradeCounts
   lastGrade: HitGrade | 'extra' | undefined
   activeHits: Partial<Record<DrumInstrument, string>>
+  /** A fresh id on every count-in beat — feeds DrumKit's "sticks clicking
+   * together" count-off animation, same remount-per-token pattern as
+   * activeHits. undefined outside of an active count-in. */
+  stickClickToken: string | undefined
   currentBar: number
   currentBeat: number
   /** ms elapsed since the exercise itself started (count-in excluded, same
@@ -105,6 +109,7 @@ export function useVisualTrainer(
   // at (near-)the same time would just overwrite each other's entry and
   // only one drum piece would ever visually react.
   const [activeHits, setActiveHits] = useState<Partial<Record<DrumInstrument, string>>>({})
+  const [stickClickToken, setStickClickToken] = useState<string | undefined>(undefined)
   const [currentBar, setCurrentBar] = useState(1)
   const [currentBeat, setCurrentBeat] = useState(1)
   const [elapsedMs, setElapsedMs] = useState(0)
@@ -113,6 +118,17 @@ export function useVisualTrainer(
   const engineRef = useRef<ExercisePlaybackEngine | null>(null)
   const rafIdRef = useRef<number | null>(null)
   const barIntervalIdRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  // Each count-in beat's DrumKit cue is its own setTimeout (see
+  // onCountInBeatScheduled in beginPlayback below), same lookahead-delay
+  // pattern as useExercisePreviewPlayback's own hit flashes — must all be
+  // cleared on every restart/exit/unmount, or a stale one could still fire
+  // stickClickToken after a new run (or no run) has started.
+  const stickClickTimeoutIdsRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set())
+
+  const clearStickClickTimeouts = useCallback(() => {
+    for (const timeoutId of stickClickTimeoutIdsRef.current) clearTimeout(timeoutId)
+    stickClickTimeoutIdsRef.current.clear()
+  }, [])
 
   const pendingRef = useRef<PendingDrumEvent[]>([])
   const hitResultsRef = useRef<HitResult[]>([])
@@ -156,10 +172,11 @@ export function useVisualTrainer(
   useEffect(() => {
     return () => {
       stopLoops()
+      clearStickClickTimeouts()
       engineRef.current?.dispose()
       void audioContextRef.current?.close()
     }
-  }, [stopLoops])
+  }, [clearStickClickTimeouts, stopLoops])
 
   const recomputeScoring = useCallback(() => {
     setScoring(summarizeScoring(hitResultsRef.current, extraHitsRef.current, totalExpectedEventsRef.current))
@@ -232,7 +249,15 @@ export function useVisualTrainer(
       countInDurationMsRef.current +
       startOffsetMsRef.current
 
-    noteHighwayRef.current?.render(elapsedMs)
+    // During count-in, elapsedMs is already negative (that's how count-in is
+    // detected below) — but not negative enough to keep every note hidden
+    // whenever the count-in bar is shorter than NoteHighway's own lookahead
+    // window (common at faster tempos), so the first notes could start
+    // falling mid-count-in, competing with the stick count-off for
+    // attention (explicit user request: the count-off should have the
+    // screen to itself). -Infinity keeps every note's computed progress
+    // below isNoteVisible's threshold regardless of the real elapsedMs.
+    noteHighwayRef.current?.render(phaseRef.current === 'count-in' ? -Infinity : elapsedMs)
 
     if (phaseRef.current === 'count-in' && elapsedMs >= 0) {
       setPhaseBoth('running')
@@ -346,7 +371,7 @@ export function useVisualTrainer(
   const remoteStatus = useRemoteDrumInput({ enabled: isPhoneControlEnabled, onHit: handleRemoteHit })
 
   const beginPlayback = useCallback(
-    (demo: boolean, options: { startOffsetMs?: number } = {}) => {
+    async (demo: boolean, options: { startOffsetMs?: number } = {}) => {
       const startOffsetMs = Math.max(0, options.startOffsetMs ?? 0)
       // Seeking mid-exercise skips the count-in entirely — waiting through
       // a full bar of click before resuming would defeat the point of
@@ -357,8 +382,20 @@ export function useVisualTrainer(
       if (!engineRef.current) engineRef.current = new ExercisePlaybackEngine(audioContextRef.current)
       const audioContext = audioContextRef.current
       const engine = engineRef.current
-      void audioContext.resume()
+      // Awaited, not fire-and-forget: AudioContext.currentTime stays frozen
+      // while the context is 'suspended' (the browser's own state right
+      // after `new AudioContext()`, until a real user gesture resumes it —
+      // often the very first Start press of a session, when there's real
+      // hardware-startup latency). engine.start() below anchors every
+      // count-in/exercise beat time to currentTime at the moment it runs —
+      // calling it before resume() actually settles freezes that anchor at
+      // a stale value, so once currentTime finally starts advancing, several
+      // beats already inside the engine's lookahead window all fire in one
+      // burst instead of evenly spaced (reported as "sticks count-off");
+      // waiting here removes the race entirely.
+      await audioContext.resume()
       stopLoops()
+      clearStickClickTimeouts()
 
       isDemoRef.current = demo
       setIsDemo(demo)
@@ -385,12 +422,29 @@ export function useVisualTrainer(
       startOffsetMsRef.current = startOffsetMs
       clockOffsetMsRef.current = performance.now() - audioContext.currentTime * 1000
 
-      engine.start(exercise, { countInBars, startOffsetMs })
+      engine.start(exercise, {
+        countInBars,
+        startOffsetMs,
+        // Fires ahead of the actual sound (inside the engine's own
+        // lookahead window) — schedule the DrumKit cue for the real moment
+        // the click plays, not the moment it was merely queued, same
+        // distinction onEventScheduled callers elsewhere in the codebase
+        // already rely on (see useExercisePreviewPlayback.ts).
+        onCountInBeatScheduled: (audioTimeSeconds) => {
+          const delayMs = Math.max(0, (audioTimeSeconds - audioContext.currentTime) * 1000)
+          const timeoutId = setTimeout(() => {
+            stickClickTimeoutIdsRef.current.delete(timeoutId)
+            setStickClickToken(createId())
+          }, delayMs)
+          stickClickTimeoutIdsRef.current.add(timeoutId)
+        },
+      })
 
       setScoring(EMPTY_SCORING)
       setGradeCounts(EMPTY_GRADE_COUNTS)
       setLastGrade(undefined)
       setActiveHits({})
+      setStickClickToken(undefined)
       setCurrentBar(Math.max(1, Math.floor(startOffsetMs / barDurationMsRef.current) + 1))
       setCurrentBeat(1)
       setElapsedMs(startOffsetMs)
@@ -400,7 +454,7 @@ export function useVisualTrainer(
       rafIdRef.current = requestAnimationFrame(tick)
       startBarInterval()
     },
-    [exercise, noteHighwayRef, setPhaseBoth, startBarInterval, stopLoops, tick],
+    [clearStickClickTimeouts, exercise, noteHighwayRef, setPhaseBoth, startBarInterval, stopLoops, tick],
   )
 
   const start = useCallback(() => beginPlayback(false), [beginPlayback])
@@ -430,8 +484,9 @@ export function useVisualTrainer(
   const exit = useCallback(() => {
     engineRef.current?.stop()
     stopLoops()
+    clearStickClickTimeouts()
     setPhaseBoth('idle')
-  }, [setPhaseBoth, stopLoops])
+  }, [clearStickClickTimeouts, setPhaseBoth, stopLoops])
 
   return {
     phase,
@@ -440,6 +495,7 @@ export function useVisualTrainer(
     gradeCounts,
     lastGrade,
     activeHits,
+    stickClickToken,
     currentBar,
     currentBeat,
     elapsedMs,

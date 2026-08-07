@@ -16,6 +16,10 @@ per instrument here, named exactly:
 - `tom_high.wav`
 - `tom_mid.wav`
 - `tom_floor.wav`
+- `stick_click.wav` (or `.mp3`) — optional: the pre-song count-off sound
+  (sticks clicking together), played during the count-in only. Falls back to
+  a synthesized noise-knock click when absent, same as every other
+  instrument here.
 
 Each file is picked up automatically the next time the app loads — no code
 changes needed. An instrument with no matching file keeps using the

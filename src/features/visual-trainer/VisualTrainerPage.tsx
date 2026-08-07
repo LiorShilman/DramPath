@@ -140,7 +140,11 @@ function VisualTrainerRunner({ exercise, highwayRef }: VisualTrainerRunnerProps)
           comment), so this measures the column and sizes the kit in JS. */}
       <div className="h-full w-full lg:w-[45%]">
         <AspectFitBox ratio={4 / 3}>
-          <DrumKit activeHits={trainer.activeHits} />
+          <DrumKit
+            activeHits={trainer.activeHits}
+            isCountingIn={trainer.phase === 'count-in'}
+            stickClickToken={trainer.stickClickToken}
+          />
         </AspectFitBox>
       </div>
       <div className="flex w-full flex-col gap-1.5 lg:w-[55%]">
@@ -176,7 +180,11 @@ function VisualTrainerRunner({ exercise, highwayRef }: VisualTrainerRunnerProps)
               headroom rather than re-verifying the tighter pe-3 is safe
               again. */}
           <div className="w-full max-w-2xl shrink-0 pe-6 lg:w-[36rem]">
-            <DrumKit activeHits={trainer.activeHits} />
+            <DrumKit
+              activeHits={trainer.activeHits}
+              isCountingIn={trainer.phase === 'count-in'}
+              stickClickToken={trainer.stickClickToken}
+            />
           </div>
           <div className="flex flex-col gap-3">
             {keyboardGuide}

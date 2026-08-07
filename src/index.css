@@ -207,6 +207,88 @@ input[type='radio'] {
   }
 }
 
+/* The pre-song stick count-off (DrumKit.tsx's stickClickToken prop) — two
+   CSS-drawn sticks (reusing .drumstick's own gradient look), swinging
+   together to "click" and apart again on every count-in beat. Positioned
+   between the hi-hat and snare (PIECE_LAYOUT's own hihat/snare coordinates
+   put their centers around 10%/20% and 28%/34% respectively) — where a
+   player's hands actually rest before starting to play, not up by the
+   cymbals (explicit user feedback after the first, cymbal-area placement
+   didn't read as right). Right stick renders on top at the moment of
+   contact (higher z-index) — explicit user request ("ימין על שמאל", right
+   over left). */
+.stick-click-overlay {
+  position: absolute;
+  /* Bottom edge (top + height) kept at the same ~48% "hand position" as
+     before — height grows upward from there, not downward past it, so
+     making the sticks longer doesn't push them further into the kick/snare
+     photos than already intended. */
+  top: 28%;
+  left: 31%;
+  width: 20%;
+  height: 32%;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.stick-click {
+  position: absolute;
+  bottom: 0;
+  /* Narrower, not wider, alongside the taller box above — length comes from
+     height growing much faster than width, or thickness grows right along
+     with it and it just reads as "bigger," not "longer" (explicit user
+     correction after a first attempt that grew both roughly together). */
+  width: 8%;
+  height: 96%;
+  background: linear-gradient(to bottom, #e8c39e, #b9814a);
+  border-radius: 999px;
+  opacity: 0;
+}
+
+/* The left stick is the held, stationary target — no animation, no
+   per-beat remount, just visible for the whole count-in (DrumKit.tsx only
+   mounts it while isCountingIn is true) so it never flickers between beats,
+   same as a drummer actually holding it there the whole time (explicit user
+   request). Only the right stick moves: it swings down from a raised
+   position and actually strikes the left stick's tip (a real "right hits
+   left" motion, not two sticks meeting each other symmetrically —
+   explicit user correction after the first, mirrored-swing version read as
+   two separate sticks instead of one striking the other). */
+.stick-click-left {
+  left: 30%;
+  transform-origin: bottom center;
+  transform: rotate(12deg);
+  opacity: 1;
+}
+
+.stick-click-right {
+  right: 30%;
+  transform-origin: bottom center;
+  z-index: 1;
+  animation: stick-click-right-strike 260ms ease-out;
+}
+
+@keyframes stick-click-right-strike {
+  /* Starts raised and tilted away (positive = clockwise = top swings right,
+     toward its own resting side), swings down past vertical to cross over
+     the left stick (negative = top swings left, toward center) at the
+     strike moment, then springs back to raised as it fades — a real
+     right-to-left strike, not the reverse (explicit user correction: the
+     first version had these two rotation directions flipped). */
+  0% {
+    transform: rotate(50deg);
+    opacity: 1;
+  }
+  40% {
+    transform: rotate(-15deg);
+    opacity: 1;
+  }
+  100% {
+    transform: rotate(50deg);
+    opacity: 0;
+  }
+}
+
 /* StickingPatternGuide's hit-pad flash — deliberately not a directional
    swing/translate animation (three attempts at a CSS-drawn stick swinging
    in from outside all read wrong without a way to actually see the result
