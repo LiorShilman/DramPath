@@ -31,6 +31,12 @@ service scoped to exactly what DrumPath's import screen needs.
    # if that still doesn't resolve, find the installed exe and set:
    $env:FFMPEG_BIN = "C:\Users\<you>\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg_...\ffmpeg-...\bin\ffmpeg.exe"
    ```
+3. (Optional, ADR 0008) To enable "upload a full song" via Fadr Plus's
+   cloud stem separation instead of always needing pre-separated stems:
+   copy `.env.example` to `.env` and fill in `FADR_API_KEY` (from your
+   Fadr account's API tab). Leave it unset to keep the service exactly as
+   it was before this option existed — `/api/v1/analyze` never depends on
+   it. **Never commit `.env`** (already gitignored).
 
 ## Run
 
@@ -45,12 +51,18 @@ from `http://localhost:5173` (Vite's default dev port); override with the
 
 ## Endpoints
 
-- `GET /api/v1/health` — `{ status, ffmpegAvailable, ffmpegPath, version }`.
+- `GET /api/v1/health` — `{ status, ffmpegAvailable, ffmpegPath, version, fadrConfigured }`.
 - `POST /api/v1/analyze` — `multipart/form-data` with up to 7 optional file
   parts (`kick`, `snare`, `toms`, `hh`, `ride`, `crash`, `residual`), returns
   the quantized event list as JSON. See `app/schemas.py` for the exact
   shape (mirrored on the DrumPath side at
   `src/features/drum-import/domain/analyze-response.ts`).
+- `POST /api/v1/analyze-from-song` — `multipart/form-data` with one `song`
+  file part (a full song, not pre-separated stems). Only available when
+  `FADR_API_KEY` is configured (503 otherwise) — internally calls Fadr's
+  cloud API (`app/fadr_client.py`) to separate the song, then feeds the
+  result into the exact same analysis pipeline as `/api/v1/analyze`. See
+  `docs/adr/0008-fadr-cloud-stem-separation.md` in the DrumPath repo.
 
 ## Tests
 
@@ -60,6 +72,8 @@ pytest
 
 `tests/test_pipeline_smoke.py` uses synthetic audio (no ffmpeg dependency).
 `tests/test_api.py` exercises the FastAPI app via `TestClient`.
+`tests/test_fadr_client.py` mocks every Fadr HTTP call (`httpx.MockTransport`)
+— no real network access or API key needed to run the suite.
 
 ## Attribution
 

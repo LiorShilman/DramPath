@@ -62,3 +62,26 @@ export async function analyzeStems(stems: Partial<Record<StemFieldName, File>>):
 
   return analyzeResponseSchema.parse(await response.json())
 }
+
+// ADR 0008 — the optional Fadr-backed path: one full song in, the exact
+// same AnalyzeResponse shape out as analyzeStems above. Only meaningful
+// when the health check's fadrConfigured is true; the service itself
+// still enforces that (503 otherwise), this doesn't duplicate that check.
+export async function analyzeFullSong(song: File): Promise<AnalyzeResponse> {
+  const formData = new FormData()
+  formData.append('song', song, song.name)
+
+  let response: Response
+  try {
+    response = await fetch(`${SERVICE_URL}/api/v1/analyze-from-song`, { method: 'POST', body: formData })
+  } catch (error) {
+    throw new DrumImportServiceUnavailableError(error)
+  }
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => undefined)) as { detail?: string } | undefined
+    throw new Error(body?.detail ?? `ניתוח השיר נכשל (HTTP ${response.status}).`)
+  }
+
+  return analyzeResponseSchema.parse(await response.json())
+}

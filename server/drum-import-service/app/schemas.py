@@ -47,6 +47,9 @@ class HealthResponse(BaseModel):
     ffmpegAvailable: bool
     ffmpegPath: str | None
     version: str
+    # ADR 0008 — whether FADR_API_KEY is set, so the frontend can show/hide
+    # the "upload a full song" option without a separate request.
+    fadrConfigured: bool
 
 
 class ErrorResponse(BaseModel):

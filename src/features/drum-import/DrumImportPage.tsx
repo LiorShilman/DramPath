@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { PageHeader, Card, Button } from '../../components/ui'
-import { analyzeStems, safeCheckDrumImportServiceHealth, type StemFieldName } from './api/drum-import-client'
+import { analyzeStems, analyzeFullSong, safeCheckDrumImportServiceHealth, type StemFieldName } from './api/drum-import-client'
 import { approveDrumImport } from './use-cases/approve-drum-import'
 import type { AnalyzeResponse, DrumHitInstrument } from './domain/analyze-response'
+
+type ImportMode = 'stems' | 'song'
 
 const STEM_LABELS: Record<StemFieldName, string> = {
   kick: 'בס דראם (kick)',
@@ -39,7 +41,10 @@ type ServiceStatus = { kind: 'checking' } | { kind: 'ok' } | { kind: 'unavailabl
 export function DrumImportPage() {
   const navigate = useNavigate()
   const [serviceStatus, setServiceStatus] = useState<ServiceStatus>({ kind: 'checking' })
+  const [fadrConfigured, setFadrConfigured] = useState(false)
+  const [mode, setMode] = useState<ImportMode>('stems')
   const [files, setFiles] = useState<Partial<Record<StemFieldName, File>>>({})
+  const [songFile, setSongFile] = useState<File | undefined>(undefined)
   const [analyzing, setAnalyzing] = useState(false)
   const [analyzeError, setAnalyzeError] = useState<string | null>(null)
   const [result, setResult] = useState<AnalyzeResponse | null>(null)
@@ -57,6 +62,7 @@ export function DrumImportPage() {
             ? { kind: 'ok' }
             : { kind: 'unavailable', message: 'השרת פועל אך ffmpeg אינו זמין בו.' },
         )
+        setFadrConfigured(health.fadrConfigured)
       })
       .catch((error: unknown) => {
         if (cancelled) return
@@ -67,13 +73,13 @@ export function DrumImportPage() {
     }
   }, [])
 
-  const hasAnyFile = Object.values(files).some((file) => file !== undefined)
+  const hasAnyFile = mode === 'stems' ? Object.values(files).some((file) => file !== undefined) : songFile !== undefined
 
   async function handleAnalyze() {
     setAnalyzeError(null)
     setAnalyzing(true)
     try {
-      const response = await analyzeStems(files)
+      const response = mode === 'stems' ? await analyzeStems(files) : await analyzeFullSong(songFile!)
       setResult(response)
     } catch (error) {
       setAnalyzeError(error instanceof Error ? error.message : String(error))
@@ -91,9 +97,10 @@ export function DrumImportPage() {
     setApproveError(null)
     setApproving(true)
     try {
-      const sourceStemFileNames = STEM_ORDER.map((field) => files[field]?.name).filter(
-        (name): name is string => name !== undefined,
-      )
+      const sourceStemFileNames =
+        mode === 'stems'
+          ? STEM_ORDER.map((field) => files[field]?.name).filter((name): name is string => name !== undefined)
+          : [songFile?.name ?? 'שיר (Fadr)']
       const approved = await approveDrumImport({ title: title.trim(), response: result, sourceStemFileNames })
       void navigate(`/practice/visual/${approved.interactiveExerciseId}`)
     } catch (error) {
@@ -106,7 +113,7 @@ export function DrumImportPage() {
     <div className="flex max-w-3xl flex-col gap-4">
       <PageHeader
         title="ייבוא תווים מהקלטה"
-        subtitle="העלאת קבצי stem נפרדים (kick/snare/toms/hh/ride/crash/residual) לניתוח אוטומטי וזיהוי מכות תופים."
+        subtitle="העלאת קבצי stem נפרדים (kick/snare/toms/hh/ride/crash/residual), או שיר שלם, לניתוח אוטומטי וזיהוי מכות תופים."
         backTo="/practice/visual"
       />
 
@@ -118,28 +125,58 @@ export function DrumImportPage() {
 
       {!result && (
         <Card className="flex flex-col gap-4">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            {STEM_ORDER.map((field) => (
-              <label key={field} className="flex flex-col gap-1 text-sm">
-                <span>{STEM_LABELS[field]}</span>
-                <input
-                  type="file"
-                  accept="audio/*"
-                  onChange={(event) => {
-                    const file = event.target.files?.[0]
-                    setFiles((current) => ({ ...current, [field]: file }))
-                  }}
-                  className="text-sm"
-                />
-              </label>
-            ))}
-          </div>
+          {/* ADR 0008 — the Fadr tab only appears once the server confirms
+              FADR_API_KEY is actually configured; otherwise it's exactly the
+              same page as before this feature existed. */}
+          {fadrConfigured && (
+            <div className="flex gap-2 border-b border-[var(--color-border)] pb-3">
+              <Button variant={mode === 'stems' ? 'primary' : 'ghost'} size="sm" onClick={() => setMode('stems')}>
+                יש לי stems מוכנים
+              </Button>
+              <Button variant={mode === 'song' ? 'primary' : 'ghost'} size="sm" onClick={() => setMode('song')}>
+                העלה שיר שלם (Fadr)
+              </Button>
+            </div>
+          )}
+
+          {mode === 'stems' ? (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {STEM_ORDER.map((field) => (
+                <label key={field} className="flex flex-col gap-1 text-sm">
+                  <span>{STEM_LABELS[field]}</span>
+                  <input
+                    type="file"
+                    accept="audio/*"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0]
+                      setFiles((current) => ({ ...current, [field]: file }))
+                    }}
+                    className="text-sm"
+                  />
+                </label>
+              ))}
+            </div>
+          ) : (
+            <label className="flex flex-col gap-1 text-sm">
+              <span>שיר שלם</span>
+              <input
+                type="file"
+                accept="audio/*"
+                onChange={(event) => setSongFile(event.target.files?.[0])}
+                className="text-sm"
+              />
+              <span className="text-xs text-[var(--color-text-muted)]">
+                Fadr יפריד את השיר לכלים בעצמו — זה יכול לקחת דקה-שתיים, בשונה מהעלאת stems מוכנים.
+              </span>
+            </label>
+          )}
+
           {analyzeError && <p className="text-sm text-[var(--color-danger-text)]">{analyzeError}</p>}
           <Button
             onClick={() => void handleAnalyze()}
             disabled={!hasAnyFile || analyzing || serviceStatus.kind !== 'ok'}
           >
-            {analyzing ? 'מנתח…' : 'נתח קבצי אודיו'}
+            {analyzing ? (mode === 'song' ? 'מעבד שיר…' : 'מנתח…') : mode === 'song' ? 'נתח שיר' : 'נתח קבצי אודיו'}
           </Button>
         </Card>
       )}

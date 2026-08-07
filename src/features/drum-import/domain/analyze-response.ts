@@ -61,5 +61,8 @@ export const healthResponseSchema = z.object({
   ffmpegAvailable: z.boolean(),
   ffmpegPath: z.string().nullable(),
   version: z.string(),
+  // ADR 0008 — whether the service's FADR_API_KEY is configured, so the
+  // "upload a full song" option can be shown/hidden without a separate request.
+  fadrConfigured: z.boolean(),
 })
 export type HealthResponse = z.infer<typeof healthResponseSchema>
