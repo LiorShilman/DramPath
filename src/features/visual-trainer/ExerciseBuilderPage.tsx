@@ -98,6 +98,22 @@ function setupFromExercise(exercise: InteractiveExercise): Setup {
   }
 }
 
+// Reverse of the period->break-list generation below (rowBreakBars useMemo)
+// — only recognizes a list that's actually periodic (bar 1 + one constant
+// step all the way to the end); anything else (irregular breaks from some
+// other origin) just comes back as 0 (unset) rather than guessing a period
+// that wouldn't round-trip correctly.
+function periodFromRowBreakBars(rowBreakBars: number[] | undefined, bars: number): number {
+  if (!rowBreakBars || rowBreakBars.length === 0) return 0
+  const sorted = [...rowBreakBars].sort((a, b) => a - b)
+  const period = sorted[0]! - 1
+  if (period <= 0) return 0
+  const expected: number[] = []
+  for (let bar = 1 + period; bar <= bars; bar += period) expected.push(bar)
+  const matches = expected.length === sorted.length && expected.every((bar, index) => bar === sorted[index])
+  return matches ? period : 0
+}
+
 /** VISUAL_DRUM_TRAINER_SPEC.md's graded exercises need structured
  * DrumNoteEvent[] — this is the manual-placement way to create one (no
  * live-capture/recording mode, confirmed with the user). Step 1 locks the
@@ -111,6 +127,12 @@ export function ExerciseBuilderPage() {
   const [gridStarted, setGridStarted] = useState(false)
   const [activeCells, setActiveCells] = useState<Set<string>>(new Set())
   const [beamCymbals, setBeamCymbals] = useState(false)
+  // 0 = unset ("use the notation sheet's own default"). A period, not a
+  // list of specific bars — "3" means a new row every 3rd bar, not "break
+  // once before bar 3" (an earlier free-text version of this field asked
+  // for explicit bar numbers, which didn't match what the user actually
+  // expected when they typed a single number here).
+  const [notationBarsPerRow, setNotationBarsPerRow] = useState(0)
   const [saveError, setSaveError] = useState<string | null>(null)
   // undefined = "not resolved yet", 'not-found' = "resolved, doesn't exist"
   // — only meaningful while isEditing; the create flow never touches this.
@@ -174,6 +196,11 @@ export function ExerciseBuilderPage() {
         setSetup(setupFromExercise(found))
         setActiveCells(new Set(found.events.map((event) => cellKey(event, event.instrument))))
         setBeamCymbals(found.beamCymbals ?? false)
+        // Only round-trips a *periodic* saved list (bar 1 + a constant
+        // step) back into a single number — an exercise with irregular
+        // breaks (not produced by this field) just shows unset here rather
+        // than guessing which period it might have meant.
+        setNotationBarsPerRow(periodFromRowBreakBars(found.rowBreakBars, found.bars))
         setGridStarted(true)
       }
       setLoadedExercise(found ?? 'not-found')
@@ -234,6 +261,18 @@ export function ExerciseBuilderPage() {
     }),
     [previewEvents, setup.subdivision, setup.bars],
   )
+
+  // Generates the explicit break-bar list ExerciseNotationSheet actually
+  // wants (e.g. period 3 over 8 bars -> [4, 7]) from the simpler "every N
+  // bars" period the field above collects — the notation sheet's own
+  // `rowBreakBars` prop stays a plain bar-number array either way, this is
+  // just how this page's UI happens to produce one.
+  const rowBreakBars = useMemo(() => {
+    if (notationBarsPerRow <= 0) return []
+    const breaks: number[] = []
+    for (let bar = 1 + notationBarsPerRow; bar <= setup.bars; bar += notationBarsPerRow) breaks.push(bar)
+    return breaks
+  }, [notationBarsPerRow, setup.bars])
 
   // Each step's own ms offset from the start of a single playthrough — used
   // to figure out which grid column is "now playing" while previewing.
@@ -451,6 +490,7 @@ export function ExerciseBuilderPage() {
       loopCount: 1,
       displayMode: 'note_highway' as const,
       beamCymbals,
+      rowBreakBars: rowBreakBars.length > 0 ? rowBreakBars : undefined,
       events,
     }
 
@@ -595,6 +635,16 @@ export function ExerciseBuilderPage() {
               לחבר גם צלחות (X) בקורה
             </label>
           </div>
+          <label className="flex flex-col gap-1 text-sm">
+            תיבות שלמות בכל שורה (0 = ברירת מחדל)
+            <input
+              type="number"
+              min={0}
+              value={notationBarsPerRow}
+              onChange={(event) => setNotationBarsPerRow(Math.max(0, Number(event.target.value)))}
+              className="rounded-[var(--radius-card)] border border-[var(--color-border)] px-3 py-1.5"
+            />
+          </label>
           {previewEvents.length > 0 ? (
             <div dir="ltr" className="overflow-x-auto rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
               <ExerciseNotationSheet
@@ -604,6 +654,7 @@ export function ExerciseBuilderPage() {
                   isPlaying ? { bpm: setup.bpm, sessionId: playSessionId, startOffsetMs: seekOffsetMs } : undefined
                 }
                 beamCymbals={beamCymbals}
+                rowBreakBars={rowBreakBars}
               />
             </div>
           ) : (

@@ -70,6 +70,12 @@ export const interactiveExerciseSchema = z
     // a plain X, no stem/beam). Optional so exercises saved before this
     // existed still validate without a backfill.
     beamCymbals: z.boolean().optional(),
+    // 1-indexed bar numbers where a new notation row starts, overriding the
+    // notation sheet's own uniform barsPerRow chunking — lets a builder mark
+    // "this fill starts a fresh row" instead of wherever a fixed bar-count
+    // happens to wrap. Optional/omittable, same backfill-free reasoning as
+    // beamCymbals above.
+    rowBreakBars: z.array(z.number().int().positive()).optional(),
     events: z.array(drumNoteEventSchema),
     lessonId: uuidSchema.optional(),
     exerciseId: uuidSchema.optional(),

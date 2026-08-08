@@ -49,8 +49,32 @@ export interface ExerciseNotationSheetProps {
    * A standalone preview with no grid ruler alongside it benefits from
    * fewer, bigger bars per row instead (e.g. LessonDetailPage passes 2) —
    * every note/stem/flag gets more horizontal room, which matters more
-   * there since there's nothing else on the page competing for width. */
+   * there since there's nothing else on the page competing for width.
+   * Ignored once `rowBreakBars` is given a non-empty array. */
   barsPerRow?: number
+  /** 1-indexed bar numbers where a new row starts, overriding the uniform
+   * `barsPerRow` chunking — e.g. `[1, 5, 9]` makes bars 1-4 one row, 5-8
+   * the next, 9.. the last, regardless of `barsPerRow`. Lets a builder mark
+   * "this fill starts a fresh row" instead of wherever a fixed bar-count
+   * happens to wrap (explicit user request — several distinct fill examples
+   * in one exercise, each meant to start its own row). Bar 1 is always an
+   * implicit row start whether or not it's included. Omit/empty to keep
+   * the existing uniform-barsPerRow behavior. */
+  rowBreakBars?: number[]
+}
+
+// 1-indexed bar numbers where each row starts — either the caller's own
+// explicit break points (deduped, sorted, bar 1 implied) or synthesized
+// from uniform barsPerRow chunks, same shape either way so the rest of the
+// component doesn't need two separate code paths.
+function computeRowStartBars(totalBars: number, barsPerRow: number, rowBreakBars: number[] | undefined): number[] {
+  if (rowBreakBars && rowBreakBars.length > 0) {
+    const breaks = [...new Set(rowBreakBars)].filter((bar) => bar > 1 && bar <= totalBars).sort((a, b) => a - b)
+    return [1, ...breaks]
+  }
+  const starts: number[] = []
+  for (let bar = 1; bar <= totalBars; bar += barsPerRow) starts.push(bar)
+  return starts
 }
 
 const BARS_PER_ROW = 4
@@ -115,12 +139,29 @@ export function ExerciseNotationSheet({
   beamCymbals = false,
   showBeatLabels = false,
   barsPerRow = BARS_PER_ROW,
+  rowBreakBars,
 }: ExerciseNotationSheetProps) {
   const hasStem = (instrument: (typeof exercise.events)[number]['instrument']) => {
     const notehead = STAFF_POSITION[instrument].notehead
     return notehead === 'normal' || (beamCymbals && notehead === 'x')
   }
-  const rowCount = Math.max(1, Math.ceil(exercise.bars / barsPerRow))
+  const rowStartBars = computeRowStartBars(exercise.bars, barsPerRow, rowBreakBars)
+  const rowCount = rowStartBars.length
+  // Row index for a given 1-indexed bar — rowStartBars is sorted ascending,
+  // so this is "the last start <= bar".
+  const rowIndexForBar = (bar: number): number => {
+    let index = 0
+    for (let i = 0; i < rowStartBars.length; i += 1) {
+      if (rowStartBars[i]! <= bar) index = i
+      else break
+    }
+    return index
+  }
+  const rowBarsCount = (rowIndex: number): number => {
+    const start = rowStartBars[rowIndex]!
+    const nextStart = rowStartBars[rowIndex + 1] ?? exercise.bars + 1
+    return nextStart - start
+  }
 
   // Only reserve vertical room up to the highest notehead actually used
   // (e.g. no crash in this exercise = no wasted headroom above the staff),
@@ -159,8 +200,8 @@ export function ExerciseNotationSheet({
 
   for (const event of exercise.events) {
     const barGlobalIndex = event.bar - 1
-    const rowIndex = Math.floor(barGlobalIndex / barsPerRow)
-    const barIndexInRow = barGlobalIndex % barsPerRow
+    const rowIndex = rowIndexForBar(event.bar)
+    const barIndexInRow = barGlobalIndex - (rowStartBars[rowIndex]! - 1)
     const totalBarPosition = calculateEventTimeMs(event, {
       bpm: ARBITRARY_BPM,
       timeSignature: exercise.timeSignature,
@@ -178,18 +219,17 @@ export function ExerciseNotationSheet({
     })
   }
 
-  // The viewBox must match the widest row actually drawn — row 0 always has
-  // the most bars (later rows only ever have fewer, on the last row), so
-  // sizing it any wider than that (e.g. always barsPerRow) leaves a blank
-  // strip when the exercise is shorter than a full row.
-  const viewBoxWidth = Math.min(barsPerRow, exercise.bars) * BAR_WIDTH_PX
+  // The viewBox must match the widest row actually drawn — rows can now
+  // have different lengths (rowBreakBars), so this is a real max over every
+  // row instead of just row 0's own length.
+  const viewBoxWidth = Math.max(...rowStartBars.map((_, rowIndex) => rowBarsCount(rowIndex))) * BAR_WIDTH_PX
 
   // Real-time (not ARBITRARY_BPM) duration of each row, and each row's own
   // start offset — lets every row's fill animation run purely in CSS, with
   // `animation-delay` doing the cross-row sequencing instead of JS polling.
   let cumulativeRealMs = 0
   const rowRealTimings = Array.from({ length: rowCount }, (_, rowIndex) => {
-    const rowBars = Math.min(barsPerRow, exercise.bars - rowIndex * barsPerRow)
+    const rowBars = rowBarsCount(rowIndex)
     const rowDurationMs = playbackProgress
       ? rowBars * calculateBarDurationMs(playbackProgress.bpm, exercise.timeSignature)
       : 0
@@ -215,7 +255,7 @@ export function ExerciseNotationSheet({
       aria-label="תווי התרגיל"
     >
       {eventsByRow.map((rowEvents, rowIndex) => {
-        const rowBars = Math.min(barsPerRow, exercise.bars - rowIndex * barsPerRow)
+        const rowBars = rowBarsCount(rowIndex)
         const rowTopY = rowIndex * (rowHeight + ROW_GAP_PX)
         const baselineY = rowTopY + rowHeight - bottomPadding
         const toY = (position: number) => baselineY - staffPositionToOffsetPx(position, LINE_SPACING_PX)
@@ -277,26 +317,26 @@ export function ExerciseNotationSheet({
               byGroup.set(groupKey, steps)
             }
 
+            // One beam spans the *whole* group whenever it holds 2+ notes,
+            // even across a rest — real engraving (and this app's own
+            // count-out labels, which already number every subdivision
+            // slot including silent ones) treats "same beat group" as the
+            // unit that reads as one rhythmic gesture, not "consecutive
+            // sixteenths only" (explicit user correction: a hit on the
+            // beat and another on its "a" with silence between should
+            // still share one beam, not fall back to individual flags).
             for (const steps of byGroup.values()) {
               const sortedStepKeys = [...steps.keys()].sort((a, b) => a - b)
-              let runStart = 0
-              for (let i = 1; i <= sortedStepKeys.length; i += 1) {
-                const runBroke = i === sortedStepKeys.length || sortedStepKeys[i]! !== sortedStepKeys[i - 1]! + 1
-                if (!runBroke) continue
-                const runStepKeys = sortedStepKeys.slice(runStart, i)
-                if (runStepKeys.length >= 2) {
-                  const firstStepEvents = steps.get(runStepKeys[0]!)!
-                  const lastStepEvents = steps.get(runStepKeys[runStepKeys.length - 1]!)!
-                  const stemXFor = (id: string) => noteX.get(id)! + (direction === 'down' ? -NOTE_RADIUS_PX : NOTE_RADIUS_PX)
-                  beams.push({ x1: stemXFor(firstStepEvents[0]!.id), x2: stemXFor(lastStepEvents[0]!.id), y: beamY, direction })
-                  for (const stepKey of runStepKeys) {
-                    for (const beamedEvent of steps.get(stepKey)!) {
-                      beamedEventIds.add(beamedEvent.id)
-                      noteBeamY.set(beamedEvent.id, beamY)
-                    }
-                  }
+              if (sortedStepKeys.length < 2) continue
+              const firstStepEvents = steps.get(sortedStepKeys[0]!)!
+              const lastStepEvents = steps.get(sortedStepKeys[sortedStepKeys.length - 1]!)!
+              const stemXFor = (id: string) => noteX.get(id)! + (direction === 'down' ? -NOTE_RADIUS_PX : NOTE_RADIUS_PX)
+              beams.push({ x1: stemXFor(firstStepEvents[0]!.id), x2: stemXFor(lastStepEvents[0]!.id), y: beamY, direction })
+              for (const stepKey of sortedStepKeys) {
+                for (const beamedEvent of steps.get(stepKey)!) {
+                  beamedEventIds.add(beamedEvent.id)
+                  noteBeamY.set(beamedEvent.id, beamY)
                 }
-                runStart = i
               }
             }
           }

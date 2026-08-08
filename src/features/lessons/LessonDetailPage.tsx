@@ -602,6 +602,7 @@ export function LessonDetailPage() {
                   highlightedEventIds={preview.highlightedEventIds}
                   showBeatLabels
                   barsPerRow={2}
+                  rowBreakBars={linkedExercise.rowBreakBars}
                 />
               </div>
             </Card>
