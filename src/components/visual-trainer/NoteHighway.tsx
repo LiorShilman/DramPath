@@ -1,5 +1,5 @@
 import { forwardRef, useImperativeHandle, useMemo, useRef } from 'react'
-import { calculateEventTimeMs } from '../../domain/calculations/event-timing'
+import { calculateEventTimeMs, calculateBeatDurationMs, SUBDIVISIONS_PER_BEAT } from '../../domain/calculations/event-timing'
 import { calculateNoteProgress, isNoteVisible } from '../../lib/visual-trainer/note-highway-math'
 import { LANE_ORDER, INSTRUMENT_COLORS } from '../../lib/visual-trainer/drum-kit-layout'
 import { getKeyLabelForInstrument } from '../../lib/visual-trainer/keyboard-map'
@@ -61,6 +61,25 @@ export const NoteHighway = forwardRef<NoteHighwayHandle, NoteHighwayProps>(funct
     [events, exercise],
   )
 
+  // Box height/gap must stay the same at every subdivision (explicit user
+  // request — a shorter box at faster subdivisions read as "the letters
+  // don't fit," not as intentionally smaller) — so instead the *travel
+  // time* shrinks at finer subdivisions, which is what actually controls
+  // on-screen spacing (a fixed lookaheadMs gives consecutive sixteenth
+  // notes far less travel distance than consecutive quarter notes, since
+  // they're far closer together in time). Never grows past the caller's
+  // own lookaheadMs (quarter/eighth patterns already had enough room and
+  // shouldn't get a longer, slower-feeling runway than before) — only
+  // shrinks when the exercise's own subdivision would otherwise make two
+  // consecutive same-lane notes overlap or crowd each other.
+  const effectiveLookaheadMs = useMemo(() => {
+    const subdivisionDurationMs =
+      calculateBeatDurationMs(exercise.bpm) / SUBDIVISIONS_PER_BEAT[exercise.subdivision]
+    const travelPx = HIGHWAY_HEIGHT_PX - HIT_LINE_OFFSET_PX
+    const maxLookaheadForSpacing = (subdivisionDurationMs * travelPx) / (NOTE_HEIGHT_PX + LANE_GAP_PX)
+    return Math.min(lookaheadMs, maxLookaheadForSpacing)
+  }, [exercise.bpm, exercise.subdivision, lookaheadMs])
+
   useImperativeHandle(
     ref,
     () => ({
@@ -68,7 +87,7 @@ export const NoteHighway = forwardRef<NoteHighwayHandle, NoteHighwayProps>(funct
         for (const { event, timeMs } of eventTimes) {
           const el = noteRefs.current.get(event.id)
           if (!el) continue
-          const progress = calculateNoteProgress(timeMs, currentTimeMs, lookaheadMs)
+          const progress = calculateNoteProgress(timeMs, currentTimeMs, effectiveLookaheadMs)
           if (!isNoteVisible(progress)) {
             el.style.visibility = 'hidden'
             continue
@@ -91,7 +110,7 @@ export const NoteHighway = forwardRef<NoteHighwayHandle, NoteHighwayProps>(funct
         }
       },
     }),
-    [eventTimes, lookaheadMs],
+    [eventTimes, effectiveLookaheadMs],
   )
 
   const laneCount = LANE_ORDER.length

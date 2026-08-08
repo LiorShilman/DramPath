@@ -4,6 +4,7 @@ import { PageHeader, Button, Card } from '../../components/ui'
 import { ExerciseNotationSheet } from '../../components/visual-trainer/ExerciseNotationSheet'
 import { interactiveExerciseRepository } from '../../data/repositories'
 import { playDrumSound } from '../../lib/visual-trainer/drum-synth'
+import { ensureDrumSamplesLoading } from '../../lib/visual-trainer/drum-samples'
 import { ExercisePlaybackEngine } from '../../lib/visual-trainer/exercise-playback-engine'
 import { LANE_ORDER } from '../../lib/visual-trainer/drum-kit-layout'
 import { INSTRUMENT_LABELS } from '../../lib/visual-trainer/instrument-labels'
@@ -143,6 +144,26 @@ export function ExerciseBuilderPage() {
   // "everything" (Infinity) until that first measurement lands, rather
   // than flashing an empty grid for one frame.
   const [visibleStepRange, setVisibleStepRange] = useState({ start: 0, end: Number.POSITIVE_INFINITY })
+
+  // Created here (on mount) rather than lazily on the first click/preview —
+  // decoding a sample doesn't need a 'running' context (only actual audible
+  // playback does, which is why every other use of this ref still calls
+  // .resume() itself on first real interaction). Creating it this early
+  // gives ensureDrumSamplesLoading a real head start before the user's
+  // first click, instead of racing it: previously, the very first preview
+  // of a real-sample instrument (e.g. crash) always lost that race and
+  // played the synthesized fallback instead of the actual sample — since
+  // both the fetch and the play call fired in the same synchronous click
+  // handler, the fetch could never finish in time. Reported directly: "the
+  // first hit sounds like a different file, only the second one plays the
+  // real crash."
+  useEffect(() => {
+    const audioContext = new AudioContext()
+    audioContextRef.current = audioContext
+    outputNodeRef.current = audioContext.createGain()
+    outputNodeRef.current.connect(audioContext.destination)
+    ensureDrumSamplesLoading(audioContext)
+  }, [])
 
   useEffect(() => {
     if (!exerciseId) return
@@ -517,10 +538,10 @@ export function ExerciseBuilderPage() {
             <input
               type="number"
               min={1}
-              max={8}
+              max={64}
               value={setup.bars}
               onChange={(event) =>
-                setSetup((current) => ({ ...current, bars: Math.min(8, Math.max(1, Number(event.target.value))) }))
+                setSetup((current) => ({ ...current, bars: Math.min(64, Math.max(1, Number(event.target.value))) }))
               }
               className="rounded-[var(--radius-card)] border border-[var(--color-border)] px-3 py-2"
             />

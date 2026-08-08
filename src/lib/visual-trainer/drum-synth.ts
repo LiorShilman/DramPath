@@ -68,15 +68,41 @@ function playPitchedHit(
   oscillator.stop(time + durationSeconds + 0.02)
 }
 
+// Long-decay real samples (crash/ride/open-hihat routinely ring 1-3s — see
+// public/audio/drums/README.md) get "choked" by their own next hit, same as
+// a real cymbal re-struck while still ringing: without this, two hits
+// closer together than the sample's own decay overlap and sum into a
+// louder, artificially sustained blend instead of each one sounding like a
+// clean, distinct strike (reported directly: "the second crash sounds like
+// a continuous ring instead of the normal sound"). Short punchy samples
+// (kick/snare/toms/closed hihat) are deliberately excluded — they're
+// already brief, and a fast legitimate repeated hit (e.g. a snare roll)
+// should keep overlapping naturally rather than getting voice-stolen.
+const CHOKE_GROUP_INSTRUMENTS: ReadonlySet<DrumInstrument> = new Set(['crash', 'ride', 'hihat_open'])
+const activeChokedSources = new WeakMap<AudioContext, Map<DrumInstrument, AudioBufferSourceNode>>()
+
 function playSampleHit(
   audioContext: AudioContext,
   outputNode: AudioNode,
   time: number,
   buffer: AudioBuffer,
   peakGain: number,
+  instrument: DrumInstrument,
 ): void {
   const source = audioContext.createBufferSource()
   const gain = audioContext.createGain()
+
+  if (CHOKE_GROUP_INSTRUMENTS.has(instrument)) {
+    const perInstrument = activeChokedSources.get(audioContext)
+    const previous = perInstrument?.get(instrument)
+    if (previous) {
+      try {
+        previous.stop(time)
+      } catch {
+        // Already stopped/ended on its own — nothing to choke.
+      }
+    }
+  }
 
   source.buffer = buffer
   gain.gain.setValueAtTime(Math.max(peakGain, GAIN_FLOOR), time)
@@ -84,6 +110,15 @@ function playSampleHit(
   source.connect(gain)
   gain.connect(outputNode)
   source.start(time)
+
+  if (CHOKE_GROUP_INSTRUMENTS.has(instrument)) {
+    let perInstrument = activeChokedSources.get(audioContext)
+    if (!perInstrument) {
+      perInstrument = new Map()
+      activeChokedSources.set(audioContext, perInstrument)
+    }
+    perInstrument.set(instrument, source)
+  }
 }
 
 function playNoiseHit(
@@ -131,7 +166,7 @@ export function playDrumSound(
 
   const sample = getDrumSample(audioContext, instrument)
   if (sample) {
-    playSampleHit(audioContext, outputNode, time, sample, peakGain)
+    playSampleHit(audioContext, outputNode, time, sample, peakGain, instrument)
     return
   }
 
