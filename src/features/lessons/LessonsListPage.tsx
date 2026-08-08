@@ -1,16 +1,53 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, Link } from 'react-router'
-import { lessonRepository, weekRepository, resourceRepository } from '../../data/repositories'
+import { lessonRepository, weekRepository, resourceRepository, interactiveExerciseRepository } from '../../data/repositories'
 import { GENERATED_TRACK_TAG } from '../curriculum/use-cases/generate-curriculum-track'
 import { CUSTOM_LESSON_TAG, generateSnareHihatLessonUseCase } from './use-cases/generate-snare-hihat-lesson'
 import { useDebouncedCallback } from '../../hooks/useDebouncedCallback'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { ResourceThumbnail } from '../../components/ResourceThumbnail'
+import { FileTypeIcon } from '../../components/FileTypeIcon'
 import { Badge, Button, PageHeader } from '../../components/ui'
 import { LESSON_CATEGORY_LABELS, LESSON_STATUS_LABELS, LESSON_STATUS_BADGE_VARIANTS } from './lesson-labels'
 import type { Lesson, LessonCategory, LessonStatus, Resource, Week } from '../../domain'
 
 const ALL = 'all' as const
+
+// FileTypeIcon only needs a mimeType-shaped string to pick the right icon
+// (it checks startsWith('video/') / === 'application/pdf' / etc.) — these
+// three cover the two file types the user actually asked to see at a
+// glance (PDF notation, MP4 lesson video) plus a catch-all so nothing
+// attached is silently invisible.
+const RESOURCE_CATEGORY_LABEL: Record<string, string> = {
+  'application/pdf': 'PDF',
+  'video/*': 'וידאו',
+  'image/*': 'תמונה',
+  other: 'קובץ',
+}
+
+function categorizeMimeType(mimeType: string): string {
+  if (mimeType === 'application/pdf') return 'application/pdf'
+  if (mimeType.startsWith('video/')) return 'video/*'
+  if (mimeType.startsWith('image/')) return 'image/*'
+  return 'other'
+}
+
+// One badge per distinct file *category* attached to the lesson (not one
+// per file) — a lesson with 3 PDFs shows a single "PDF ×3" badge, not 3
+// identical icons.
+function attachedResourceCategories(
+  lesson: Lesson,
+  resourceById: Map<string, Resource>,
+): { category: string; count: number }[] {
+  const counts = new Map<string, number>()
+  for (const id of lesson.resourceIds) {
+    const resource = resourceById.get(id)
+    if (!resource) continue
+    const category = categorizeMimeType(resource.mimeType)
+    counts.set(category, (counts.get(category) ?? 0) + 1)
+  }
+  return Array.from(counts.entries()).map(([category, count]) => ({ category, count }))
+}
 
 export function LessonsListPage() {
   const navigate = useNavigate()
@@ -98,12 +135,22 @@ export function LessonsListPage() {
   // Idempotent, not guarded-with-an-error like the curriculum generator —
   // this is a single hand-authored lesson, not a batch, so re-clicking just
   // takes you to the one that already exists instead of piling up
-  // duplicates.
+  // duplicates. Also self-healing: a lesson with no linked exercise (e.g.
+  // the exercise was deleted separately via ExerciseSelectPage's own
+  // delete button, which only removes the InteractiveExercise, never the
+  // Lesson pointing at it — confirmed as the real cause of a report where
+  // the lesson kept showing up but its exercise had silently vanished)
+  // gets deleted and regenerated fresh instead of navigating to a page
+  // with nothing to practice.
   async function handleGenerateSnareHihatLesson() {
     const existing = lessons.find((lesson) => lesson.tags.includes(CUSTOM_LESSON_TAG))
     if (existing) {
-      void navigate(`/lessons/${existing.id}`)
-      return
+      const linkedExercises = await interactiveExerciseRepository.findByLessonId(existing.id)
+      if (linkedExercises.length > 0) {
+        void navigate(`/lessons/${existing.id}`)
+        return
+      }
+      await lessonRepository.remove(existing.id)
     }
     const { lessonId } = await generateSnareHihatLessonUseCase()
     void navigate(`/lessons/${lessonId}`)
@@ -282,6 +329,31 @@ export function LessonsListPage() {
                 <Badge variant={LESSON_STATUS_BADGE_VARIANTS[lesson.status]} className="w-28 shrink-0 justify-center">
                   {LESSON_STATUS_LABELS[lesson.status]}
                 </Badge>
+                {/* Which file types are attached (PDF notation, MP4 lesson
+                    video, ...) — a glance-level cue so opening every lesson
+                    isn't the only way to know what's there. One badge per
+                    distinct category, not per file. */}
+                {/* Fixed width — without it, a row with zero badges
+                    collapses to no width at all while a row with one shows
+                    a wider gap, shifting every later column out of
+                    alignment between rows (reported via screenshot). Kept
+                    deliberately narrow (not matching the wider w-20/w-28
+                    columns like week/category) — this row was already at
+                    its width budget before this column existed, and a
+                    wider reservation pushed the delete button past the
+                    card's own edge (reported via a second screenshot). */}
+                <div className="flex w-10 shrink-0 items-center gap-1">
+                  {attachedResourceCategories(lesson, resourceById).map(({ category, count }) => (
+                    <span
+                      key={category}
+                      title={`${RESOURCE_CATEGORY_LABEL[category] ?? category}${count > 1 ? ` ×${count}` : ''}`}
+                      className="flex items-center gap-0.5 rounded-[var(--radius-card)] bg-[var(--color-surface)] px-1.5 py-0.5 text-xs text-[var(--color-text-muted)]"
+                    >
+                      <FileTypeIcon mimeType={category} size={14} />
+                      {count > 1 && count}
+                    </span>
+                  ))}
+                </div>
                 <Button
                   size="sm"
                   variant="ghost"
