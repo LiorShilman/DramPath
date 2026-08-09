@@ -40,6 +40,24 @@ export interface UseVisualTrainerResult {
    * together" count-off animation, same remount-per-token pattern as
    * activeHits. undefined outside of an active count-in. */
   stickClickToken: string | undefined
+  /** Per-event grading result, for displayMode 'staff_cursor' — the
+   * ExerciseNotationSheet equivalent of NoteHighway's own imperative
+   * markResult flash, since that component is driven by props/state, not a
+   * ref. Updated alongside (not instead of) the NoteHighway ref calls below
+   * — both are cheap to keep current regardless of which display is
+   * actually mounted. */
+  gradedEventIds: ReadonlyMap<string, 'hit' | 'miss'>
+  /** Bumped on every beginPlayback — feeds ExerciseNotationSheet's own
+   * playbackProgress.sessionId so its CSS fill/cursor animations restart
+   * on a new run instead of no-oping on an unchanged style, same idea as
+   * useExercisePreviewPlayback's playSessionId. */
+  playSessionId: number
+  /** ms of count-in before the exercise's own bar 1 in the *current* run
+   * (0 once a count-in was skipped, e.g. after a seek). Negate this into
+   * ExerciseNotationSheet's playbackProgress.startOffsetMs so its
+   * animation-delay accounts for the count-in the same way NoteHighway's
+   * own elapsedMs already does. */
+  countInDurationMs: number
   currentBar: number
   currentBeat: number
   /** ms elapsed since the exercise itself started (count-in excluded, same
@@ -110,6 +128,17 @@ export function useVisualTrainer(
   // only one drum piece would ever visually react.
   const [activeHits, setActiveHits] = useState<Partial<Record<DrumInstrument, string>>>({})
   const [stickClickToken, setStickClickToken] = useState<string | undefined>(undefined)
+  const [gradedEventIds, setGradedEventIds] = useState<ReadonlyMap<string, 'hit' | 'miss'>>(new Map())
+  const [playSessionId, setPlaySessionId] = useState(0)
+  // Mirrors countInDurationMsRef as real state — NoteHighway never needed
+  // this exposed (it reads elapsedMs, which is already count-in-adjusted),
+  // but ExerciseNotationSheet's CSS-animation-driven fill/cursor (displayMode
+  // 'staff_cursor') needs it as a real prop value: its animation-delay is
+  // computed once from playbackProgress.startOffsetMs, not from a per-frame
+  // elapsedMs, so without this the fill/cursor started moving the instant
+  // the session began instead of waiting through the count-in bar — a fixed
+  // "runs ahead of the real audio by one bar" desync (reported directly).
+  const [countInDurationMs, setCountInDurationMs] = useState(0)
   const [currentBar, setCurrentBar] = useState(1)
   const [currentBeat, setCurrentBeat] = useState(1)
   const [elapsedMs, setElapsedMs] = useState(0)
@@ -233,6 +262,7 @@ export function useVisualTrainer(
         grade: 'perfect',
       })
       noteHighwayRef.current?.markResult(event.eventId, 'hit')
+      setGradedEventIds((prev) => new Map(prev).set(event.eventId, 'hit'))
       setLastGrade('perfect')
       recomputeScoring()
     },
@@ -281,6 +311,11 @@ export function useVisualTrainer(
           })
           noteHighwayRef.current?.markResult(event.eventId, 'miss')
         }
+        setGradedEventIds((prev) => {
+          const next = new Map(prev)
+          for (const event of missed) next.set(event.eventId, 'miss')
+          return next
+        })
         setLastGrade('miss')
         recomputeScoring()
       }
@@ -332,6 +367,7 @@ export function useVisualTrainer(
           grade,
         })
         noteHighwayRef.current?.markResult(match.eventId, 'hit')
+        setGradedEventIds((prev) => new Map(prev).set(match.eventId, 'hit'))
         setLastGrade(grade)
       } else {
         extraHitsRef.current.push({ id: createId(), instrument, hitTimeMs: elapsedMs })
@@ -419,6 +455,7 @@ export function useVisualTrainer(
       beatDurationMsRef.current = barDurationMsRef.current / exercise.timeSignature.numerator
       beatsPerBarRef.current = exercise.timeSignature.numerator
       countInDurationMsRef.current = countInBars * barDurationMsRef.current
+      setCountInDurationMs(countInDurationMsRef.current)
       startOffsetMsRef.current = startOffsetMs
       clockOffsetMsRef.current = performance.now() - audioContext.currentTime * 1000
 
@@ -445,6 +482,8 @@ export function useVisualTrainer(
       setLastGrade(undefined)
       setActiveHits({})
       setStickClickToken(undefined)
+      setGradedEventIds(new Map())
+      setPlaySessionId((current) => current + 1)
       setCurrentBar(Math.max(1, Math.floor(startOffsetMs / barDurationMsRef.current) + 1))
       setCurrentBeat(1)
       setElapsedMs(startOffsetMs)
@@ -496,6 +535,9 @@ export function useVisualTrainer(
     lastGrade,
     activeHits,
     stickClickToken,
+    gradedEventIds,
+    playSessionId,
+    countInDurationMs,
     currentBar,
     currentBeat,
     elapsedMs,

@@ -12,7 +12,7 @@ import { SUBDIVISIONS_PER_BEAT, calculateBarDurationMs, calculateEventTimeMs } f
 import { STAFF_POSITION } from '../../lib/visual-trainer/staff-notation-layout'
 import { DIFFICULTY_LABELS } from './exercise-difficulty-labels'
 import { createId, nowIso } from '../../domain'
-import type { DrumInstrument, DrumNoteEvent, InteractiveExerciseDifficulty, InteractiveExercise, Subdivision } from '../../domain'
+import type { DisplayMode, DrumInstrument, DrumNoteEvent, InteractiveExerciseDifficulty, InteractiveExercise, Subdivision } from '../../domain'
 
 const PLAYBACK_POLL_INTERVAL_MS = 30
 
@@ -127,6 +127,12 @@ export function ExerciseBuilderPage() {
   const [gridStarted, setGridStarted] = useState(false)
   const [activeCells, setActiveCells] = useState<Set<string>>(new Set())
   const [beamCymbals, setBeamCymbals] = useState(false)
+  // How the real practice runner (VisualTrainerPage) shows this exercise —
+  // falling rectangles (the original mode) or real notation with a moving
+  // playhead cursor (explicit user request: "feels much more comfortable,"
+  // tried elsewhere first). Doesn't affect this page's own preview, which
+  // already always renders notation regardless of this setting.
+  const [displayMode, setDisplayMode] = useState<DisplayMode>('note_highway')
   // 0 = unset ("use the notation sheet's own default"). A period, not a
   // list of specific bars — "3" means a new row every 3rd bar, not "break
   // once before bar 3" (an earlier free-text version of this field asked
@@ -196,6 +202,7 @@ export function ExerciseBuilderPage() {
         setSetup(setupFromExercise(found))
         setActiveCells(new Set(found.events.map((event) => cellKey(event, event.instrument))))
         setBeamCymbals(found.beamCymbals ?? false)
+        setDisplayMode(found.displayMode)
         // Only round-trips a *periodic* saved list (bar 1 + a constant
         // step) back into a single number — an exercise with irregular
         // breaks (not produced by this field) just shows unset here rather
@@ -488,7 +495,7 @@ export function ExerciseBuilderPage() {
       // of what the runner expected, and NoteHighway has no support for
       // re-showing a note on a second pass, so loop 2 had no visual cue at all.
       loopCount: 1,
-      displayMode: 'note_highway' as const,
+      displayMode,
       beamCymbals,
       rowBreakBars: rowBreakBars.length > 0 ? rowBreakBars : undefined,
       events,
@@ -635,6 +642,17 @@ export function ExerciseBuilderPage() {
               לחבר גם צלחות (X) בקורה
             </label>
           </div>
+          <label className="flex flex-col gap-1 text-sm">
+            תצוגת תרגול (בעמוד התרגול עצמו, לא כאן)
+            <select
+              value={displayMode}
+              onChange={(event) => setDisplayMode(event.target.value as DisplayMode)}
+              className="rounded-[var(--radius-card)] border border-[var(--color-border)] px-3 py-1.5"
+            >
+              <option value="note_highway">מלבנים יורדים</option>
+              <option value="staff_cursor">תווים עם פלייהד נע</option>
+            </select>
+          </label>
           <label className="flex flex-col gap-1 text-sm">
             תיבות שלמות בכל שורה (0 = ברירת מחדל)
             <input

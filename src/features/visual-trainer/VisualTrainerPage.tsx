@@ -7,6 +7,7 @@ import type { RemoteDrumInputStatus } from '../../hooks/useRemoteDrumInput'
 import { DrumKit } from '../../components/visual-trainer/DrumKit'
 import { NoteHighway } from '../../components/visual-trainer/NoteHighway'
 import type { NoteHighwayHandle } from '../../components/visual-trainer/NoteHighway'
+import { ExerciseNotationSheet } from '../../components/visual-trainer/ExerciseNotationSheet'
 import { TransportControls } from '../../components/visual-trainer/TransportControls'
 import { HitFeedback } from '../../components/visual-trainer/HitFeedback'
 import { KeyboardGuide } from '../../components/visual-trainer/KeyboardGuide'
@@ -122,6 +123,50 @@ function VisualTrainerRunner({ exercise, highwayRef }: VisualTrainerRunnerProps)
     <KeyboardGuide variant="inline" relevantInstruments={usedInstruments} pressedInstruments={trainer.activeHits} />
   )
 
+  // displayMode 'staff_cursor' (explicit user request — real notation with
+  // a moving playhead reads as "more educational" than falling rectangles)
+  // swaps NoteHighway for ExerciseNotationSheet driven declaratively
+  // (playbackProgress/gradedEventIds), not the imperative ref NoteHighway
+  // needs — highwayRef simply stays unattached in this mode, so every
+  // `noteHighwayRef.current?.xxx` call elsewhere in useVisualTrainer stays
+  // a harmless no-op instead of needing its own branch there.
+  const highway =
+    exercise.displayMode === 'staff_cursor' ? (
+      <ExerciseNotationSheet
+        exercise={exercise}
+        playbackProgress={
+          // undefined while idle — without this the CSS animation was
+          // present (and running) from the moment the page mounted, using
+          // wall-clock time completely divorced from when the user actually
+          // pressed Start (reported directly: "the line moves immediately,
+          // even without pressing start"). Every existing preview usage
+          // already gated this the same way (isPlaying ? {...} : undefined)
+          // — this integration just missed doing the same.
+          trainer.phase !== 'idle'
+            ? {
+                bpm: exercise.bpm,
+                sessionId: trainer.playSessionId,
+                // Negative: the fill/cursor's own animation-delay is
+                // `startMs = 0 - startOffsetMs`, so a *negative*
+                // startOffsetMs becomes a *positive* delay — the animation
+                // waits out the count-in bar before it starts moving,
+                // matching when the real audio's own bar 1 actually begins
+                // (see countInDurationMs's own doc comment on
+                // useVisualTrainer for why this was missing).
+                startOffsetMs: -trainer.countInDurationMs,
+              }
+            : undefined
+        }
+        showFill={false}
+        paused={trainer.phase === 'paused'}
+        gradedEventIds={trainer.gradedEventIds}
+        showBeatLabels
+        rowBreakBars={exercise.rowBreakBars}
+      />
+    ) : (
+      <NoteHighway ref={highwayRef} events={exercise.events} exercise={exercise} />
+    )
+
   // Demo mode splits the whole content area horizontally — a full-height
   // left third just for the kit, right two-thirds for everything else
   // (transport/feedback/highway/legend stacked) — instead of the regular
@@ -129,41 +174,105 @@ function VisualTrainerRunner({ exercise, highwayRef }: VisualTrainerRunnerProps)
   // Explicit user request/iteration: a self-playing kit is the whole point
   // of watching a demo, so it gets real dedicated space rather than a small
   // strip at the bottom.
-  const body = trainer.isDemo ? (
-    <div className="flex flex-1 flex-col gap-4 lg:flex-row-reverse lg:items-stretch">
-      {/* AspectFitBox (not a width percentage like FreeNotationPracticePage's
-          kit column): that page's kit column had no particular height to
-          fill, but here the right two-thirds column is tall
-          (transport/feedback/highway/legend stacked), and a width-driven
-          kit left real empty space below it. Plain CSS aspect-ratio can't
-          reliably derive width-from-height here (see AspectFitBox's own
-          comment), so this measures the column and sizes the kit in JS. */}
-      <div className="h-full w-full lg:w-[45%]">
-        <AspectFitBox ratio={4 / 3}>
-          <DrumKit
-            activeHits={trainer.activeHits}
-            isCountingIn={trainer.phase === 'count-in'}
-            stickClickToken={trainer.stickClickToken}
-          />
-        </AspectFitBox>
+  //
+  // staff_cursor (outside demo) shares this same side-by-side *structure*
+  // (kit beside the content, not stacked below it — its own notation strip
+  // pushed the kit and keyboard legend below the fold entirely in the
+  // regular layout, reported directly: "you don't see them") but NOT
+  // demo's own AspectFitBox/items-stretch sizing: that sizes the kit to
+  // *match the opposite column's height*, which was designed around
+  // NoteHighway's fixed 420px column — ExerciseNotationSheet's own height
+  // grows with however many notation rows the exercise has, so
+  // items-stretch grew the kit right along with it, well past the
+  // viewport (reported directly, via screenshot, as "2 images" — the kit
+  // was so tall it only appeared across two different scroll positions).
+  // A plain width cap (bigger than the original note_highway one, per
+  // that same earlier request) keeps the kit a sane, constant size
+  // regardless of how tall the notation gets.
+  const useSideBySideLayout = trainer.isDemo || exercise.displayMode === 'staff_cursor'
+  const sideBySideKit = (
+    <DrumKit
+      activeHits={trainer.activeHits}
+      isCountingIn={trainer.phase === 'count-in'}
+      stickClickToken={trainer.stickClickToken}
+    />
+  )
+  // Phone-control toggle + demo-launch button — only relevant outside an
+  // actual demo run (a demo run already has trainer.isDemo true the whole
+  // time it's active, so these would otherwise never have anywhere useful
+  // to render for it).
+  const phoneControlAndDemoButton = !trainer.isDemo && (
+    <>
+      <div className="flex items-center gap-2">
+        <Button variant="secondary" onClick={trainer.togglePhoneControl}>
+          {trainer.isPhoneControlEnabled ? 'כבה שליטת טלפון' : 'הפעל שליטת טלפון'}
+        </Button>
+        {trainer.isPhoneControlEnabled && (
+          <Badge variant={REMOTE_STATUS_BADGE_VARIANT[trainer.remoteStatus]}>
+            {REMOTE_STATUS_LABELS[trainer.remoteStatus]}
+          </Badge>
+        )}
       </div>
-      <div className="flex w-full flex-col gap-1.5 lg:w-[55%]">
-        {transportControls}
-        <HitFeedback lastGrade={trainer.lastGrade} scoring={trainer.scoring} />
-        <NoteHighway ref={highwayRef} events={exercise.events} exercise={exercise} />
-        {keyboardGuide}
+      {trainer.phase === 'idle' && (
+        <Button variant="secondary" onClick={trainer.startDemo}>
+          מוד אוטומטי — הדגמה
+        </Button>
+      )}
+    </>
+  )
+
+  const body = useSideBySideLayout ? (
+    trainer.isDemo ? (
+      <div className="flex flex-1 flex-col gap-4 lg:flex-row-reverse lg:items-stretch">
+        {/* AspectFitBox (not a width percentage like FreeNotationPracticePage's
+            kit column): that page's kit column had no particular height to
+            fill, but here the right two-thirds column is tall
+            (transport/feedback/highway/legend stacked), and a width-driven
+            kit left real empty space below it. Plain CSS aspect-ratio can't
+            reliably derive width-from-height here (see AspectFitBox's own
+            comment), so this measures the column and sizes the kit in JS. */}
+        <div className="h-full w-full lg:w-[45%]">
+          <AspectFitBox ratio={4 / 3}>{sideBySideKit}</AspectFitBox>
+        </div>
+        <div className="flex w-full flex-col gap-1.5 lg:w-[55%]">
+          {transportControls}
+          <HitFeedback lastGrade={trainer.lastGrade} scoring={trainer.scoring} />
+          {highway}
+          {keyboardGuide}
+        </div>
       </div>
-    </div>
+    ) : (
+      // staff_cursor (non-demo): a 24-bar exercise's notation can run many
+      // screens tall, and the kit+keys+transport were ending up scrolled
+      // apart from each other, or the kit stretched to match the
+      // notation's own unbounded height (both reported directly, via
+      // screenshot). lg:sticky pins the whole kit/transport/keyboard
+      // column in place while only the notation column scrolls — kit and
+      // keys always stay visible together, and the keys sit beside the
+      // notation instead of trailing below every row of it.
+      <div className="flex flex-1 flex-col gap-4 lg:flex-row-reverse lg:items-start">
+        <div className="flex w-full shrink-0 flex-col gap-3 lg:sticky lg:top-14 lg:w-[32rem]">
+          {transportControls}
+          <HitFeedback lastGrade={trainer.lastGrade} scoring={trainer.scoring} />
+          {sideBySideKit}
+          {keyboardGuide}
+          {phoneControlAndDemoButton}
+        </div>
+        <div className="w-full min-w-0 flex-1">{highway}</div>
+      </div>
+    )
   ) : (
     <>
       {transportControls}
       <HitFeedback lastGrade={trainer.lastGrade} scoring={trainer.scoring} />
-      <NoteHighway ref={highwayRef} events={exercise.events} exercise={exercise} />
+      {highway}
       {/* flex-1 on the outer wrapper: the page fits in one screen with real
           leftover space below the highway, so growing this section to fill
           the remaining height (and centering vertically within it) pulls
           the row down into that space instead of leaving it stranded near
-          the top. */}
+          the top. Only reached by note_highway now — staff_cursor uses the
+          side-by-side layout above instead (useSideBySideLayout), so this
+          branch no longer needs its own conditional here. */}
       <div className="flex flex-1 items-center">
         <div className="flex w-full flex-col items-center gap-4 lg:flex-row-reverse lg:justify-between">
           {/* pe-6 (not pe-3): the kit's own artwork intentionally draws

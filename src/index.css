@@ -347,6 +347,19 @@ input[type='radio'] {
   }
 }
 
+/* The moving "where am I" cursor line (ExerciseNotationSheet's own
+   notation-row-N-cursor rect) — same timing/delay technique as the fill
+   above, just a transform instead of a width so a thin line translates
+   across the row instead of a block widening into it. */
+@keyframes notation-row-cursor {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(var(--notation-cursor-target-x, 100%));
+  }
+}
+
 /* §30: respect prefers-reduced-motion for any transition/animation in the app. */
 @media (prefers-reduced-motion: reduce) {
   *,

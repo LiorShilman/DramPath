@@ -31,6 +31,26 @@ export interface ExerciseNotationSheetProps {
    * past its own duration, with fill-mode `both`, simply holds at 100%)
    * instead of restarting its fill from the wrong (zero) point. */
   playbackProgress?: { bpm: number; sessionId: number; startOffsetMs?: number }
+  /** On by default (matches every existing preview usage). The real
+   * practice runner (staff_cursor displayMode) turns this off — a wide,
+   * low-opacity block is hard to judge precisely against, and read as "out
+   * of sync" even though it shares the exact same timing as the cursor
+   * line below (explicit user feedback, after confirming the line itself
+   * was correct) — the thin cursor line alone is the real position
+   * indicator there. */
+  showFill?: boolean
+  /** Freezes the fill/cursor animations in place (via CSS
+   * animation-play-state) — real practice needs this, unlike the read-only
+   * previews playbackProgress originally served: those never paused
+   * mid-playthrough, so nothing here ever needed to freeze independent of
+   * the audio clock before. Ignored without playbackProgress. */
+  paused?: boolean
+  /** Per-event grading result — colors that note's own head green (hit) or
+   * red (miss) as it's graded, the staff-notation equivalent of
+   * NoteHighway's own markResult flash. Separate from highlightedEventIds
+   * (that one's a transient "now playing" flash; this one persists until
+   * reset/replaced, same lifetime as a real grade). */
+  gradedEventIds?: ReadonlyMap<string, 'hit' | 'miss'>
   /** Off by default (cymbals draw as a plain X, no stem). When on, cymbal
    * (X notehead) instruments also get a stem and join the same beam
    * grouping as normal noteheads — an isolated cymbal note still gets its
@@ -136,6 +156,9 @@ export function ExerciseNotationSheet({
   exercise,
   highlightedEventIds,
   playbackProgress,
+  showFill = true,
+  paused = false,
+  gradedEventIds,
   beamCymbals = false,
   showBeatLabels = false,
   barsPerRow = BARS_PER_ROW,
@@ -344,7 +367,7 @@ export function ExerciseNotationSheet({
 
         return (
           <g key={rowIndex} data-testid={`notation-row-${rowIndex}`}>
-            {playbackProgress && rowTiming.durationMs > 0 && (
+            {showFill && playbackProgress && rowTiming.durationMs > 0 && (
               <rect
                 key={playbackProgress.sessionId}
                 data-testid={`notation-row-${rowIndex}-fill`}
@@ -356,6 +379,30 @@ export function ExerciseNotationSheet({
                 style={{
                   ['--notation-fill-target-width' as string]: `${rowBars * BAR_WIDTH_PX}px`,
                   animation: `notation-row-fill ${rowTiming.durationMs}ms linear ${rowTiming.startMs}ms both`,
+                  animationPlayState: paused ? 'paused' : 'running',
+                }}
+              />
+            )}
+            {/* The actual "where am I" indicator (explicit user request —
+                "like you already color the background, mark a vertical
+                line") — same animation-driven timing as the fill above
+                (same CSS-transform technique, not per-frame JS/React state,
+                per §18's rule), just a thin moving line instead of a
+                widening block. Drawn a little past the staff on both ends
+                so it reads as a distinct cursor, not another staff line. */}
+            {playbackProgress && rowTiming.durationMs > 0 && (
+              <rect
+                key={playbackProgress.sessionId}
+                data-testid={`notation-row-${rowIndex}-cursor`}
+                x={-1}
+                y={toY(STAFF_TOP_LINE_POSITION) - 6}
+                width={2}
+                height={toY(STAFF_BOTTOM_LINE_POSITION) - toY(STAFF_TOP_LINE_POSITION) + 12}
+                fill="var(--color-primary-text)"
+                style={{
+                  ['--notation-cursor-target-x' as string]: `${rowBars * BAR_WIDTH_PX}px`,
+                  animation: `notation-row-cursor ${rowTiming.durationMs}ms linear ${rowTiming.startMs}ms both`,
+                  animationPlayState: paused ? 'paused' : 'running',
                 }}
               />
             )}
@@ -440,6 +487,14 @@ export function ExerciseNotationSheet({
                 noteBeamY.get(event.id) ??
                 (direction === 'down' ? y + NOTE_RADIUS_PX + STEM_LENGTH_PX : y - NOTE_RADIUS_PX - STEM_LENGTH_PX)
               const isHighlighted = highlightedEventIds?.has(event.id) ?? false
+              const gradeResult = gradedEventIds?.get(event.id)
+              const noteColor = gradeResult
+                ? gradeResult === 'hit'
+                  ? 'var(--color-success-text)'
+                  : 'var(--color-danger-text)'
+                : isHighlighted
+                  ? 'var(--color-warning-text)'
+                  : undefined
 
               return (
                 <g
@@ -447,7 +502,8 @@ export function ExerciseNotationSheet({
                   data-testid="notation-note"
                   data-instrument={event.instrument}
                   data-highlighted={isHighlighted}
-                  style={isHighlighted ? { color: 'var(--color-warning-text)' } : undefined}
+                  data-grade={gradeResult}
+                  style={noteColor ? { color: noteColor } : undefined}
                 >
                   {staff.ledger && (
                     <line
