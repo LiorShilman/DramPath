@@ -4,7 +4,7 @@ import { withBaseUrl } from '../../lib/asset-url'
 
 // 9 instruments share 8 visual pieces — hihat_closed/hihat_open are the
 // same physical hi-hat, matching the 8 real product photos available
-// (public/drum-kit/) — one per piece, hihat.png already shows the full
+// (public/drum-kit/) — one per piece, hihat.webp already shows the full
 // stand+pedal so no separate open/closed artwork is needed.
 type DrumPiece = 'kick' | 'snare' | 'hihat' | 'ride' | 'crash' | 'tom_high' | 'tom_mid' | 'tom_floor'
 
@@ -37,39 +37,98 @@ const PIECE_TO_INSTRUMENT: Record<DrumPiece, DrumInstrument> = {
 }
 
 // Loose collage layout (percent of the container) approximating a kit from
-// the player's viewpoint — these are real product photos rather than a
-// technical drawing, so positions are laid out by eye, not calculated.
-// Front-facing kit shape, tightly grouped like an assembled kit rather than
-// scattered pieces: crash/ride angled at the top corners bookending the two
-// mounted toms (touching each other, directly above the kick), hihat stand
-// at the player's far left, snare/kick in the front row with the kick
-// largest and centered. tom_floor sits further back and to the right
-// (lower top%, higher left% than a naive "same row as kick" placement) —
-// pulled back explicitly per user feedback, since kick and tom_floor
-// overlapping heavily in the same row made kick's rounded edge look like it
-// was cutting into tom_floor's silhouette (DOM/paint order already has
-// tom_floor on top — see the isActive doc comment on DrumKitProps — this
-// was a spacing issue, not a stacking one).
+// the player's viewpoint — these are real product photos (generated to
+// match the user's own Lemon T550 e-kit, see docs/adr and the tools/
+// asset-generation prompts) rather than a technical drawing, so positions
+// are laid out by eye, not calculated. This second-generation set replaced
+// the original cropped-cymbal/plain-shell photos with full-stand hardware
+// shots (hihat/crash/ride now include their entire stand, not just the
+// cymbal) plus three new non-interactive pieces (rack, sound module,
+// throne — see DECORATION_LAYOUT below) for a fuller "this is literally
+// your kit" look. First-pass placement, expected to need visual tuning
+// once seen live (every prior DrumKit layout change this project has made
+// needed at least one screenshot-driven correction pass).
+// Front-facing kit shape: crash/ride angled at the top corners bookending
+// the two mounted toms above the kick, hihat stand at the player's far
+// left, snare/kick in the front row with the kick largest and centered.
+// tom_floor sits further back and to the right (lower top%, higher left%
+// than a naive "same row as kick" placement) — pulled back explicitly per
+// user feedback, since kick and tom_floor overlapping heavily in the same
+// row made kick's rounded edge look like it was cutting into tom_floor's
+// silhouette (DOM/paint order already has tom_floor on top — see the
+// isActive doc comment on DrumKitProps — this was a spacing issue, not a
+// stacking one).
+// Percentages below were measured directly off the user's own reference
+// photo (Lemon T550 product shot) with a 10%-gridline overlay, not eyeballed
+// — each piece's top/left/width matches where that same piece's silhouette
+// actually falls in the reference. The reference has no throne in it at
+// all (that asset is a bonus addition, not in the source photo), so
+// throne's own placement is the one entry here that's a judgment call
+// rather than a measurement — see its own comment below.
 const PIECE_LAYOUT: Record<DrumPiece, CSSProperties> = {
-  crash: { top: '0%', left: '9%', width: '40%' },
-  tom_high: { top: '16%', left: '34%', width: '28%' },
-  tom_mid: { top: '16%', left: '56%', width: '28%' },
-  ride: { top: '0%', left: '73%', width: '40%' },
-  hihat: { top: '20%', left: '-4%', width: '28%' },
-  snare: { top: '34%', left: '12%', width: '32%' },
-  kick: { top: '34%', left: '26%', width: '50%' },
-  tom_floor: { top: '26%', left: '60%', width: '36%' },
+  crash: { top: '3%', left: '20%', width: '26%' },
+  ride: { top: '3%', left: '58%', width: '27%' },
+  tom_high: { top: '21%', left: '33%', width: '19%' },
+  tom_mid: { top: '21%', left: '50%', width: '18%' },
+  hihat: { top: '20%', left: '8%', width: '32%' },
+  snare: { top: '40%', left: '33%', width: '24%' },
+  kick: { top: '43%', left: '48%', width: '24%' },
+  tom_floor: { top: '38%', left: '63%', width: '24%' },
+}
+
+// Non-interactive pieces — no DrumInstrument maps to these, so unlike
+// PIECE_LAYOUT they never respond to a hit and never appear in
+// activeHits/onPieceHit. Purely decorative context around the actual
+// instruments. rack renders first (backmost, everything else sits "on" or
+// "in front of" it); kick_pedal and throne render after the instrument
+// loop further down so they paint in front of the kick body they visually
+// belong to/sit in front of.
+type Decoration = 'rack' | 'sound_module' | 'kick_pedal' | 'throne'
+
+const DECORATION_LAYOUT: Record<Decoration, CSSProperties> = {
+  rack: { top: '15%', left: '15%', width: '70%' },
+  sound_module: { top: '33%', left: '22%', width: '16%' },
+  kick_pedal: { top: '60%', left: '49%', width: '19%' },
+  // Not measurable from the reference (it has no throne) — placed per
+  // explicit instruction instead: in the gap between the kick (left: 47%)
+  // and the hihat stand (left: 8%, width 32% → right edge ~40%), and lower
+  // than both (a seated player's stool is the closest object to the
+  // camera in a real kit photo). Sized up from an earlier, smaller pass
+  // (reported directly as looking too small) — the closest-to-camera object
+  // in a real photo reads as bigger, not smaller, than gear further back.
+  throne: { top: '56%', left: '30%', width: '22%' },
+}
+
+const DECORATION_IMAGE_SRC: Record<Decoration, string> = {
+  rack: withBaseUrl('drum-kit/rack.webp'),
+  sound_module: withBaseUrl('drum-kit/sound-module.webp'),
+  kick_pedal: withBaseUrl('drum-kit/kick-pedal.webp'),
+  throne: withBaseUrl('drum-kit/throne.webp'),
+}
+
+const DECORATION_ASPECT_RATIO: Record<Decoration, string> = {
+  rack: '867 / 853',
+  sound_module: '860 / 840',
+  kick_pedal: '800 / 882',
+  throne: '600 / 899',
+}
+
+const DECORATION_ALT: Record<Decoration, string> = {
+  rack: 'שלדת מערכת התופים',
+  sound_module: 'מודול הסאונד',
+  kick_pedal: 'פדל בס דראם',
+  throne: 'כיסא תופים',
 }
 
 const PIECE_IMAGE_SRC: Record<DrumPiece, string> = {
-  kick: withBaseUrl('drum-kit/kick.png'),
-  snare: withBaseUrl('drum-kit/snare.png'),
-  hihat: withBaseUrl('drum-kit/hihat.png'),
-  ride: withBaseUrl('drum-kit/ride.png'),
-  crash: withBaseUrl('drum-kit/crash.png'),
-  tom_high: withBaseUrl('drum-kit/tom-high.png'),
-  tom_mid: withBaseUrl('drum-kit/tom-mid.png'),
-  tom_floor: withBaseUrl('drum-kit/tom-floor.png'),
+  kick: withBaseUrl('drum-kit/kick.webp'),
+  snare: withBaseUrl('drum-kit/snare.webp'),
+  hihat: withBaseUrl('drum-kit/hihat.webp'),
+  ride: withBaseUrl('drum-kit/ride.webp'),
+  crash: withBaseUrl('drum-kit/crash.webp'),
+  tom_high: withBaseUrl('drum-kit/tom-high.webp'),
+  tom_mid: withBaseUrl('drum-kit/tom-mid.webp'),
+  tom_floor: withBaseUrl('drum-kit/tom-floor.webp'),
 }
 
 // Pieces with a real "hit" product photo (blue head): swap to it for a
@@ -78,21 +137,30 @@ const PIECE_IMAGE_SRC: Record<DrumPiece, string> = {
 // instead of moving the image"). Matches .drum-hit's 120ms scale animation
 // duration plus a little buffer so the swap doesn't feel cut short.
 const HIT_IMAGE_SRC: Partial<Record<DrumPiece, string>> = {
-  snare: withBaseUrl('drum-kit/snare-hit.png'),
-  kick: withBaseUrl('drum-kit/kick-hit.png'),
-  tom_floor: withBaseUrl('drum-kit/tom-floor-hit.png'),
-  tom_mid: withBaseUrl('drum-kit/tom-mid-hit.png'),
-  tom_high: withBaseUrl('drum-kit/tom-high-hit.png'),
+  snare: withBaseUrl('drum-kit/snare-hit.webp'),
+  kick: withBaseUrl('drum-kit/kick-hit.webp'),
+  tom_floor: withBaseUrl('drum-kit/tom-floor-hit.webp'),
+  tom_mid: withBaseUrl('drum-kit/tom-mid-hit.webp'),
+  tom_high: withBaseUrl('drum-kit/tom-high-hit.webp'),
 }
 const HIT_FLASH_MS = 150
 
-// Every piece photo is a known fixed size (tom_floor is the only non-square
-// one) — pinning aspect-ratio means the browser reserves the right space
-// immediately, so a freshly-mounted <img> (every hit remounts its piece,
-// see DrumKitProps' isActive comment) can never visibly collapse/pop-in
-// while it decodes, on top of the actual pixel-alignment work below.
-const PIECE_ASPECT_RATIO: Partial<Record<DrumPiece, string>> = {
-  tom_floor: '320 / 480',
+// Every piece photo is a known fixed size — pinning aspect-ratio means the
+// browser reserves the right space immediately, so a freshly-mounted <img>
+// (every hit remounts its piece, see DrumKitProps' isActive comment) can
+// never visibly collapse/pop-in while it decodes, on top of the actual
+// pixel-alignment work below. All 8 pieces get one now (not just tom_floor)
+// — this asset generation is full-stand hardware shots and non-square drum
+// pads, none of them a plain square crop like the previous set mostly was.
+const PIECE_ASPECT_RATIO: Record<DrumPiece, string> = {
+  kick: '818 / 850',
+  snare: '845 / 600',
+  hihat: '571 / 880',
+  ride: '562 / 867',
+  crash: '576 / 839',
+  tom_high: '897 / 838',
+  tom_mid: '900 / 874',
+  tom_floor: '865 / 600',
 }
 
 const PIECE_ALT: Record<DrumPiece, string> = {
@@ -178,6 +246,22 @@ function PieceImage({ piece, isActive }: { piece: DrumPiece; isActive: boolean }
 // how precisely the image itself is pixel-aligned to the idle photo.
 const HIT_IMAGE_SRCS = Object.values(HIT_IMAGE_SRC)
 
+// Purely visual, never interactive — no onPieceHit/data-instrument, unlike
+// PieceImage's pieces. aria-hidden since DECORATION_ALT only exists as a
+// human-readable label for future reference, not something a screen-reader
+// user needs read out for every one of these on every render.
+function DecorationImage({ decoration }: { decoration: Decoration }) {
+  return (
+    <img
+      src={DECORATION_IMAGE_SRC[decoration]}
+      alt={DECORATION_ALT[decoration]}
+      aria-hidden="true"
+      className="w-full drop-shadow-lg"
+      style={{ position: 'absolute', aspectRatio: DECORATION_ASPECT_RATIO[decoration], ...DECORATION_LAYOUT[decoration] }}
+    />
+  )
+}
+
 export function DrumKit({ activeHits, isCountingIn, stickClickToken, onPieceHit }: DrumKitProps) {
   useEffect(() => {
     for (const src of HIT_IMAGE_SRCS) {
@@ -195,6 +279,10 @@ export function DrumKit({ activeHits, isCountingIn, stickClickToken, onPieceHit 
 
   return (
     <div className="relative aspect-[4/3] w-full">
+      {/* Backmost — everything else visually sits "on" or "in front of"
+          the rack/module, so both paint before the instrument loop below. */}
+      <DecorationImage decoration="rack" />
+      <DecorationImage decoration="sound_module" />
       {(Object.keys(PIECE_LAYOUT) as DrumPiece[]).map((piece) => {
         const token = pieceTokens[piece]
         const isActive = token !== undefined
@@ -237,6 +325,12 @@ export function DrumKit({ activeHits, isCountingIn, stickClickToken, onPieceHit 
           </div>
         )
       })}
+      {/* Frontmost pieces — paint after the instrument loop so the pedal
+          sits in front of the kick body it belongs to, and the throne (the
+          closest-to-camera object in a real kit photo) sits in front of
+          everything else. */}
+      <DecorationImage decoration="kick_pedal" />
+      <DecorationImage decoration="throne" />
       {/* The count-off gesture drummers do before playing starts (see
           index.css's .stick-click-* rules) — right stick strikes left
           (explicit user request), centered above the kit rather than

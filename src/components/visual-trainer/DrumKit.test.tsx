@@ -52,9 +52,9 @@ describe('DrumKit', () => {
     expect(container.querySelector('[data-instrument="crash"]')).not.toHaveClass('hit')
   })
 
-  it('renders a real product photo for every piece', () => {
+  it('renders a real product photo for every piece, plus the 4 non-interactive decoration pieces (rack/module/pedal/throne)', () => {
     const { container } = render(<DrumKit />)
-    expect(container.querySelectorAll('img')).toHaveLength(8)
+    expect(container.querySelectorAll('img')).toHaveLength(12)
   })
 
   it('renders a drumstick for every piece except kick, which is foot-pedal-operated', () => {
@@ -65,11 +65,11 @@ describe('DrumKit', () => {
   })
 
   describe.each([
-    { piece: 'snare', instrument: 'snare', idleSrc: '/drum-kit/snare.png', hitSrc: '/drum-kit/snare-hit.png' },
-    { piece: 'kick', instrument: 'kick', idleSrc: '/drum-kit/kick.png', hitSrc: '/drum-kit/kick-hit.png' },
-    { piece: 'tom_floor', instrument: 'tom_floor', idleSrc: '/drum-kit/tom-floor.png', hitSrc: '/drum-kit/tom-floor-hit.png' },
-    { piece: 'tom_mid', instrument: 'tom_mid', idleSrc: '/drum-kit/tom-mid.png', hitSrc: '/drum-kit/tom-mid-hit.png' },
-    { piece: 'tom_high', instrument: 'tom_high', idleSrc: '/drum-kit/tom-high.png', hitSrc: '/drum-kit/tom-high-hit.png' },
+    { piece: 'snare', instrument: 'snare', idleSrc: '/drum-kit/snare.webp', hitSrc: '/drum-kit/snare-hit.webp' },
+    { piece: 'kick', instrument: 'kick', idleSrc: '/drum-kit/kick.webp', hitSrc: '/drum-kit/kick-hit.webp' },
+    { piece: 'tom_floor', instrument: 'tom_floor', idleSrc: '/drum-kit/tom-floor.webp', hitSrc: '/drum-kit/tom-floor-hit.webp' },
+    { piece: 'tom_mid', instrument: 'tom_mid', idleSrc: '/drum-kit/tom-mid.webp', hitSrc: '/drum-kit/tom-mid-hit.webp' },
+    { piece: 'tom_high', instrument: 'tom_high', idleSrc: '/drum-kit/tom-high.webp', hitSrc: '/drum-kit/tom-high-hit.webp' },
   ] as const)('$piece hit feedback (blue-head image swap instead of the scale animation)', ({ piece, instrument, idleSrc, hitSrc }) => {
     beforeEach(() => {
       vi.useFakeTimers()
