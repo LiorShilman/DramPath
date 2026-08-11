@@ -26,6 +26,24 @@ function latestSocket(): FakeWebSocket {
   return socket
 }
 
+// Same hand-rolled test doubles as useMidiDrumInput.test.ts.
+class FakeMIDIInput {
+  onmidimessage: ((event: { data: Uint8Array }) => void) | null = null
+
+  simulateMessage(bytes: number[]) {
+    this.onmidimessage?.({ data: new Uint8Array(bytes) })
+  }
+}
+
+class FakeMIDIAccess {
+  inputs: Map<string, FakeMIDIInput>
+  onstatechange: (() => void) | null = null
+
+  constructor(inputs: FakeMIDIInput[] = []) {
+    this.inputs = new Map(inputs.map((input, index) => [String(index), input]))
+  }
+}
+
 // Same FakeAudioContext technique already established in useVisualTrainer.test.ts.
 class FakeAudioContext {
   get currentTime() {
@@ -133,6 +151,33 @@ describe('useFreeDrumPlayback', () => {
 
     act(() => result.current.togglePhoneControl())
     act(() => latestSocket().simulateMessage({ type: 'hit', instrument: 'crash' }))
+
+    expect(result.current.activeHits.crash).toBeTruthy()
+  })
+
+  it('MIDI control is off by default, and toggleMidiControl turns it on', () => {
+    vi.stubGlobal('navigator', { ...navigator, requestMIDIAccess: vi.fn().mockResolvedValue(new FakeMIDIAccess()) })
+    const { result } = renderHook(() => useFreeDrumPlayback())
+
+    expect(result.current.isMidiControlEnabled).toBe(false)
+    expect(result.current.midiStatus).toBe('disabled')
+
+    act(() => result.current.toggleMidiControl())
+
+    expect(result.current.isMidiControlEnabled).toBe(true)
+    expect(result.current.midiStatus).toBe('requesting')
+  })
+
+  it('a MIDI hit plays immediately (no phase to gate on, unlike the graded runner)', async () => {
+    const input = new FakeMIDIInput()
+    vi.stubGlobal('navigator', { ...navigator, requestMIDIAccess: vi.fn().mockResolvedValue(new FakeMIDIAccess([input])) })
+    const { result } = renderHook(() => useFreeDrumPlayback())
+
+    await act(async () => {
+      result.current.toggleMidiControl()
+      await Promise.resolve()
+    })
+    act(() => input.simulateMessage([0x99, 49, 100])) // note 49 = crash, see midi-drum-map.ts
 
     expect(result.current.activeHits.crash).toBeTruthy()
   })

@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useKeyboardDrums } from './useKeyboardDrums'
 import { useRemoteDrumInput } from './useRemoteDrumInput'
 import type { RemoteDrumInputStatus } from './useRemoteDrumInput'
+import { useMidiDrumInput } from './useMidiDrumInput'
+import type { MidiDrumInputStatus } from './useMidiDrumInput'
 import { playDrumSound } from '../lib/visual-trainer/drum-synth'
 import type { DrumInstrument } from '../domain'
 
@@ -16,9 +18,15 @@ export interface UseFreeDrumPlaybackResult {
   isPhoneControlEnabled: boolean
   togglePhoneControl: () => void
   remoteStatus: RemoteDrumInputStatus
+  /** Real e-kit input over Web MIDI — same "plays immediately, no
+   * phase to gate on" reasoning as phone control above. */
+  isMidiControlEnabled: boolean
+  toggleMidiControl: () => void
+  midiStatus: MidiDrumInputStatus
 }
 
 const PHONE_CONTROL_ENABLED_STORAGE_KEY = 'drumpath.freePractice.isPhoneControlEnabled'
+const MIDI_CONTROL_ENABLED_STORAGE_KEY = 'drumpath.freePractice.isMidiControlEnabled'
 
 /** Free (ungraded) drum playback — no exercise timeline, just "trigger a
  * mapped instrument, hear the matching drum, see the kit react." Used by
@@ -35,6 +43,9 @@ export function useFreeDrumPlayback(): UseFreeDrumPlaybackResult {
   const [activeHits, setActiveHits] = useState<Partial<Record<DrumInstrument, string>>>({})
   const [isPhoneControlEnabled, setIsPhoneControlEnabled] = useState(
     () => localStorage.getItem(PHONE_CONTROL_ENABLED_STORAGE_KEY) === 'true',
+  )
+  const [isMidiControlEnabled, setIsMidiControlEnabled] = useState(
+    () => localStorage.getItem(MIDI_CONTROL_ENABLED_STORAGE_KEY) === 'true',
   )
 
   useEffect(() => {
@@ -56,6 +67,7 @@ export function useFreeDrumPlayback(): UseFreeDrumPlaybackResult {
 
   useKeyboardDrums({ onHit: playHit })
   const remoteStatus = useRemoteDrumInput({ enabled: isPhoneControlEnabled, onHit: playHit })
+  const midiStatus = useMidiDrumInput({ enabled: isMidiControlEnabled, onHit: playHit })
 
   const togglePhoneControl = useCallback(() => {
     setIsPhoneControlEnabled((prev) => {
@@ -65,5 +77,21 @@ export function useFreeDrumPlayback(): UseFreeDrumPlaybackResult {
     })
   }, [])
 
-  return { activeHits, isPhoneControlEnabled, togglePhoneControl, remoteStatus }
+  const toggleMidiControl = useCallback(() => {
+    setIsMidiControlEnabled((prev) => {
+      const next = !prev
+      localStorage.setItem(MIDI_CONTROL_ENABLED_STORAGE_KEY, String(next))
+      return next
+    })
+  }, [])
+
+  return {
+    activeHits,
+    isPhoneControlEnabled,
+    togglePhoneControl,
+    remoteStatus,
+    isMidiControlEnabled,
+    toggleMidiControl,
+    midiStatus,
+  }
 }

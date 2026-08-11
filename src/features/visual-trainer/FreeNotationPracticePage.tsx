@@ -15,6 +15,7 @@ import { calculateTapTempoBpm } from '../../lib/metronome-math'
 import { SUBDIVISION_LABELS } from '../exercises/exercise-labels'
 import type { Resource, Subdivision } from '../../domain'
 import type { RemoteDrumInputStatus } from '../../hooks/useRemoteDrumInput'
+import type { MidiDrumInputStatus } from '../../hooks/useMidiDrumInput'
 
 // Same status labels/variants as VisualTrainerPage's phone-control cluster
 // (ADR 0007) — kept as its own copy here rather than a shared export, since
@@ -33,6 +34,25 @@ const REMOTE_STATUS_BADGE_VARIANT: Record<RemoteDrumInputStatus, BadgeVariant> =
   'waiting-for-phone': 'warning',
   connected: 'success',
   superseded: 'danger',
+}
+
+// Same "richer than a flat boolean" reasoning as REMOTE_STATUS_LABELS,
+// same copy as VisualTrainerPage's own MIDI status labels (kept as its own
+// copy here per this file's existing convention, see REMOTE_STATUS_LABELS'
+// own doc comment).
+const MIDI_STATUS_LABELS: Record<MidiDrumInputStatus, string> = {
+  disabled: 'כבוי',
+  unsupported: 'הדפדפן לא תומך ב-MIDI (צריך Chrome/Edge)',
+  requesting: 'מבקש הרשאה…',
+  'no-device': 'לא נמצא התקן MIDI',
+  connected: 'קיט תופים מחובר',
+}
+const MIDI_STATUS_BADGE_VARIANT: Record<MidiDrumInputStatus, BadgeVariant> = {
+  disabled: 'neutral',
+  unsupported: 'danger',
+  requesting: 'neutral',
+  'no-device': 'warning',
+  connected: 'success',
 }
 
 const BEATS_PER_BAR = [0, 1, 2, 3]
@@ -117,7 +137,8 @@ export function FreeNotationPracticePage() {
     setPendingRemoval(undefined)
   }
 
-  const { activeHits, isPhoneControlEnabled, togglePhoneControl, remoteStatus } = useFreeDrumPlayback()
+  const { activeHits, isPhoneControlEnabled, togglePhoneControl, remoteStatus, isMidiControlEnabled, toggleMidiControl, midiStatus } =
+    useFreeDrumPlayback()
   const metronome = useMetronome()
   const [bpm, setBpm] = useState(DEFAULT_BPM)
   const [subdivision, setSubdivision] = useState<Subdivision>('quarter')
@@ -262,6 +283,17 @@ export function FreeNotationPracticePage() {
               </Button>
               {isPhoneControlEnabled && (
                 <Badge variant={REMOTE_STATUS_BADGE_VARIANT[remoteStatus]}>{REMOTE_STATUS_LABELS[remoteStatus]}</Badge>
+              )}
+            </div>
+
+            {/* Real e-kit input over Web MIDI — same "plays immediately,
+                no phase to gate on" reasoning as phone control above. */}
+            <div className="flex flex-col items-center gap-1">
+              <Button variant="secondary" onClick={toggleMidiControl}>
+                {isMidiControlEnabled ? 'כבה קיט תופים אמיתי (MIDI)' : 'הפעל קיט תופים אמיתי (MIDI)'}
+              </Button>
+              {isMidiControlEnabled && (
+                <Badge variant={MIDI_STATUS_BADGE_VARIANT[midiStatus]}>{MIDI_STATUS_LABELS[midiStatus]}</Badge>
               )}
             </div>
           </Card>
