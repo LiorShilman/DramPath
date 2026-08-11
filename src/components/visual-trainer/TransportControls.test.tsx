@@ -19,6 +19,8 @@ function renderControls(overrides: Partial<Parameters<typeof TransportControls>[
     onResume: vi.fn(),
     onRestart: vi.fn(),
     onExit: vi.fn(),
+    isMetronomeMuted: false,
+    onToggleMetronomeMute: vi.fn(),
   }
   render(
     <TransportControls
@@ -112,33 +114,39 @@ describe('TransportControls', () => {
     expect(screen.queryByText('מדגים')).not.toBeInTheDocument()
   })
 
-  it('shows no seek bar outside demo mode, even while running', () => {
-    const onSeekDemo = vi.fn()
-    renderControls({ phase: 'running', isDemo: false, onSeekDemo })
-    expect(screen.queryByRole('slider', { name: 'דילוג להדגמה' })).not.toBeInTheDocument()
+  it('shows a seek bar during a real (non-demo) run — not demo-only anymore', () => {
+    renderControls({ phase: 'running', isDemo: false, onSeek: vi.fn() })
+    expect(screen.getByRole('slider', { name: 'דילוג' })).toBeInTheDocument()
   })
 
-  it('shows no seek bar while idle, even in demo mode (nothing to seek within yet)', () => {
-    const onSeekDemo = vi.fn()
-    renderControls({ phase: 'idle', isDemo: true, onSeekDemo })
-    expect(screen.queryByRole('slider', { name: 'דילוג להדגמה' })).not.toBeInTheDocument()
+  it('shows no seek bar while idle, even with onSeek provided (nothing to seek within yet)', () => {
+    const onSeek = vi.fn()
+    renderControls({ phase: 'idle', isDemo: true, onSeek })
+    expect(screen.queryByRole('slider', { name: 'דילוג' })).not.toBeInTheDocument()
   })
 
   it('shows a seek bar during an active demo run', () => {
-    renderControls({ phase: 'running', isDemo: true, onSeekDemo: vi.fn() })
-    expect(screen.getByRole('slider', { name: 'דילוג להדגמה' })).toBeInTheDocument()
+    renderControls({ phase: 'running', isDemo: true, onSeek: vi.fn() })
+    expect(screen.getByRole('slider', { name: 'דילוג' })).toBeInTheDocument()
   })
 
-  it('does not call onSeekDemo while merely dragging the seek bar, only once released', () => {
-    const onSeekDemo = vi.fn()
-    renderControls({ phase: 'running', isDemo: true, elapsedMs: 0, onSeekDemo })
-    const slider = screen.getByRole('slider', { name: 'דילוג להדגמה' })
+  it('does not call onSeek while merely dragging the seek bar, only once released', () => {
+    const onSeek = vi.fn()
+    renderControls({ phase: 'running', isDemo: true, elapsedMs: 0, onSeek })
+    const slider = screen.getByRole('slider', { name: 'דילוג' })
 
     fireEvent.change(slider, { target: { value: '2000' } })
-    expect(onSeekDemo).not.toHaveBeenCalled()
+    expect(onSeek).not.toHaveBeenCalled()
 
     fireEvent.mouseUp(slider)
-    expect(onSeekDemo).toHaveBeenCalledTimes(1)
-    expect(onSeekDemo).toHaveBeenCalledWith(2000)
+    expect(onSeek).toHaveBeenCalledTimes(1)
+    expect(onSeek).toHaveBeenCalledWith(2000)
+  })
+
+  it('toggles the metronome mute button and shows the muted state', async () => {
+    const user = userEvent.setup()
+    const handlers = renderControls({ phase: 'running', isMetronomeMuted: false })
+    await user.click(screen.getByRole('button', { name: 'השתק מטרונום' }))
+    expect(handlers.onToggleMetronomeMute).toHaveBeenCalledTimes(1)
   })
 })

@@ -131,8 +131,10 @@ export function ExerciseBuilderPage() {
   // falling rectangles (the original mode) or real notation with a moving
   // playhead cursor (explicit user request: "feels much more comfortable,"
   // tried elsewhere first). Doesn't affect this page's own preview, which
-  // already always renders notation regardless of this setting.
-  const [displayMode, setDisplayMode] = useState<DisplayMode>('note_highway')
+  // already always renders notation regardless of this setting. Defaults to
+  // staff_cursor (explicit user request) — a new exercise starts with
+  // notation selected rather than requiring an extra click every time.
+  const [displayMode, setDisplayMode] = useState<DisplayMode>('staff_cursor')
   // 0 = unset ("use the notation sheet's own default"). A period, not a
   // list of specific bars — "3" means a new row every 3rd bar, not "break
   // once before bar 3" (an earlier free-text version of this field asked

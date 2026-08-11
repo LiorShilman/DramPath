@@ -22,6 +22,15 @@ export interface ExercisePlaybackStartOptions {
    * events before it are simply never scheduled. Lets a caller (e.g. a
    * builder preview's clickable ruler) jump playback to an arbitrary point. */
   startOffsetMs?: number
+  /** Whether the exercise's own drum notes play back on their own schedule
+   * (the metronome click always does, regardless of this flag). Defaults to
+   * true — every existing caller (demo runs, the builder/lesson preview)
+   * wants the reference track playing itself. A real (manual) practice run
+   * sets this false so the drums stay silent until the player actually
+   * strikes them (see ExercisePlaybackEngine.playHitNow) — explicit user
+   * request: hearing the exercise play itself made manual mode feel no
+   * different from watching a demo. */
+  playDrumEvents?: boolean
 }
 
 interface QueuedEvent {
@@ -87,6 +96,18 @@ export class ExercisePlaybackEngine {
     this.metronomeGain.gain.value = clamp01(volume)
   }
 
+  /** Plays one drum hit right now, through the same drumGain node (and thus
+   * the same volume/mixing) as the scheduled reference track — used for a
+   * real player's own strikes when playDrumEvents is false, so pressing the
+   * key is what produces the sound instead of the exercise's own timeline.
+   * Velocity 100, no accent: matches every other user-triggered hit
+   * elsewhere in the app (useFreeDrumPlayback, useTouchDrumPlayback) —
+   * this isn't reproducing the original note's own velocity/accent, just
+   * an immediate, consistent response to the player's strike. */
+  playHitNow(instrument: DrumNoteEvent['instrument']): void {
+    playDrumSound(this.audioContext, this.drumGain, this.audioContext.currentTime, instrument, 100)
+  }
+
   get isRunning(): boolean {
     return this.schedulerId !== null
   }
@@ -139,10 +160,16 @@ export class ExercisePlaybackEngine {
       .filter((timeMs) => timeMs >= startOffsetMs)
       .sort((a, b) => a - b)
       .map((timeMs) => this.startAudioTime + (timeMs - startOffsetMs) / 1000)
-    this.eventQueue = exerciseEventSchedule
-      .filter(({ timeMs }) => timeMs >= startOffsetMs)
-      .sort((a, b) => a.timeMs - b.timeMs)
-      .map(({ event, timeMs }) => ({ event, audioTimeSeconds: this.startAudioTime + (timeMs - startOffsetMs) / 1000 }))
+    this.eventQueue =
+      options.playDrumEvents === false
+        ? []
+        : exerciseEventSchedule
+            .filter(({ timeMs }) => timeMs >= startOffsetMs)
+            .sort((a, b) => a.timeMs - b.timeMs)
+            .map(({ event, timeMs }) => ({
+              event,
+              audioTimeSeconds: this.startAudioTime + (timeMs - startOffsetMs) / 1000,
+            }))
     this.nextEventIndex = 0
     this.nextBeatIndex = 0
     this.nextCountInBeatIndex = 0

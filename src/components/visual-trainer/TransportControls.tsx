@@ -15,15 +15,21 @@ export interface TransportControlsProps {
    * imported song is long enough that "תיבה 47 מתוך 119" alone doesn't say
    * much about how far along you actually are. */
   elapsedMs: number
-  /** Jumps a running demo to an arbitrary point — only ever passed (and
-   * only ever rendered as a clickable seek bar) while isDemo, since a real
-   * run's scoring depends on hitting every note in order. */
-  onSeekDemo?: (offsetMs: number) => void
+  /** Jumps the current run (demo or real) to an arbitrary point — real-run
+   * scoring only counts notes from the seek point onward (accuracy/combo
+   * reset there too), same tradeoff seeking already made for demo; explicit
+   * user request to allow it for real practice too, not just demo. */
+  onSeek?: (offsetMs: number) => void
   onStart: () => void
   onPause: () => void
   onResume: () => void
   onRestart: () => void
   onExit: () => void
+  /** Mutes only the click track, not the exercise's own drum sounds —
+   * explicit user request, no way to silence the metronome during
+   * practice. */
+  isMetronomeMuted: boolean
+  onToggleMetronomeMute: () => void
 }
 
 function formatDuration(totalMs: number): string {
@@ -42,12 +48,14 @@ export function TransportControls({
   currentBar,
   currentBeat,
   elapsedMs,
-  onSeekDemo,
+  onSeek,
   onStart,
   onPause,
   onResume,
   onRestart,
   onExit,
+  isMetronomeMuted,
+  onToggleMetronomeMute,
 }: TransportControlsProps) {
   const isActive = phase === 'count-in' || phase === 'running'
   // Same formula as exercise-schedule.ts's calculateExerciseDurationMs, but
@@ -114,35 +122,43 @@ export function TransportControls({
               התחל מחדש
             </Button>
           )}
+          <Button
+            variant="ghost"
+            onClick={onToggleMetronomeMute}
+            aria-label={isMetronomeMuted ? 'הפעל מטרונום' : 'השתק מטרונום'}
+            title={isMetronomeMuted ? 'הפעל מטרונום' : 'השתק מטרונום'}
+          >
+            {isMetronomeMuted ? '🔇' : '🔊'}
+          </Button>
           <Button variant="danger-outline" onClick={onExit}>
             יציאה
           </Button>
         </div>
       </div>
 
-      {/* Demo-only: a real run's scoring depends on hitting every note in
-          order, so seeking is never offered outside isDemo. dir="ltr" so
-          dragging left-to-right always means "forward," matching the
-          elapsed/total time display above regardless of the page's own RTL. */}
-      {isDemo && phase !== 'idle' && onSeekDemo && (
+      {/* dir="ltr" so dragging left-to-right always means "forward,"
+          matching the elapsed/total time display above regardless of the
+          page's own RTL. Available for a real run too, not just demo (see
+          onSeek's own doc comment on the scoring tradeoff that implies). */}
+      {phase !== 'idle' && onSeek && (
         <input
           type="range"
-          aria-label="דילוג להדגמה"
+          aria-label="דילוג"
           dir="ltr"
           min={0}
           max={Math.max(1, totalMs)}
           value={dragValueMs ?? Math.min(elapsedMs, totalMs)}
           onChange={(event) => setDragValueMs(Number(event.target.value))}
           onMouseUp={(event) => {
-            onSeekDemo(Number(event.currentTarget.value))
+            onSeek(Number(event.currentTarget.value))
             setDragValueMs(null)
           }}
           onTouchEnd={(event) => {
-            onSeekDemo(Number(event.currentTarget.value))
+            onSeek(Number(event.currentTarget.value))
             setDragValueMs(null)
           }}
           onKeyUp={(event) => {
-            onSeekDemo(Number(event.currentTarget.value))
+            onSeek(Number(event.currentTarget.value))
             setDragValueMs(null)
           }}
           className="w-full accent-[var(--color-primary)]"

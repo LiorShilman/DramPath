@@ -1,3 +1,4 @@
+import { useRef } from 'react'
 import { SUBDIVISIONS_PER_BEAT, calculateBarDurationMs, calculateEventTimeMs } from '../../domain/calculations/event-timing'
 import { STAFF_POSITION, staffPositionToOffsetPx } from '../../lib/visual-trainer/staff-notation-layout'
 import type { DrumInstrument, InteractiveExercise, Subdivision } from '../../domain'
@@ -168,6 +169,19 @@ export function ExerciseNotationSheet({
     const notehead = STAFF_POSITION[instrument].notehead
     return notehead === 'normal' || (beamCymbals && notehead === 'x')
   }
+  // Auto-follows the playing row into view during real playback (explicit
+  // user request: a long, multi-row exercise scrolled the cursor off
+  // screen with nothing keeping it in view) — driven by the cursor rect's
+  // own onAnimationStart, which already fires at exactly the right
+  // wall-clock moment for each row (same CSS-animation-delay math the
+  // cursor itself uses, so no separate timing logic to keep in sync).
+  // lastScrolledRowIndexRef enforces "forward only" (explicit user
+  // request): once row N has been scrolled to, an earlier row's own
+  // animationstart (e.g. a stale one from before a session restart) can
+  // never scroll back to it.
+  const rowRefs = useRef(new Map<number, SVGGElement>())
+  const lastScrolledRowIndexRef = useRef(-1)
+  const scrollSessionIdRef = useRef<number | undefined>(undefined)
   const rowStartBars = computeRowStartBars(exercise.bars, barsPerRow, rowBreakBars)
   const rowCount = rowStartBars.length
   // Row index for a given 1-indexed bar — rowStartBars is sorted ascending,
@@ -366,7 +380,14 @@ export function ExerciseNotationSheet({
         }
 
         return (
-          <g key={rowIndex} data-testid={`notation-row-${rowIndex}`}>
+          <g
+            key={rowIndex}
+            data-testid={`notation-row-${rowIndex}`}
+            ref={(el) => {
+              if (el) rowRefs.current.set(rowIndex, el)
+              else rowRefs.current.delete(rowIndex)
+            }}
+          >
             {showFill && playbackProgress && rowTiming.durationMs > 0 && (
               <rect
                 key={playbackProgress.sessionId}
@@ -403,6 +424,15 @@ export function ExerciseNotationSheet({
                   ['--notation-cursor-target-x' as string]: `${rowBars * BAR_WIDTH_PX}px`,
                   animation: `notation-row-cursor ${rowTiming.durationMs}ms linear ${rowTiming.startMs}ms both`,
                   animationPlayState: paused ? 'paused' : 'running',
+                }}
+                onAnimationStart={() => {
+                  if (scrollSessionIdRef.current !== playbackProgress.sessionId) {
+                    scrollSessionIdRef.current = playbackProgress.sessionId
+                    lastScrolledRowIndexRef.current = -1
+                  }
+                  if (rowIndex <= lastScrolledRowIndexRef.current) return
+                  lastScrolledRowIndexRef.current = rowIndex
+                  rowRefs.current.get(rowIndex)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
                 }}
               />
             )}

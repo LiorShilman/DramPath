@@ -4,6 +4,7 @@ import { useNavigate, useParams } from 'react-router'
 import { Badge, Button, PageHeader } from '../../components/ui'
 import type { BadgeVariant } from '../../components/ui'
 import type { RemoteDrumInputStatus } from '../../hooks/useRemoteDrumInput'
+import type { MidiDrumInputStatus } from '../../hooks/useMidiDrumInput'
 import { DrumKit } from '../../components/visual-trainer/DrumKit'
 import { NoteHighway } from '../../components/visual-trainer/NoteHighway'
 import type { NoteHighwayHandle } from '../../components/visual-trainer/NoteHighway'
@@ -15,7 +16,7 @@ import { SessionResults } from '../../components/visual-trainer/SessionResults'
 import { useVisualTrainer } from '../../hooks/useVisualTrainer'
 import { findDemoExercise } from './demo-exercises'
 import { interactiveExerciseRepository } from '../../data/repositories'
-import type { InteractiveExercise } from '../../domain'
+import type { DisplayMode, InteractiveExercise } from '../../domain'
 
 interface VisualTrainerRunnerProps {
   exercise: InteractiveExercise
@@ -49,6 +50,25 @@ const REMOTE_STATUS_BADGE_VARIANT: Record<RemoteDrumInputStatus, BadgeVariant> =
   'waiting-for-phone': 'warning',
   connected: 'success',
   superseded: 'danger',
+}
+
+// Real e-kit input over Web MIDI — same "richer than a flat boolean"
+// reasoning as REMOTE_STATUS_LABELS: unsupported (wrong browser) and
+// no-device (nothing plugged in / permission denied) are two different
+// things to tell the user, not just "not connected".
+const MIDI_STATUS_LABELS: Record<MidiDrumInputStatus, string> = {
+  disabled: 'כבוי',
+  unsupported: 'הדפדפן לא תומך ב-MIDI (צריך Chrome/Edge)',
+  requesting: 'מבקש הרשאה…',
+  'no-device': 'לא נמצא התקן MIDI',
+  connected: 'קיט תופים מחובר',
+}
+const MIDI_STATUS_BADGE_VARIANT: Record<MidiDrumInputStatus, BadgeVariant> = {
+  disabled: 'neutral',
+  unsupported: 'danger',
+  requesting: 'neutral',
+  'no-device': 'warning',
+  connected: 'success',
 }
 
 /** Fits `children` into the largest box of the given aspect ratio that
@@ -92,7 +112,19 @@ function AspectFitBox({ ratio, children }: { ratio: number; children: ReactNode 
 // this codebase (e.g. LessonDetailPage's not-found handling).
 function VisualTrainerRunner({ exercise, highwayRef }: VisualTrainerRunnerProps) {
   const navigate = useNavigate()
-  const trainer = useVisualTrainer(exercise, highwayRef)
+  // Runtime override of which visual to watch — explicit user request: let
+  // them pick notation-vs-rectangles right on the practice screen itself
+  // (for demo AND real runs), without needing to go back and resave the
+  // exercise just to try the other mode. Defaults to staff_cursor
+  // unconditionally (not exercise.displayMode) — explicit user request:
+  // entering practice for *any* exercise, including ones saved before this
+  // screen had its own picker, should still start on notation rather than
+  // falling rectangles. Declared before useVisualTrainer so its current
+  // value can be passed in (the hook needs to know which visual is actually
+  // on screen for its own staff_cursor-only grading correction).
+  const [selectedDisplayMode, setSelectedDisplayMode] = useState<DisplayMode>('staff_cursor')
+  const effectiveDisplayMode = selectedDisplayMode
+  const trainer = useVisualTrainer(exercise, highwayRef, effectiveDisplayMode)
   const usedInstruments = useMemo(
     () => new Set(exercise.events.map((event) => event.instrument)),
     [exercise.events],
@@ -111,12 +143,14 @@ function VisualTrainerRunner({ exercise, highwayRef }: VisualTrainerRunnerProps)
       currentBar={trainer.currentBar}
       currentBeat={trainer.currentBeat}
       elapsedMs={trainer.elapsedMs}
-      onSeekDemo={trainer.seekDemo}
+      onSeek={trainer.seek}
       onStart={trainer.start}
       onPause={trainer.pause}
       onResume={trainer.resume}
       onRestart={trainer.restart}
       onExit={handleExit}
+      isMetronomeMuted={trainer.isMetronomeMuted}
+      onToggleMetronomeMute={trainer.toggleMetronomeMute}
     />
   )
   const keyboardGuide = (
@@ -131,7 +165,7 @@ function VisualTrainerRunner({ exercise, highwayRef }: VisualTrainerRunnerProps)
   // `noteHighwayRef.current?.xxx` call elsewhere in useVisualTrainer stays
   // a harmless no-op instead of needing its own branch there.
   const highway =
-    exercise.displayMode === 'staff_cursor' ? (
+    effectiveDisplayMode === 'staff_cursor' ? (
       <ExerciseNotationSheet
         exercise={exercise}
         playbackProgress={
@@ -152,8 +186,12 @@ function VisualTrainerRunner({ exercise, highwayRef }: VisualTrainerRunnerProps)
                 // waits out the count-in bar before it starts moving,
                 // matching when the real audio's own bar 1 actually begins
                 // (see countInDurationMs's own doc comment on
-                // useVisualTrainer for why this was missing).
-                startOffsetMs: -trainer.countInDurationMs,
+                // useVisualTrainer for why this was missing). Combined with
+                // seekOffsetMs (0 for a normal start) so a seek also moves
+                // the notation in lockstep — count-in and seek are mutually
+                // exclusive at the engine level, so this collapses to
+                // whichever one actually applies to the current run.
+                startOffsetMs: trainer.seekOffsetMs - trainer.countInDurationMs,
               }
             : undefined
         }
@@ -189,7 +227,7 @@ function VisualTrainerRunner({ exercise, highwayRef }: VisualTrainerRunnerProps)
   // A plain width cap (bigger than the original note_highway one, per
   // that same earlier request) keeps the kit a sane, constant size
   // regardless of how tall the notation gets.
-  const useSideBySideLayout = trainer.isDemo || exercise.displayMode === 'staff_cursor'
+  const useSideBySideLayout = trainer.isDemo || effectiveDisplayMode === 'staff_cursor'
   const sideBySideKit = (
     <DrumKit
       activeHits={trainer.activeHits}
@@ -213,10 +251,36 @@ function VisualTrainerRunner({ exercise, highwayRef }: VisualTrainerRunnerProps)
           </Badge>
         )}
       </div>
-      {trainer.phase === 'idle' && (
-        <Button variant="secondary" onClick={trainer.startDemo}>
-          מוד אוטומטי — הדגמה
+      <div className="flex items-center gap-2">
+        <Button variant="secondary" onClick={trainer.toggleMidiControl}>
+          {trainer.isMidiControlEnabled ? 'כבה קיט תופים אמיתי (MIDI)' : 'הפעל קיט תופים אמיתי (MIDI)'}
         </Button>
+        {trainer.isMidiControlEnabled && (
+          <Badge variant={MIDI_STATUS_BADGE_VARIANT[trainer.midiStatus]}>{MIDI_STATUS_LABELS[trainer.midiStatus]}</Badge>
+        )}
+      </div>
+      {trainer.phase === 'idle' && (
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="secondary" onClick={trainer.startDemo}>
+            מוד אוטומטי — הדגמה
+          </Button>
+          {/* Runtime visual choice for this screen, independent of the
+              exercise's own saved displayMode (see selectedDisplayMode's own
+              doc comment) — applies to demo AND a real practice run alike,
+              only meaningful before starting (phase idle), so it's tucked
+              next to the demo button rather than shown everywhere. */}
+          <label className="flex items-center gap-1.5 text-sm text-[var(--color-text-muted)]">
+            תצוגת תרגול
+            <select
+              value={selectedDisplayMode}
+              onChange={(event) => setSelectedDisplayMode(event.target.value as DisplayMode)}
+              className="rounded-[var(--radius-card)] border border-[var(--color-border)] px-2 py-1"
+            >
+              <option value="note_highway">מלבנים יורדים</option>
+              <option value="staff_cursor">תווים עם פלייהד נע</option>
+            </select>
+          </label>
+        </div>
       )}
     </>
   )
@@ -297,30 +361,7 @@ function VisualTrainerRunner({ exercise, highwayRef }: VisualTrainerRunnerProps)
           </div>
           <div className="flex flex-col gap-3">
             {keyboardGuide}
-            {/* Phone-as-remote-controller (ADR 0007) — deliberately not
-                gated by phase: the user needs to see "phone connected"
-                before pressing start, not only during a run, so the toggle
-                and its status are always visible here regardless of
-                trainer.phase. */}
-            <div className="flex items-center gap-2">
-              <Button variant="secondary" onClick={trainer.togglePhoneControl}>
-                {trainer.isPhoneControlEnabled ? 'כבה שליטת טלפון' : 'הפעל שליטת טלפון'}
-              </Button>
-              {trainer.isPhoneControlEnabled && (
-                <Badge variant={REMOTE_STATUS_BADGE_VARIANT[trainer.remoteStatus]}>
-                  {REMOTE_STATUS_LABELS[trainer.remoteStatus]}
-                </Badge>
-              )}
-            </div>
-            {/* Only while idle — once a run (demo or real) is active, body
-                itself switches to the demo layout above, which has no
-                button of its own (exit/restart from TransportControls
-                cover leaving a demo early). */}
-            {trainer.phase === 'idle' && (
-              <Button variant="secondary" onClick={trainer.startDemo}>
-                מוד אוטומטי — הדגמה
-              </Button>
-            )}
+            {phoneControlAndDemoButton}
           </div>
         </div>
       </div>

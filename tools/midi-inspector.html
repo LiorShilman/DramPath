@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<title>MIDI Inspector — DrumPath</title>
+<style>
+  :root { color-scheme: dark; }
+  body {
+    font-family: system-ui, sans-serif;
+    background: #14161a;
+    color: #e6e6e6;
+    margin: 0;
+    padding: 1.5rem;
+  }
+  h1 { font-size: 1.1rem; margin: 0 0 0.25rem; }
+  p.sub { color: #9aa0a6; margin: 0 0 1.25rem; font-size: 0.9rem; }
+  button {
+    background: #3a7bfd;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 0.55rem 1.1rem;
+    font-size: 0.95rem;
+    cursor: pointer;
+  }
+  button:disabled { background: #555; cursor: default; }
+  button.secondary { background: #333; }
+  #status {
+    margin: 1rem 0;
+    padding: 0.75rem 1rem;
+    border-radius: 6px;
+    background: #1f2229;
+    font-size: 0.9rem;
+    white-space: pre-wrap;
+  }
+  #inputs { margin: 0.5rem 0 1.25rem; font-size: 0.9rem; color: #cfd3d8; }
+  #inputs div { padding: 0.15rem 0; }
+  .toolbar { display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.75rem; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 0.85rem;
+  }
+  th, td {
+    text-align: right;
+    padding: 0.35rem 0.6rem;
+    border-bottom: 1px solid #2a2d33;
+  }
+  th { color: #9aa0a6; font-weight: 600; position: sticky; top: 0; background: #14161a; }
+  tr:first-child td { background: #22331f; }
+  .type-noteon { color: #7ee787; }
+  .type-noteoff { color: #7a828c; }
+  .type-other { color: #e3b341; }
+  #log-wrap { max-height: 60vh; overflow-y: auto; border: 1px solid #2a2d33; border-radius: 6px; }
+</style>
+</head>
+<body>
+  <h1>MIDI Inspector</h1>
+  <p class="sub">
+    כלי בדיקה חד-פעמי — לא חלק מהאפליקציה. מטרתו: לוודא שהדפדפן מזהה את מודול התופים
+    כהתקן MIDI, ולראות אילו מספרי-תו (note number) הוא שולח על כל הקשה בכל פאד, כדי למפות
+    כלי → מספר.
+  </p>
+
+  <div class="toolbar">
+    <button id="requestBtn">בקש גישת MIDI</button>
+    <button id="clearBtn" class="secondary" disabled>נקה לוג</button>
+  </div>
+
+  <div id="status">לחצי על "בקש גישת MIDI" כדי להתחיל. ודאי שמודול התופים מחובר ב-USB לפני כן.</div>
+  <div id="inputs"></div>
+
+  <div id="log-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>זמן (ms)</th>
+          <th>התקן</th>
+          <th>סוג</th>
+          <th>ערוץ</th>
+          <th>Note #</th>
+          <th>Velocity</th>
+          <th>Raw bytes</th>
+        </tr>
+      </thead>
+      <tbody id="log"></tbody>
+    </table>
+  </div>
+
+  <script>
+    const statusEl = document.getElementById('status')
+    const inputsEl = document.getElementById('inputs')
+    const logEl = document.getElementById('log')
+    const requestBtn = document.getElementById('requestBtn')
+    const clearBtn = document.getElementById('clearBtn')
+
+    let startTime = null
+
+    function setStatus(text, isError) {
+      statusEl.textContent = text
+      statusEl.style.color = isError ? '#f85149' : '#e6e6e6'
+    }
+
+    function describeStatusByte(statusByte) {
+      const kind = statusByte & 0xf0
+      const channel = (statusByte & 0x0f) + 1
+      if (kind === 0x90) return { type: 'Note On', className: 'type-noteon', channel }
+      if (kind === 0x80) return { type: 'Note Off', className: 'type-noteoff', channel }
+      return { type: '0x' + kind.toString(16), className: 'type-other', channel }
+    }
+
+    function logMessage(inputName, data) {
+      if (startTime === null) startTime = performance.now()
+      const elapsedMs = Math.round(performance.now() - startTime)
+      const [statusByte, data1, data2] = data
+      const { type, className, channel } = describeStatusByte(statusByte)
+
+      // Note On with velocity 0 is conventionally treated as Note Off — most
+      // drum modules use real Note Off messages instead, but this keeps the
+      // log accurate either way.
+      const effectiveType = type === 'Note On' && data2 === 0 ? 'Note On (vel 0 = off)' : type
+
+      const row = document.createElement('tr')
+      row.innerHTML = `
+        <td>${elapsedMs}</td>
+        <td>${inputName}</td>
+        <td class="${className}">${effectiveType}</td>
+        <td>${channel}</td>
+        <td>${data1 ?? ''}</td>
+        <td>${data2 ?? ''}</td>
+        <td>${Array.from(data).map((b) => '0x' + b.toString(16).padStart(2, '0')).join(' ')}</td>
+      `
+      logEl.prepend(row)
+    }
+
+    function attachInput(input) {
+      input.onmidimessage = (event) => logMessage(input.name || input.id, event.data)
+    }
+
+    function renderInputList(access) {
+      const inputs = Array.from(access.inputs.values())
+      if (inputs.length === 0) {
+        inputsEl.textContent = 'לא נמצא אף התקן MIDI. ודאי שהמודול מחובר ומודלק, ונסי שוב.'
+        return
+      }
+      inputsEl.innerHTML = 'התקנים שנמצאו:<br>' +
+        inputs.map((input) => `&nbsp;&nbsp;• ${input.name || '(ללא שם)'} — ${input.manufacturer || 'יצרן לא ידוע'}`).join('<br>')
+      inputs.forEach(attachInput)
+    }
+
+    requestBtn.addEventListener('click', async () => {
+      requestBtn.disabled = true
+      setStatus('מבקש גישה…')
+      try {
+        const access = await navigator.requestMIDIAccess()
+        setStatus('גישה אושרה. מקשיב להודעות MIDI — הכי את הפאדים כדי לראות אותן למטה.')
+        renderInputList(access)
+        clearBtn.disabled = false
+        // A device plugged in *after* access was granted (or a name that
+        // only resolves once the OS finishes enumerating it) still shows up
+        // via this event, without needing to click the button again.
+        access.onstatechange = () => renderInputList(access)
+      } catch (error) {
+        setStatus('נכשל לקבל גישת MIDI: ' + error.message + '\n\nזה בדרך כלל אומר שהדפדפן לא תומך ב-Web MIDI API (צריך Chrome או Edge, לא Firefox/Safari) או שהגישה נדחתה.', true)
+        requestBtn.disabled = false
+      }
+    })
+
+    clearBtn.addEventListener('click', () => {
+      logEl.innerHTML = ''
+      startTime = null
+    })
+
+    if (!('requestMIDIAccess' in navigator)) {
+      setStatus('הדפדפן הזה לא תומך ב-Web MIDI API. פתחי את הקובץ הזה ב-Chrome או Edge.', true)
+      requestBtn.disabled = true
+    }
+  </script>
+</body>
+</html>
