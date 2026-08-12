@@ -43,8 +43,12 @@ export function RemoteHostProvider({ children }: { children: ReactNode }) {
 
   const handleRequestExerciseList = useCallback(() => {
     void interactiveExerciseRepository.getAll().then((customExercises) => {
+      // Same newest-first ordering ExerciseSelectPage already uses on the
+      // desktop — getAll() alone returns Dexie's raw (insertion) order,
+      // which doesn't match what the desktop actually shows.
+      const sortedCustomExercises = [...customExercises].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       const list: ExerciseListItem[] = [
-        ...customExercises.map((exercise) => ({
+        ...sortedCustomExercises.map((exercise) => ({
           id: exercise.id,
           title: exercise.title,
           bpm: exercise.bpm,
