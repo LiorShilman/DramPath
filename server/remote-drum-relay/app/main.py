@@ -1,6 +1,13 @@
 """Local WebSocket relay letting a phone (the "controller") send drum hits
 to a desktop browser tab (the "host") over the same LAN, live, while the
-desktop's VisualTrainerPage runs a graded practice session. See
+desktop's VisualTrainerPage runs a graded practice session — and, in the
+other direction, letting the host push its own currently-playing notation
+state back to every connected controller, so a phone propped next to a real
+e-kit can mirror the desktop's moving-cursor sheet music. Also full remote
+control: the phone can request the desktop's exercise catalog, select one
+(navigating the desktop to it), and send play/pause/resume/stop commands —
+see request_exercise_list/select_exercise/transport_command below and
+exercise_list/playback_status on the host->controller side. See
 docs/adr/0007-remote-drum-relay-local-lan-boundary.md in the DrumPath repo
 for the architectural boundary this serves.
 
@@ -72,6 +79,40 @@ async def broadcast_to_controllers(message: HostStatusMessage) -> None:
             pass
 
 
+async def broadcast_raw_to_controllers(raw: str) -> None:
+    """Same broadcast as broadcast_to_controllers, but for host-originated
+    messages (e.g. the currently-playing notation, pushed to mirror onto a
+    phone propped next to a real e-kit) — sent as raw text rather than a
+    typed Pydantic model. The host is always this same app's own trusted
+    code, never a stranger the way a controller can be, so there's nothing
+    meaningful for the relay itself to validate beyond "is this JSON at
+    all" (checked by the caller before this is invoked)."""
+    for controller in list(state.controllers):
+        try:
+            await controller.send_text(raw)
+        except Exception:
+            pass
+
+
+async def send_raw_to_host(raw: str) -> None:
+    """Full remote control (browse/select/play/pause/resume/stop) —
+    controller-originated commands other than 'hit' (request_exercise_list,
+    select_exercise, transport_command) are relayed to the host as raw text,
+    same reasoning as broadcast_raw_to_controllers: the wire shape is
+    already validated client-side (Zod, both directions), so there's
+    nothing meaningful for the relay itself to re-validate, and it avoids a
+    second hand-maintained Pydantic model per message type. 'hit' keeps its
+    existing separate, fully-validated path below, unchanged."""
+    if state.host is None:
+        return
+    try:
+        await state.host.send_text(raw)
+    except Exception:
+        # A stale host socket shouldn't take the controller's own loop down
+        # — its disconnect is handled by /ws/host's own finally block.
+        pass
+
+
 async def notify_host_of_controller_count() -> None:
     if state.host is None:
         return
@@ -101,9 +142,17 @@ async def ws_host(websocket: WebSocket) -> None:
 
     try:
         while True:
-            # The host never sends anything meaningful in v1 — this loop
-            # exists purely to detect WebSocketDisconnect.
-            await websocket.receive_text()
+            # The host can push its own state to controllers (e.g. the
+            # currently-playing notation, mirrored onto a phone) — relayed
+            # verbatim to every connected controller. Only non-JSON input is
+            # rejected; the payload's own shape isn't otherwise validated
+            # here (see broadcast_raw_to_controllers's own doc comment).
+            raw = await websocket.receive_text()
+            try:
+                json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+            await broadcast_raw_to_controllers(raw)
     except WebSocketDisconnect:
         pass
     finally:
@@ -127,19 +176,34 @@ async def ws_controller(websocket: WebSocket) -> None:
         while True:
             raw = await websocket.receive_text()
             try:
-                hit = HitMessage.model_validate(json.loads(raw))
-            except (ValidationError, json.JSONDecodeError):
-                # Malformed input never crashes the loop — just ignore it
-                # and keep listening for the next message.
+                parsed = json.loads(raw)
+            except json.JSONDecodeError:
                 continue
-            if state.host is not None:
+            # A syntactically-valid-but-non-object frame (e.g. "hello", 42,
+            # [1,2,3]) would make parsed.get(...) below raise AttributeError
+            # — guard before touching it, same "malformed input never
+            # crashes the loop" contract as everything else here.
+            if not isinstance(parsed, dict):
+                continue
+            msg_type = parsed.get("type")
+            if msg_type == "hit":
                 try:
-                    await state.host.send_json(hit.model_dump())
-                except Exception:
-                    # A stale host socket shouldn't take the controller's
-                    # own loop down — its disconnect is handled by /ws/host's
-                    # own finally block.
-                    pass
+                    hit = HitMessage.model_validate(parsed)
+                except ValidationError:
+                    continue
+                if state.host is not None:
+                    try:
+                        await state.host.send_json(hit.model_dump())
+                    except Exception:
+                        # A stale host socket shouldn't take the
+                        # controller's own loop down — its disconnect is
+                        # handled by /ws/host's own finally block.
+                        pass
+            elif msg_type in ("request_exercise_list", "select_exercise", "transport_command"):
+                # Full remote control — relayed as raw text, no server-side
+                # shape validation (see send_raw_to_host's own doc comment).
+                await send_raw_to_host(raw)
+            # else: unknown type, silently dropped.
     except WebSocketDisconnect:
         pass
     finally:

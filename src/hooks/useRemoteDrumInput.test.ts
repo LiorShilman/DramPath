@@ -2,17 +2,25 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, renderHook } from '@testing-library/react'
 import { useRemoteDrumInput } from './useRemoteDrumInput'
 import { PRODUCTION_RELAY_PORT, SUPERSEDED_CLOSE_CODE } from '../lib/visual-trainer/remote-drum-protocol'
+import type { InteractiveExercise } from '../domain'
+import { createId, nowIso } from '../domain'
 
 // Hand-rolled test double, same technique this codebase already uses for
 // Web-Audio-adjacent tests (see useVisualTrainer.test.ts's FakeAudioContext)
 // — records every instance created so a test can grab the most recent one
-// and simulate the server pushing a message/close event onto it.
+// and simulate the server pushing a message/close event onto it. OPEN/
+// readyState exist specifically for sendNotationState's own OPEN check —
+// every socket here is "open" the instant it's constructed, same as every
+// other assumption these tests already make (no separate onopen step).
 class FakeWebSocket {
   static instances: FakeWebSocket[] = []
+  static readonly OPEN = 1
   url: string
+  readyState = FakeWebSocket.OPEN
   onmessage: ((event: { data: string }) => void) | null = null
   onclose: ((event: { code: number }) => void) | null = null
   closed = false
+  sentMessages: string[] = []
 
   constructor(url: string) {
     this.url = url
@@ -21,6 +29,11 @@ class FakeWebSocket {
 
   close() {
     this.closed = true
+    this.readyState = 3
+  }
+
+  send(data: string) {
+    this.sentMessages.push(data)
   }
 
   simulateMessage(data: unknown) {
@@ -38,6 +51,26 @@ function latestSocket(): FakeWebSocket {
   return socket
 }
 
+function makeExercise(): InteractiveExercise {
+  const now = nowIso()
+  return {
+    id: createId(),
+    title: 'test exercise',
+    difficulty: 'beginner',
+    bpm: 100,
+    minBpm: 60,
+    maxBpm: 160,
+    timeSignature: { numerator: 4, denominator: 4 },
+    subdivision: 'quarter',
+    bars: 1,
+    loopCount: 1,
+    displayMode: 'staff_cursor',
+    events: [{ id: createId(), bar: 1, beat: 1, subdivisionIndex: 0, instrument: 'kick', velocity: 100 }],
+    createdAt: now,
+    updatedAt: now,
+  }
+}
+
 describe('useRemoteDrumInput', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
@@ -50,7 +83,7 @@ describe('useRemoteDrumInput', () => {
     const onHit = vi.fn()
     const { result } = renderHook(() => useRemoteDrumInput({ enabled: false, onHit }))
 
-    expect(result.current).toBe('disabled')
+    expect(result.current.status).toBe('disabled')
     expect(FakeWebSocket.instances).toHaveLength(0)
   })
 
@@ -59,7 +92,7 @@ describe('useRemoteDrumInput', () => {
     const onHit = vi.fn()
     const { result } = renderHook(() => useRemoteDrumInput({ enabled: true, onHit }))
 
-    expect(result.current).toBe('connecting')
+    expect(result.current.status).toBe('connecting')
     expect(latestSocket().url).toBe('ws://localhost:8001/ws/host')
   })
 
@@ -96,7 +129,7 @@ describe('useRemoteDrumInput', () => {
     act(() => latestSocket().onmessage?.({ data: 'not json' }))
 
     expect(onHit).not.toHaveBeenCalled()
-    expect(result.current).toBe('connecting')
+    expect(result.current.status).toBe('connecting')
   })
 
   it('goes to superseded on close code 4001 and does not reconnect', () => {
@@ -106,7 +139,7 @@ describe('useRemoteDrumInput', () => {
     const { result } = renderHook(() => useRemoteDrumInput({ enabled: true, onHit }))
 
     act(() => latestSocket().simulateClose(SUPERSEDED_CLOSE_CODE))
-    expect(result.current).toBe('superseded')
+    expect(result.current.status).toBe('superseded')
 
     act(() => vi.advanceTimersByTime(10_000))
     expect(FakeWebSocket.instances).toHaveLength(1)
@@ -140,5 +173,132 @@ describe('useRemoteDrumInput', () => {
 
     act(() => vi.advanceTimersByTime(10_000))
     expect(FakeWebSocket.instances).toHaveLength(1)
+  })
+
+  it('sendNotationState sends a notation_state frame with the given payload once connected', () => {
+    vi.stubGlobal('WebSocket', FakeWebSocket)
+    const onHit = vi.fn()
+    const exercise = makeExercise()
+    const { result } = renderHook(() => useRemoteDrumInput({ enabled: true, onHit }))
+
+    act(() =>
+      result.current.sendNotationState({
+        exercise,
+        playbackProgress: { bpm: 100, sessionId: 1 },
+        paused: false,
+        gradedEventIds: { 'event-1': 'hit' },
+      }),
+    )
+
+    expect(latestSocket().sentMessages).toHaveLength(1)
+    expect(JSON.parse(latestSocket().sentMessages[0]!)).toEqual({
+      type: 'notation_state',
+      exercise,
+      playbackProgress: { bpm: 100, sessionId: 1 },
+      paused: false,
+      gradedEventIds: { 'event-1': 'hit' },
+    })
+  })
+
+  it('sendNotationState sends a notation_clear frame when given null', () => {
+    vi.stubGlobal('WebSocket', FakeWebSocket)
+    const onHit = vi.fn()
+    const { result } = renderHook(() => useRemoteDrumInput({ enabled: true, onHit }))
+
+    act(() => result.current.sendNotationState(null))
+
+    expect(JSON.parse(latestSocket().sentMessages[0]!)).toEqual({ type: 'notation_clear' })
+  })
+
+  it('sendNotationState silently no-ops when nothing is connected', () => {
+    vi.stubGlobal('WebSocket', FakeWebSocket)
+    const onHit = vi.fn()
+    const { result } = renderHook(() => useRemoteDrumInput({ enabled: false, onHit }))
+
+    expect(() => result.current.sendNotationState(null)).not.toThrow()
+    expect(FakeWebSocket.instances).toHaveLength(0)
+  })
+
+  // Full remote control — dispatch of the 3 new controller->host message
+  // types, and the 2 new host->controller send functions.
+
+  it('calls onRequestExerciseList on a request_exercise_list message', () => {
+    vi.stubGlobal('WebSocket', FakeWebSocket)
+    const onHit = vi.fn()
+    const onRequestExerciseList = vi.fn()
+    renderHook(() => useRemoteDrumInput({ enabled: true, onHit, onRequestExerciseList }))
+
+    act(() => latestSocket().simulateMessage({ type: 'request_exercise_list' }))
+
+    expect(onRequestExerciseList).toHaveBeenCalledTimes(1)
+  })
+
+  it('calls onSelectExercise with the exerciseId on a select_exercise message', () => {
+    vi.stubGlobal('WebSocket', FakeWebSocket)
+    const onHit = vi.fn()
+    const onSelectExercise = vi.fn()
+    renderHook(() => useRemoteDrumInput({ enabled: true, onHit, onSelectExercise }))
+
+    act(() => latestSocket().simulateMessage({ type: 'select_exercise', exerciseId: 'ex-1' }))
+
+    expect(onSelectExercise).toHaveBeenCalledWith('ex-1')
+  })
+
+  it('calls onTransportCommand with the action on a transport_command message', () => {
+    vi.stubGlobal('WebSocket', FakeWebSocket)
+    const onHit = vi.fn()
+    const onTransportCommand = vi.fn()
+    renderHook(() => useRemoteDrumInput({ enabled: true, onHit, onTransportCommand }))
+
+    act(() => latestSocket().simulateMessage({ type: 'transport_command', action: 'pause' }))
+
+    expect(onTransportCommand).toHaveBeenCalledWith('pause')
+  })
+
+  it('a request_exercise_list/select_exercise/transport_command message is silently ignored when no matching option was given', () => {
+    vi.stubGlobal('WebSocket', FakeWebSocket)
+    const onHit = vi.fn()
+    renderHook(() => useRemoteDrumInput({ enabled: true, onHit }))
+
+    expect(() => {
+      act(() => latestSocket().simulateMessage({ type: 'request_exercise_list' }))
+      act(() => latestSocket().simulateMessage({ type: 'select_exercise', exerciseId: 'ex-1' }))
+      act(() => latestSocket().simulateMessage({ type: 'transport_command', action: 'stop' }))
+    }).not.toThrow()
+    expect(onHit).not.toHaveBeenCalled()
+  })
+
+  it('sendExerciseList sends an exercise_list frame with the given exercises once connected', () => {
+    vi.stubGlobal('WebSocket', FakeWebSocket)
+    const onHit = vi.fn()
+    const { result } = renderHook(() => useRemoteDrumInput({ enabled: true, onHit }))
+    const exercises = [{ id: 'ex-1', title: 'Basic Rock Beat', bpm: 90, difficulty: 'beginner' as const, isCustom: true }]
+
+    act(() => result.current.sendExerciseList(exercises))
+
+    expect(JSON.parse(latestSocket().sentMessages[0]!)).toEqual({ type: 'exercise_list', exercises })
+  })
+
+  it('sendPlaybackStatus sends a playback_status frame with the given status once connected', () => {
+    vi.stubGlobal('WebSocket', FakeWebSocket)
+    const onHit = vi.fn()
+    const { result } = renderHook(() => useRemoteDrumInput({ enabled: true, onHit }))
+    const status = { exerciseId: 'ex-1', title: 'Basic Rock Beat', bpm: 90, phase: 'running' as const }
+
+    act(() => result.current.sendPlaybackStatus(status))
+
+    expect(JSON.parse(latestSocket().sentMessages[0]!)).toEqual({ type: 'playback_status', ...status })
+  })
+
+  it('sendExerciseList and sendPlaybackStatus silently no-op when nothing is connected', () => {
+    vi.stubGlobal('WebSocket', FakeWebSocket)
+    const onHit = vi.fn()
+    const { result } = renderHook(() => useRemoteDrumInput({ enabled: false, onHit }))
+
+    expect(() => {
+      result.current.sendExerciseList([])
+      result.current.sendPlaybackStatus({ exerciseId: null, title: null, bpm: null, phase: 'none' })
+    }).not.toThrow()
+    expect(FakeWebSocket.instances).toHaveLength(0)
   })
 })

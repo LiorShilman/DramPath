@@ -1,5 +1,27 @@
 import { describe, expect, it } from 'vitest'
 import { PRODUCTION_RELAY_PORT, buildProductionRelayWsUrl, parseRemoteRelayMessage } from './remote-drum-protocol'
+import { createId, nowIso } from '../../domain'
+import type { InteractiveExercise } from '../../domain'
+
+function makeExercise(): InteractiveExercise {
+  const now = nowIso()
+  return {
+    id: createId(),
+    title: 'test exercise',
+    difficulty: 'beginner',
+    bpm: 100,
+    minBpm: 60,
+    maxBpm: 160,
+    timeSignature: { numerator: 4, denominator: 4 },
+    subdivision: 'quarter',
+    bars: 1,
+    loopCount: 1,
+    displayMode: 'staff_cursor',
+    events: [{ id: createId(), bar: 1, beat: 1, subdivisionIndex: 0, instrument: 'kick', velocity: 100 }],
+    createdAt: now,
+    updatedAt: now,
+  }
+}
 
 describe('parseRemoteRelayMessage', () => {
   it('parses a valid hit message', () => {
@@ -37,6 +59,118 @@ describe('parseRemoteRelayMessage', () => {
 
   it('returns undefined for a message missing a required field', () => {
     expect(parseRemoteRelayMessage('{"type":"hit"}')).toBeUndefined()
+  })
+
+  it('parses a valid notation_state message, exercise and all', () => {
+    const exercise = makeExercise()
+    const raw = JSON.stringify({
+      type: 'notation_state',
+      exercise,
+      playbackProgress: { bpm: 100, sessionId: 1, startOffsetMs: -50 },
+      paused: false,
+      gradedEventIds: { 'event-1': 'hit', 'event-2': 'miss' },
+    })
+    expect(parseRemoteRelayMessage(raw)).toEqual({
+      type: 'notation_state',
+      exercise,
+      playbackProgress: { bpm: 100, sessionId: 1, startOffsetMs: -50 },
+      paused: false,
+      gradedEventIds: { 'event-1': 'hit', 'event-2': 'miss' },
+    })
+  })
+
+  it('parses a valid notation_clear message', () => {
+    expect(parseRemoteRelayMessage('{"type":"notation_clear"}')).toEqual({ type: 'notation_clear' })
+  })
+
+  it('returns undefined for a notation_state message missing its exercise', () => {
+    const raw = JSON.stringify({ type: 'notation_state', playbackProgress: { bpm: 100, sessionId: 1 }, paused: false })
+    expect(parseRemoteRelayMessage(raw)).toBeUndefined()
+  })
+
+  it('returns undefined for a notation_state message whose exercise fails its own schema', () => {
+    const raw = JSON.stringify({
+      type: 'notation_state',
+      exercise: { ...makeExercise(), bpm: 'not a number' },
+      playbackProgress: { bpm: 100, sessionId: 1 },
+      paused: false,
+    })
+    expect(parseRemoteRelayMessage(raw)).toBeUndefined()
+  })
+
+  // Full remote control (browse/select/play/pause/resume/stop from the
+  // phone) — controller -> host: request_exercise_list/select_exercise/
+  // transport_command. host -> controller: exercise_list/playback_status.
+
+  it('parses a valid request_exercise_list message', () => {
+    expect(parseRemoteRelayMessage('{"type":"request_exercise_list"}')).toEqual({ type: 'request_exercise_list' })
+  })
+
+  it('parses a valid select_exercise message', () => {
+    expect(parseRemoteRelayMessage('{"type":"select_exercise","exerciseId":"abc-123"}')).toEqual({
+      type: 'select_exercise',
+      exerciseId: 'abc-123',
+    })
+  })
+
+  it('returns undefined for a select_exercise message missing exerciseId', () => {
+    expect(parseRemoteRelayMessage('{"type":"select_exercise"}')).toBeUndefined()
+  })
+
+  it('parses a valid transport_command message for each action', () => {
+    for (const action of ['start', 'pause', 'resume', 'stop']) {
+      expect(parseRemoteRelayMessage(`{"type":"transport_command","action":"${action}"}`)).toEqual({
+        type: 'transport_command',
+        action,
+      })
+    }
+  })
+
+  it('returns undefined for a transport_command message with an invalid action', () => {
+    expect(parseRemoteRelayMessage('{"type":"transport_command","action":"rewind"}')).toBeUndefined()
+  })
+
+  it('parses a valid exercise_list message, empty or populated', () => {
+    expect(parseRemoteRelayMessage('{"type":"exercise_list","exercises":[]}')).toEqual({
+      type: 'exercise_list',
+      exercises: [],
+    })
+    const raw = JSON.stringify({
+      type: 'exercise_list',
+      exercises: [{ id: 'ex-1', title: 'Basic Rock Beat', bpm: 90, difficulty: 'beginner', isCustom: true }],
+    })
+    expect(parseRemoteRelayMessage(raw)).toEqual({
+      type: 'exercise_list',
+      exercises: [{ id: 'ex-1', title: 'Basic Rock Beat', bpm: 90, difficulty: 'beginner', isCustom: true }],
+    })
+  })
+
+  it('returns undefined for an exercise_list item with an invalid difficulty', () => {
+    const raw = JSON.stringify({
+      type: 'exercise_list',
+      exercises: [{ id: 'ex-1', title: 'x', bpm: 90, difficulty: 'expert', isCustom: true }],
+    })
+    expect(parseRemoteRelayMessage(raw)).toBeUndefined()
+  })
+
+  it('parses a valid playback_status message, including the all-null "nothing loaded" shape', () => {
+    expect(
+      parseRemoteRelayMessage('{"type":"playback_status","exerciseId":null,"title":null,"bpm":null,"phase":"none"}'),
+    ).toEqual({ type: 'playback_status', exerciseId: null, title: null, bpm: null, phase: 'none' })
+
+    const raw = JSON.stringify({ type: 'playback_status', exerciseId: 'ex-1', title: 'x', bpm: 90, phase: 'running' })
+    expect(parseRemoteRelayMessage(raw)).toEqual({
+      type: 'playback_status',
+      exerciseId: 'ex-1',
+      title: 'x',
+      bpm: 90,
+      phase: 'running',
+    })
+  })
+
+  it('returns undefined for a playback_status message with an invalid phase', () => {
+    const raw = JSON.stringify({ type: 'playback_status', exerciseId: null, title: null, bpm: null, phase: 'rewinding' })
+    expect(parseRemoteRelayMessage(raw)).toBeUndefined()
   })
 })
 

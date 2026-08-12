@@ -300,7 +300,7 @@ function VisualTrainerRunner({ exercise, highwayRef }: VisualTrainerRunnerProps)
         </div>
         <div className="flex w-full flex-col gap-1.5 lg:w-[55%]">
           {transportControls}
-          <HitFeedback lastGrade={trainer.lastGrade} scoring={trainer.scoring} />
+          <HitFeedback lastGrade={trainer.lastGrade} lastDynamicsGrade={trainer.lastDynamicsGrade} scoring={trainer.scoring} />
           {highway}
           {keyboardGuide}
         </div>
@@ -317,7 +317,7 @@ function VisualTrainerRunner({ exercise, highwayRef }: VisualTrainerRunnerProps)
       <div className="flex flex-1 flex-col gap-4 lg:flex-row-reverse lg:items-start">
         <div className="flex w-full shrink-0 flex-col gap-3 lg:sticky lg:top-14 lg:w-[32rem]">
           {transportControls}
-          <HitFeedback lastGrade={trainer.lastGrade} scoring={trainer.scoring} />
+          <HitFeedback lastGrade={trainer.lastGrade} lastDynamicsGrade={trainer.lastDynamicsGrade} scoring={trainer.scoring} />
           {sideBySideKit}
           {keyboardGuide}
           {phoneControlAndDemoButton}
@@ -328,7 +328,7 @@ function VisualTrainerRunner({ exercise, highwayRef }: VisualTrainerRunnerProps)
   ) : (
     <>
       {transportControls}
-      <HitFeedback lastGrade={trainer.lastGrade} scoring={trainer.scoring} />
+      <HitFeedback lastGrade={trainer.lastGrade} lastDynamicsGrade={trainer.lastDynamicsGrade} scoring={trainer.scoring} />
       {highway}
       {/* flex-1 on the outer wrapper: the page fits in one screen with real
           leftover space below the highway, so growing this section to fill
@@ -386,6 +386,7 @@ function VisualTrainerRunner({ exercise, highwayRef }: VisualTrainerRunnerProps)
               exerciseTitle={exercise.title}
               scoring={trainer.scoring}
               gradeCounts={trainer.gradeCounts}
+              dynamicsSummary={trainer.dynamicsSummary}
               onRestart={trainer.restart}
               onExit={handleExit}
             />
@@ -438,5 +439,13 @@ export function VisualTrainerPage() {
     )
   }
 
-  return <VisualTrainerRunner exercise={exercise} highwayRef={highwayRef} />
+  // key={exercise.id}: react-router does NOT remount this element on a
+  // param-only route change (/practice/visual/A -> /practice/visual/B stays
+  // the same VisualTrainerRunner/useVisualTrainer instance with a new
+  // exercise prop otherwise) — combined with the async Dexie resolution
+  // above, a remote "select a different exercise while one is running"
+  // (see RemoteHostProvider) could otherwise leave the old run's engine/tick
+  // loop alive against stale state. Forcing a real unmount/remount here
+  // makes every exercise switch, remote-triggered or not, start clean.
+  return <VisualTrainerRunner key={exercise.id} exercise={exercise} highwayRef={highwayRef} />
 }

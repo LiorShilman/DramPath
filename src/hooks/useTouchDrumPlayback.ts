@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { playDrumSound } from '../lib/visual-trainer/drum-synth'
+import { markHit } from '../lib/visual-trainer/active-hits'
 import type { DrumInstrument } from '../domain'
 
 export interface PlayHitOptions {
@@ -40,7 +41,7 @@ export function useTouchDrumPlayback(): UseTouchDrumPlaybackResult {
       void audioContextRef.current.resume()
       playDrumSound(audioContextRef.current, outputNodeRef.current!, audioContextRef.current.currentTime, instrument, 100)
     }
-    setActiveHits((prev) => ({ ...prev, [instrument]: crypto.randomUUID() }))
+    setActiveHits((prev) => markHit(prev, instrument, crypto.randomUUID()))
   }, [])
 
   return { activeHits, playHit }

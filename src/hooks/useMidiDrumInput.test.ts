@@ -80,7 +80,7 @@ describe('useMidiDrumInput', () => {
     await waitFor(() => expect(result.current).toBe('connected'))
   })
 
-  it('calls onHit with the mapped instrument and a performance.now()-comparable timestamp on a Note On message', async () => {
+  it('calls onHit with the mapped instrument, a performance.now()-comparable timestamp, and the real velocity byte on a Note On message', async () => {
     const input = new FakeMIDIInput()
     stubMidiAccess(new FakeMIDIAccess([input]))
     const onHit = vi.fn()
@@ -97,6 +97,19 @@ describe('useMidiDrumInput', () => {
     const hitTimeMs = onHit.mock.calls[0]![1] as number
     expect(hitTimeMs).toBeGreaterThanOrEqual(before)
     expect(hitTimeMs).toBeLessThanOrEqual(after)
+    expect(onHit.mock.calls[0]![2]).toBe(127)
+  })
+
+  it('forwards the real parsed velocity, not a hardcoded constant', async () => {
+    const input = new FakeMIDIInput()
+    stubMidiAccess(new FakeMIDIAccess([input]))
+    const onHit = vi.fn()
+    const { result } = renderHook(() => useMidiDrumInput({ enabled: true, onHit }))
+    await waitFor(() => expect(result.current).toBe('connected'))
+
+    act(() => input.simulateMessage([0x99, 36, 62]))
+
+    expect(onHit.mock.calls[0]![2]).toBe(62)
   })
 
   it('ignores a Note On with velocity 0 (the MIDI note-off convention)', async () => {

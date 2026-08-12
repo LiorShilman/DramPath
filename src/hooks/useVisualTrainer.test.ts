@@ -2,10 +2,62 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { fireEvent } from '@testing-library/dom'
 import { useVisualTrainer } from './useVisualTrainer'
+import type { NotationStatePayload, PlaybackStatusPayload } from './useRemoteDrumInput'
+import type { RemoteSession } from '../features/visual-trainer/remote-host-context'
 import { ExercisePlaybackEngine } from '../lib/visual-trainer/exercise-playback-engine'
+import { ACCENT_VELOCITY_MARGIN } from '../domain/calculations/hit-matcher'
 import { createId, nowIso } from '../domain'
 import type { DrumNoteEvent, InteractiveExercise } from '../domain'
 import type { NoteHighwayHandle } from '../components/visual-trainer/NoteHighway'
+
+// useVisualTrainer no longer owns the phone-relay WebSocket connection
+// itself (moved to RemoteHostProvider, see remote-host-context.tsx) — it
+// consumes useRemoteHost() instead. Mocked here with real React state (via
+// dynamic import inside the factory, since vi.mock's factory runs before
+// this file's own top-level code — see vi.hoisted below for the same
+// reason spies/captured state live there too) so togglePhoneControl still
+// genuinely re-renders, while registerSession/sendNotationState/
+// sendPlaybackStatus are plain spies a test can inspect directly instead of
+// needing a real WebSocket wire round-trip.
+const remoteHostMocks = vi.hoisted(() => ({
+  sendNotationState: vi.fn(),
+  sendPlaybackStatus: vi.fn(),
+  registerSession: vi.fn(),
+  capturedSessionHolder: { current: undefined as RemoteSession | undefined },
+}))
+
+vi.mock('../features/visual-trainer/remote-host-context', async () => {
+  const React = await import('react')
+  return {
+    useRemoteHost: () => {
+      const [isEnabled, setIsEnabled] = React.useState(false)
+      // toggleEnabled/registerSession MUST be stable (useCallback, matching
+      // the real RemoteHostProvider) — useVisualTrainer's registration
+      // effect depends on registerSession's identity, so a fresh function
+      // every render here would re-fire that effect on every unrelated
+      // re-render (e.g. every tick() state update), re-registering and
+      // re-sending an 'idle' playback_status that drowns out real ones.
+      const toggleEnabled = React.useCallback(() => setIsEnabled((prev: boolean) => !prev), [])
+      const registerSession = React.useCallback((session: RemoteSession) => {
+        remoteHostMocks.capturedSessionHolder.current = session
+        remoteHostMocks.registerSession(session)
+        return () => {
+          if (remoteHostMocks.capturedSessionHolder.current === session) {
+            remoteHostMocks.capturedSessionHolder.current = undefined
+          }
+        }
+      }, [])
+      return {
+        status: isEnabled ? 'connecting' : 'disabled',
+        isEnabled,
+        toggleEnabled,
+        sendNotationState: remoteHostMocks.sendNotationState,
+        sendPlaybackStatus: remoteHostMocks.sendPlaybackStatus,
+        registerSession,
+      }
+    },
+  }
+})
 
 // Same FakeAudioContext technique already established for Web-Audio-adjacent
 // tests in this codebase (see PracticeSessionPage.test.tsx), extended with
@@ -51,29 +103,26 @@ class FakeAudioContext {
   }
 }
 
-// Same hand-rolled test-double technique as useRemoteDrumInput.test.ts —
-// records every instance so a test can grab the latest one and simulate the
-// relay pushing a message/close event onto it.
-class FakeWebSocket {
-  static instances: FakeWebSocket[] = []
-  onmessage: ((event: { data: string }) => void) | null = null
-  onclose: ((event: { code: number }) => void) | null = null
+// Same hand-rolled test doubles as useMidiDrumInput.test.ts.
+class FakeMIDIInput {
+  onmidimessage: ((event: { data: Uint8Array }) => void) | null = null
 
-  constructor() {
-    FakeWebSocket.instances.push(this)
-  }
-
-  close() {}
-
-  simulateMessage(data: unknown) {
-    this.onmessage?.({ data: JSON.stringify(data) })
+  simulateMessage(bytes: number[]) {
+    this.onmidimessage?.({ data: new Uint8Array(bytes) })
   }
 }
 
-function latestSocket(): FakeWebSocket {
-  const socket = FakeWebSocket.instances.at(-1)
-  if (!socket) throw new Error('No FakeWebSocket instance was created')
-  return socket
+class FakeMIDIAccess {
+  inputs: Map<string, FakeMIDIInput>
+  onstatechange: (() => void) | null = null
+
+  constructor(inputs: FakeMIDIInput[] = []) {
+    this.inputs = new Map(inputs.map((input, index) => [String(index), input]))
+  }
+}
+
+function stubMidiAccess(input: FakeMIDIInput) {
+  vi.stubGlobal('navigator', { ...navigator, requestMIDIAccess: vi.fn().mockResolvedValue(new FakeMIDIAccess([input])) })
 }
 
 const noHighwayRef = { current: null as NoteHighwayHandle | null }
@@ -101,12 +150,11 @@ function makeExercise(events: DrumNoteEvent[]): InteractiveExercise {
 describe('useVisualTrainer', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
-    // isPhoneControlEnabled reads from real (jsdom) localStorage, which
-    // otherwise persists across tests within this file — without clearing
-    // it, a later test could start with the phone-control feature already
-    // enabled and try to construct a real, unstubbed WebSocket.
     localStorage.clear()
-    FakeWebSocket.instances = []
+    remoteHostMocks.sendNotationState.mockClear()
+    remoteHostMocks.sendPlaybackStatus.mockClear()
+    remoteHostMocks.registerSession.mockClear()
+    remoteHostMocks.capturedSessionHolder.current = undefined
   })
 
   it('starts idle with empty scoring', () => {
@@ -292,7 +340,6 @@ describe('useVisualTrainer', () => {
 
   it('phone control is off by default, and togglePhoneControl turns it on', () => {
     vi.stubGlobal('AudioContext', FakeAudioContext)
-    vi.stubGlobal('WebSocket', FakeWebSocket)
     const exercise = makeExercise([
       { id: createId(), bar: 1, beat: 1, subdivisionIndex: 0, instrument: 'kick', velocity: 100 },
     ])
@@ -307,19 +354,34 @@ describe('useVisualTrainer', () => {
     expect(result.current.remoteStatus).toBe('connecting')
   })
 
-  it('a remote hit received during running scores identically to a keyboard hit', async () => {
+  it('registers as RemoteHostProvider\'s active session on mount, and reports an initial idle playback_status', () => {
     vi.stubGlobal('AudioContext', FakeAudioContext)
-    vi.stubGlobal('WebSocket', FakeWebSocket)
+    const exercise = makeExercise([
+      { id: createId(), bar: 1, beat: 1, subdivisionIndex: 0, instrument: 'kick', velocity: 100 },
+    ])
+    renderHook(() => useVisualTrainer(exercise, noHighwayRef))
+
+    expect(remoteHostMocks.registerSession).toHaveBeenCalledTimes(1)
+    expect(remoteHostMocks.capturedSessionHolder.current).toBeDefined()
+    expect(remoteHostMocks.sendPlaybackStatus).toHaveBeenCalledWith({
+      exerciseId: exercise.id,
+      title: exercise.title,
+      bpm: exercise.bpm,
+      phase: 'idle',
+    })
+  })
+
+  it('a hit forwarded from the registered session during running scores identically to a keyboard hit', async () => {
+    vi.stubGlobal('AudioContext', FakeAudioContext)
     const exercise = makeExercise([
       { id: createId(), bar: 1, beat: 1, subdivisionIndex: 0, instrument: 'kick', velocity: 100 },
     ])
     const { result } = renderHook(() => useVisualTrainer(exercise, noHighwayRef))
 
-    act(() => result.current.togglePhoneControl())
     await act(() => result.current.start())
     await waitFor(() => expect(result.current.phase).toBe('running'), { timeout: 3000 })
 
-    act(() => latestSocket().simulateMessage({ type: 'hit', instrument: 'kick' }))
+    act(() => remoteHostMocks.capturedSessionHolder.current?.handleHit('kick', performance.now()))
 
     await waitFor(() => expect(result.current.lastGrade).not.toBeUndefined())
     expect(result.current.lastGrade).not.toBe('miss')
@@ -327,35 +389,31 @@ describe('useVisualTrainer', () => {
     expect(result.current.scoring.accuracyPercent).toBe(100)
   })
 
-  it('drops a remote hit received before start() (idle phase) — no scoring change, no crash', () => {
+  it('drops a hit forwarded before start() (idle phase) — no scoring change, no crash', () => {
     vi.stubGlobal('AudioContext', FakeAudioContext)
-    vi.stubGlobal('WebSocket', FakeWebSocket)
     const exercise = makeExercise([
       { id: createId(), bar: 1, beat: 1, subdivisionIndex: 0, instrument: 'kick', velocity: 100 },
     ])
     const { result } = renderHook(() => useVisualTrainer(exercise, noHighwayRef))
 
-    act(() => result.current.togglePhoneControl())
-    act(() => latestSocket().simulateMessage({ type: 'hit', instrument: 'kick' }))
+    act(() => remoteHostMocks.capturedSessionHolder.current?.handleHit('kick', performance.now()))
 
     expect(result.current.phase).toBe('idle')
     expect(result.current.lastGrade).toBeUndefined()
     expect(result.current.scoring.accuracyPercent).toBe(0)
   })
 
-  it('drops a remote hit during a demo run — demo notes auto-resolve, real hits never count', async () => {
+  it('drops a hit forwarded during a demo run — demo notes auto-resolve, real hits never count', async () => {
     vi.stubGlobal('AudioContext', FakeAudioContext)
-    vi.stubGlobal('WebSocket', FakeWebSocket)
     const exercise = makeExercise([
       { id: createId(), bar: 1, beat: 1, subdivisionIndex: 0, instrument: 'kick', velocity: 100 },
     ])
     const { result } = renderHook(() => useVisualTrainer(exercise, noHighwayRef))
 
-    act(() => result.current.togglePhoneControl())
     await act(() => result.current.startDemo())
     expect(result.current.isDemo).toBe(true)
 
-    act(() => latestSocket().simulateMessage({ type: 'hit', instrument: 'kick' }))
+    act(() => remoteHostMocks.capturedSessionHolder.current?.handleHit('kick', performance.now()))
 
     // The demo's own auto-hit already grades everything 'perfect' — a
     // real remote hit arriving mid-demo must not double-count or otherwise
@@ -363,5 +421,291 @@ describe('useVisualTrainer', () => {
     // here is that nothing throws when a remote hit arrives during isDemo.
     await waitFor(() => expect(result.current.phase).toBe('finished'), { timeout: 3000 })
     expect(result.current.scoring.accuracyPercent).toBe(100)
+  })
+
+  it('start/pause/resume/exit each report the matching playback_status', async () => {
+    vi.stubGlobal('AudioContext', FakeAudioContext)
+    const exercise = makeExercise([
+      { id: createId(), bar: 1, beat: 4, subdivisionIndex: 0, instrument: 'kick', velocity: 100 },
+    ])
+    const { result } = renderHook(() => useVisualTrainer(exercise, noHighwayRef))
+
+    await act(() => result.current.start())
+    await waitFor(() => expect(result.current.phase).toBe('running'), { timeout: 3000 })
+    expect(remoteHostMocks.sendPlaybackStatus.mock.calls.at(-1)?.[0]).toMatchObject({ phase: 'running' })
+
+    act(() => result.current.pause())
+    expect(remoteHostMocks.sendPlaybackStatus.mock.calls.at(-1)?.[0]).toMatchObject({ phase: 'paused' })
+
+    act(() => result.current.resume())
+    expect(remoteHostMocks.sendPlaybackStatus.mock.calls.at(-1)?.[0]).toMatchObject({ phase: 'running' })
+
+    act(() => result.current.exit())
+    expect(remoteHostMocks.sendPlaybackStatus.mock.calls.at(-1)?.[0]).toEqual({
+      exerciseId: null,
+      title: null,
+      bpm: null,
+      phase: 'none',
+    } satisfies PlaybackStatusPayload)
+  })
+
+  it('a MIDI hit on an accented event grades dynamics as correct when struck hard enough', async () => {
+    vi.stubGlobal('AudioContext', FakeAudioContext)
+    const input = new FakeMIDIInput()
+    stubMidiAccess(input)
+    const exercise = makeExercise([
+      { id: createId(), bar: 1, beat: 1, subdivisionIndex: 0, instrument: 'kick', velocity: 100, accent: true },
+    ])
+    const { result } = renderHook(() => useVisualTrainer(exercise, noHighwayRef))
+
+    act(() => result.current.toggleMidiControl())
+    await waitFor(() => expect(result.current.midiStatus).toBe('connected'))
+    await act(() => result.current.start())
+    await waitFor(() => expect(result.current.phase).toBe('running'), { timeout: 3000 })
+
+    // Note 36 = kick (midi-drum-map.ts). Right at the margin boundary —
+    // gradeDynamics treats this as inclusive-correct.
+    act(() => input.simulateMessage([0x99, 36, 100 + ACCENT_VELOCITY_MARGIN]))
+
+    await waitFor(() => expect(result.current.lastDynamicsGrade).toBe('correct'))
+  })
+
+  it('a MIDI hit on an accented event grades dynamics as too-soft when not struck hard enough', async () => {
+    vi.stubGlobal('AudioContext', FakeAudioContext)
+    const input = new FakeMIDIInput()
+    stubMidiAccess(input)
+    const exercise = makeExercise([
+      { id: createId(), bar: 1, beat: 1, subdivisionIndex: 0, instrument: 'kick', velocity: 100, accent: true },
+    ])
+    const { result } = renderHook(() => useVisualTrainer(exercise, noHighwayRef))
+
+    act(() => result.current.toggleMidiControl())
+    await waitFor(() => expect(result.current.midiStatus).toBe('connected'))
+    await act(() => result.current.start())
+    await waitFor(() => expect(result.current.phase).toBe('running'), { timeout: 3000 })
+
+    act(() => input.simulateMessage([0x99, 36, 100 + ACCENT_VELOCITY_MARGIN - 1]))
+
+    await waitFor(() => expect(result.current.lastDynamicsGrade).toBe('too-soft'))
+  })
+
+  it('a MIDI hit on a non-accented event sets actualVelocity but leaves dynamicsGrade undefined', async () => {
+    vi.stubGlobal('AudioContext', FakeAudioContext)
+    const input = new FakeMIDIInput()
+    stubMidiAccess(input)
+    const exercise = makeExercise([
+      { id: createId(), bar: 1, beat: 1, subdivisionIndex: 0, instrument: 'kick', velocity: 100 },
+    ])
+    const { result } = renderHook(() => useVisualTrainer(exercise, noHighwayRef))
+
+    act(() => result.current.toggleMidiControl())
+    await waitFor(() => expect(result.current.midiStatus).toBe('connected'))
+    await act(() => result.current.start())
+    await waitFor(() => expect(result.current.phase).toBe('running'), { timeout: 3000 })
+
+    act(() => input.simulateMessage([0x99, 36, 127]))
+
+    await waitFor(() => expect(result.current.phase).toBe('finished'), { timeout: 3000 })
+    expect(result.current.lastDynamicsGrade).toBeUndefined()
+    expect(result.current.dynamicsSummary.points).toEqual([{ hitId: expect.any(String), actualVelocity: 127, dynamicsGrade: undefined }])
+  })
+
+  it('a keyboard hit on an accented event leaves both actualVelocity and lastDynamicsGrade undefined — no special-casing needed for non-MIDI sources', async () => {
+    vi.stubGlobal('AudioContext', FakeAudioContext)
+    const exercise = makeExercise([
+      { id: createId(), bar: 1, beat: 1, subdivisionIndex: 0, instrument: 'kick', velocity: 100, accent: true },
+    ])
+    const { result } = renderHook(() => useVisualTrainer(exercise, noHighwayRef))
+
+    await act(() => result.current.start())
+    await waitFor(() => expect(result.current.phase).toBe('running'), { timeout: 3000 })
+
+    act(() => {
+      fireEvent.keyDown(window, { code: 'KeyJ' })
+    })
+
+    await waitFor(() => expect(result.current.lastGrade).not.toBeUndefined())
+    expect(result.current.lastDynamicsGrade).toBeUndefined()
+    await waitFor(() => expect(result.current.phase).toBe('finished'), { timeout: 3000 })
+    expect(result.current.dynamicsSummary.points).toEqual([])
+  })
+
+  it('demo auto-hits never populate dynamicsSummary, even for an accented event', async () => {
+    vi.stubGlobal('AudioContext', FakeAudioContext)
+    const exercise = makeExercise([
+      { id: createId(), bar: 1, beat: 1, subdivisionIndex: 0, instrument: 'kick', velocity: 100, accent: true },
+    ])
+    const { result } = renderHook(() => useVisualTrainer(exercise, noHighwayRef))
+
+    await act(() => result.current.startDemo())
+    await waitFor(() => expect(result.current.phase).toBe('finished'), { timeout: 3000 })
+
+    expect(result.current.dynamicsSummary.points).toEqual([])
+  })
+
+  it('restart() after a MIDI-graded run resets lastDynamicsGrade and dynamicsSummary back to empty', async () => {
+    vi.stubGlobal('AudioContext', FakeAudioContext)
+    const input = new FakeMIDIInput()
+    stubMidiAccess(input)
+    const exercise = makeExercise([
+      { id: createId(), bar: 1, beat: 1, subdivisionIndex: 0, instrument: 'kick', velocity: 100, accent: true },
+    ])
+    const { result } = renderHook(() => useVisualTrainer(exercise, noHighwayRef))
+
+    act(() => result.current.toggleMidiControl())
+    await waitFor(() => expect(result.current.midiStatus).toBe('connected'))
+    await act(() => result.current.start())
+    await waitFor(() => expect(result.current.phase).toBe('running'), { timeout: 3000 })
+    act(() => input.simulateMessage([0x99, 36, 127]))
+    await waitFor(() => expect(result.current.phase).toBe('finished'), { timeout: 3000 })
+    expect(result.current.dynamicsSummary.points.length).toBeGreaterThan(0)
+
+    act(() => result.current.restart())
+
+    await waitFor(() => expect(result.current.dynamicsSummary.points).toEqual([]))
+    expect(result.current.lastDynamicsGrade).toBeUndefined()
+  })
+
+  // notation-mirroring to the phone (ADR 0007's host->controller direction)
+  // — gated purely on the isMidiControlEnabled *toggle*, not on an actual
+  // MIDI device being present, so these tests don't need the FakeMIDIInput
+  // doubles above. Asserts directly on the sendNotationState spy's call
+  // args (a NotationStatePayload or null) — the wire-format round trip
+  // itself (payload -> JSON -> notation_state/notation_clear frame) is
+  // covered by remote-host-context.test.tsx instead, since that's the one
+  // place a real WebSocket is still involved after this refactor.
+  function latestNotationCall(): NotationStatePayload | null | undefined {
+    const calls = remoteHostMocks.sendNotationState.mock.calls
+    return calls.length > 0 ? (calls.at(-1)![0] as NotationStatePayload | null) : undefined
+  }
+
+  it('starting a staff_cursor run with MIDI enabled calls sendNotationState with the exercise and a negative startOffsetMs (count-in)', async () => {
+    vi.stubGlobal('AudioContext', FakeAudioContext)
+    const exercise = {
+      ...makeExercise([{ id: createId(), bar: 1, beat: 1, subdivisionIndex: 0, instrument: 'kick', velocity: 100 }]),
+      displayMode: 'staff_cursor' as const,
+    }
+    const { result } = renderHook(() => useVisualTrainer(exercise, noHighwayRef))
+
+    act(() => result.current.toggleMidiControl())
+    await act(() => result.current.start())
+    await waitFor(() => expect(result.current.phase).toBe('count-in'))
+
+    expect(remoteHostMocks.sendNotationState).toHaveBeenCalledTimes(1)
+    const payload = latestNotationCall()
+    expect(payload).toMatchObject({ paused: false })
+    expect((payload as NotationStatePayload).exercise.id).toBe(exercise.id)
+    // A count-in bar means the real audio hasn't reached bar 1 yet — the
+    // same negative-startOffsetMs-as-positive-delay convention already
+    // established for the desktop's own ExerciseNotationSheet.
+    expect((payload as NotationStatePayload).playbackProgress.startOffsetMs).toBeLessThan(0)
+    expect((payload as NotationStatePayload).gradedEventIds).toEqual({})
+  })
+
+  it('a graded hit during a mirrored staff_cursor+MIDI run pushes an updated gradedEventIds', async () => {
+    vi.stubGlobal('AudioContext', FakeAudioContext)
+    const eventId = createId()
+    // A 2nd event (late in the bar) keeps the run alive after the 1st is
+    // graded — with only one event, grading it also finishes the run in the
+    // same tick, and the resulting sendNotationState(null) (correct, real
+    // behavior) would race the assertion below.
+    const exercise = {
+      ...makeExercise([
+        { id: eventId, bar: 1, beat: 1, subdivisionIndex: 0, instrument: 'kick', velocity: 100 },
+        { id: createId(), bar: 1, beat: 4, subdivisionIndex: 0, instrument: 'snare', velocity: 100 },
+      ]),
+      displayMode: 'staff_cursor' as const,
+    }
+    const { result } = renderHook(() => useVisualTrainer(exercise, noHighwayRef))
+
+    act(() => result.current.toggleMidiControl())
+    await act(() => result.current.start())
+    await waitFor(() => expect(result.current.phase).toBe('running'), { timeout: 3000 })
+
+    act(() => {
+      fireEvent.keyDown(window, { code: 'KeyJ' })
+    })
+    await waitFor(() => expect(result.current.lastGrade).not.toBeUndefined())
+
+    const payload = latestNotationCall()
+    expect(payload).not.toBeNull()
+    expect((payload as NotationStatePayload).gradedEventIds[eventId]).toBe('hit')
+  })
+
+  it('starting a note_highway run (even with MIDI enabled) calls sendNotationState(null)', async () => {
+    vi.stubGlobal('AudioContext', FakeAudioContext)
+    const exercise = makeExercise([{ id: createId(), bar: 1, beat: 1, subdivisionIndex: 0, instrument: 'kick', velocity: 100 }])
+    const { result } = renderHook(() => useVisualTrainer(exercise, noHighwayRef))
+
+    act(() => result.current.toggleMidiControl())
+    await act(() => result.current.start())
+    await waitFor(() => expect(result.current.phase).toBe('count-in'))
+
+    expect(latestNotationCall()).toBeNull()
+  })
+
+  it('starting a staff_cursor run WITHOUT MIDI enabled (keyboard only) calls sendNotationState(null)', async () => {
+    vi.stubGlobal('AudioContext', FakeAudioContext)
+    const exercise = {
+      ...makeExercise([{ id: createId(), bar: 1, beat: 1, subdivisionIndex: 0, instrument: 'kick', velocity: 100 }]),
+      displayMode: 'staff_cursor' as const,
+    }
+    const { result } = renderHook(() => useVisualTrainer(exercise, noHighwayRef))
+
+    await act(() => result.current.start())
+    await waitFor(() => expect(result.current.phase).toBe('count-in'))
+
+    expect(latestNotationCall()).toBeNull()
+  })
+
+  it('pause/resume resend the same notation payload with only `paused` flipped', async () => {
+    vi.stubGlobal('AudioContext', FakeAudioContext)
+    const exercise = {
+      ...makeExercise([{ id: createId(), bar: 1, beat: 4, subdivisionIndex: 0, instrument: 'kick', velocity: 100 }]),
+      displayMode: 'staff_cursor' as const,
+    }
+    const { result } = renderHook(() => useVisualTrainer(exercise, noHighwayRef))
+
+    act(() => result.current.toggleMidiControl())
+    await act(() => result.current.start())
+    await waitFor(() => expect(result.current.phase).toBe('running'), { timeout: 3000 })
+
+    act(() => result.current.pause())
+    expect(latestNotationCall()).toMatchObject({ paused: true })
+
+    act(() => result.current.resume())
+    expect(latestNotationCall()).toMatchObject({ paused: false })
+  })
+
+  it('finishing a staff_cursor+MIDI run calls sendNotationState(null)', async () => {
+    vi.stubGlobal('AudioContext', FakeAudioContext)
+    const exercise = {
+      ...makeExercise([{ id: createId(), bar: 1, beat: 1, subdivisionIndex: 0, instrument: 'kick', velocity: 100 }]),
+      displayMode: 'staff_cursor' as const,
+    }
+    const { result } = renderHook(() => useVisualTrainer(exercise, noHighwayRef))
+
+    act(() => result.current.toggleMidiControl())
+    await act(() => result.current.start())
+    await waitFor(() => expect(result.current.phase).toBe('finished'), { timeout: 3000 })
+
+    expect(latestNotationCall()).toBeNull()
+  })
+
+  it('exiting a staff_cursor+MIDI run calls sendNotationState(null)', async () => {
+    vi.stubGlobal('AudioContext', FakeAudioContext)
+    const exercise = {
+      ...makeExercise([{ id: createId(), bar: 1, beat: 4, subdivisionIndex: 0, instrument: 'kick', velocity: 100 }]),
+      displayMode: 'staff_cursor' as const,
+    }
+    const { result } = renderHook(() => useVisualTrainer(exercise, noHighwayRef))
+
+    act(() => result.current.toggleMidiControl())
+    await act(() => result.current.start())
+    await waitFor(() => expect(result.current.phase).toBe('running'), { timeout: 3000 })
+
+    act(() => result.current.exit())
+
+    expect(latestNotationCall()).toBeNull()
   })
 })

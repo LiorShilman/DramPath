@@ -5,6 +5,7 @@ import type { RemoteDrumInputStatus } from './useRemoteDrumInput'
 import { useMidiDrumInput } from './useMidiDrumInput'
 import type { MidiDrumInputStatus } from './useMidiDrumInput'
 import { playDrumSound } from '../lib/visual-trainer/drum-synth'
+import { markHit } from '../lib/visual-trainer/active-hits'
 import type { DrumInstrument } from '../domain'
 
 export interface UseFreeDrumPlaybackResult {
@@ -62,11 +63,11 @@ export function useFreeDrumPlayback(): UseFreeDrumPlaybackResult {
     }
     void audioContextRef.current.resume()
     playDrumSound(audioContextRef.current, outputNodeRef.current!, audioContextRef.current.currentTime, instrument, 100)
-    setActiveHits((prev) => ({ ...prev, [instrument]: crypto.randomUUID() }))
+    setActiveHits((prev) => markHit(prev, instrument, crypto.randomUUID()))
   }, [])
 
   useKeyboardDrums({ onHit: playHit })
-  const remoteStatus = useRemoteDrumInput({ enabled: isPhoneControlEnabled, onHit: playHit })
+  const { status: remoteStatus } = useRemoteDrumInput({ enabled: isPhoneControlEnabled, onHit: playHit })
   const midiStatus = useMidiDrumInput({ enabled: isMidiControlEnabled, onHit: playHit })
 
   const togglePhoneControl = useCallback(() => {

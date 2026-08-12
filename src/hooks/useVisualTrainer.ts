@@ -4,16 +4,27 @@ import { ExercisePlaybackEngine } from '../lib/visual-trainer/exercise-playback-
 import { convertHitTimeToExerciseElapsedMs } from '../lib/visual-trainer/clock-sync-math'
 import { calculateBarDurationMs } from '../domain/calculations/event-timing'
 import { resolveEventScheduleMs } from '../domain/calculations/exercise-schedule'
-import { GRADING_THRESHOLDS, detectMissedEvents, findMatchingEvent, gradeTimingError } from '../domain/calculations/hit-matcher'
+import { GRADING_THRESHOLDS, detectMissedEvents, findMatchingEvent, gradeDynamics, gradeTimingError } from '../domain/calculations/hit-matcher'
 import type { PendingDrumEvent } from '../domain/calculations/hit-matcher'
-import { summarizeScoring } from '../domain/calculations/scoring-engine'
+import { summarizeScoring, summarizeDynamics } from '../domain/calculations/scoring-engine'
+import type { DynamicsSummary } from '../domain/calculations/scoring-engine'
+import { markHit } from '../lib/visual-trainer/active-hits'
 import { useKeyboardDrums } from './useKeyboardDrums'
-import { useRemoteDrumInput } from './useRemoteDrumInput'
-import type { RemoteDrumInputStatus } from './useRemoteDrumInput'
+import type { NotationStatePayload, PlaybackStatusPayload, RemoteDrumInputStatus } from './useRemoteDrumInput'
+import { useRemoteHost } from '../features/visual-trainer/remote-host-context'
 import { useMidiDrumInput } from './useMidiDrumInput'
 import type { MidiDrumInputStatus } from './useMidiDrumInput'
 import { createId } from '../domain'
-import type { DisplayMode, DrumInstrument, ExtraHitEvent, HitGrade, HitResult, InteractiveExercise, ScoringSummary } from '../domain'
+import type {
+  DisplayMode,
+  DrumInstrument,
+  DynamicsGrade,
+  ExtraHitEvent,
+  HitGrade,
+  HitResult,
+  InteractiveExercise,
+  ScoringSummary,
+} from '../domain'
 import type { NoteHighwayHandle } from '../components/visual-trainer/NoteHighway'
 
 export type VisualTrainerPhase = 'idle' | 'count-in' | 'running' | 'paused' | 'finished'
@@ -37,6 +48,16 @@ export interface UseVisualTrainerResult {
   scoring: ScoringSummary
   gradeCounts: GradeCounts
   lastGrade: HitGrade | 'extra' | undefined
+  /** Whether the last hit that matched an *accented* event was struck
+   * hard enough (see hit-matcher.ts's gradeDynamics) — undefined whenever
+   * there's nothing to report: no hit yet, the matched event wasn't
+   * accented, or the hit came from a source with no real velocity
+   * (keyboard/phone, only MIDI has genuine per-hit strike force). */
+  lastDynamicsGrade: DynamicsGrade | undefined
+  /** Every hit this run that carried real MIDI velocity data, in order —
+   * the post-session velocity-consistency graph's data source. Empty for
+   * any run with no MIDI hits (keyboard/phone-only, or demo). */
+  dynamicsSummary: DynamicsSummary
   activeHits: Partial<Record<DrumInstrument, string>>
   /** A fresh id on every count-in beat — feeds DrumKit's "sticks clicking
    * together" count-off animation, same remount-per-token pattern as
@@ -89,7 +110,10 @@ export interface UseVisualTrainerResult {
   restart: () => void
   exit: () => void
   /** Phone-as-remote-controller (ADR 0007) — off by default, persisted
-   * across sessions since it's a standing setup choice, not per-run state. */
+   * across sessions since it's a standing setup choice, not per-run state.
+   * A thin pass-through to RemoteHostProvider's context now (see
+   * remote-host-context.tsx) — the connection itself is owned there, not by
+   * this hook, so it survives navigation between exercises. */
   isPhoneControlEnabled: boolean
   togglePhoneControl: () => void
   remoteStatus: RemoteDrumInputStatus
@@ -108,7 +132,6 @@ export interface UseVisualTrainerResult {
   toggleMetronomeMute: () => void
 }
 
-const PHONE_CONTROL_ENABLED_STORAGE_KEY = 'drumpath.isPhoneControlEnabled'
 const MIDI_CONTROL_ENABLED_STORAGE_KEY = 'drumpath.isMidiControlEnabled'
 const METRONOME_MUTED_STORAGE_KEY = 'drumpath.isMetronomeMuted'
 
@@ -153,6 +176,7 @@ const EMPTY_SCORING: ScoringSummary = {
   averageTimingErrorMs: undefined,
 }
 const EMPTY_GRADE_COUNTS: GradeCounts = { perfect: 0, early: 0, late: 0, miss: 0, extra: 0 }
+const EMPTY_DYNAMICS_SUMMARY: DynamicsSummary = { points: [] }
 
 function countGrades(hitResults: HitResult[], extraHits: ExtraHitEvent[]): GradeCounts {
   const counts: GradeCounts = { perfect: 0, early: 0, late: 0, miss: 0, extra: 0 }
@@ -182,15 +206,19 @@ export function useVisualTrainer(
 ): UseVisualTrainerResult {
   const [phase, setPhase] = useState<VisualTrainerPhase>('idle')
   const [isDemo, setIsDemo] = useState(false)
-  const [isPhoneControlEnabled, setIsPhoneControlEnabled] = useState(
-    () => localStorage.getItem(PHONE_CONTROL_ENABLED_STORAGE_KEY) === 'true',
-  )
   const [isMidiControlEnabled, setIsMidiControlEnabled] = useState(
     () => localStorage.getItem(MIDI_CONTROL_ENABLED_STORAGE_KEY) === 'true',
   )
+  // Mirrors isMidiControlEnabled for beginPlayback to read without needing
+  // it in its own dependency array (same reasoning as isMetronomeMutedRef)
+  // — gates whether a staff_cursor run's notation gets pushed to the phone
+  // (see sendNotationState below).
+  const isMidiControlEnabledRef = useRef(isMidiControlEnabled)
   const [scoring, setScoring] = useState<ScoringSummary>(EMPTY_SCORING)
   const [gradeCounts, setGradeCounts] = useState<GradeCounts>(EMPTY_GRADE_COUNTS)
   const [lastGrade, setLastGrade] = useState<HitGrade | 'extra' | undefined>(undefined)
+  const [lastDynamicsGrade, setLastDynamicsGrade] = useState<DynamicsGrade | undefined>(undefined)
+  const [dynamicsSummary, setDynamicsSummary] = useState<DynamicsSummary>(EMPTY_DYNAMICS_SUMMARY)
   // Keyed by instrument, not a single value — otherwise two instruments hit
   // at (near-)the same time would just overwrite each other's entry and
   // only one drum piece would ever visually react.
@@ -246,6 +274,22 @@ export function useVisualTrainer(
   const pendingRef = useRef<PendingDrumEvent[]>([])
   const hitResultsRef = useRef<HitResult[]>([])
   const extraHitsRef = useRef<ExtraHitEvent[]>([])
+  // The last full payload pushed to the phone (see sendNotationState below)
+  // — null whenever nothing is being mirrored. Mutated in place (not
+  // replaced) by pause()/resume() (flip `paused`) and by handleHit/tick's
+  // own grading (add one gradedEventIds entry) so each only has to resend,
+  // never recompute, the parts it didn't change.
+  const lastNotationPayloadRef = useRef<NotationStatePayload | null>(null)
+  // tick() (below) is declared before useRemoteHost's own call (further down
+  // this function, since it needs handleRemoteHit which needs handleHit
+  // which needs tick to already exist) — referencing sendNotationState/
+  // sendPlaybackStatus directly inside tick would read them before their own
+  // declaration. Refs, synced via an effect right after that call, sidestep
+  // the ordering entirely: tick only ever reads .current, which is always up
+  // to date by the time tick actually runs (async, well after the render
+  // that declared it).
+  const sendNotationStateRef = useRef<(state: NotationStatePayload | null) => void>(() => {})
+  const sendPlaybackStatusRef = useRef<(status: PlaybackStatusPayload) => void>(() => {})
   const totalExpectedEventsRef = useRef(0)
 
   const clockOffsetMsRef = useRef(0)
@@ -335,7 +379,7 @@ export function useVisualTrainer(
   const autoHit = useCallback(
     (event: PendingDrumEvent) => {
       pendingRef.current = pendingRef.current.filter((pending) => pending.eventId !== event.eventId)
-      setActiveHits((prev) => ({ ...prev, [event.instrument]: createId() }))
+      setActiveHits((prev) => markHit(prev, event.instrument, createId()))
       hitResultsRef.current.push({
         id: createId(),
         expectedEventId: event.eventId,
@@ -375,6 +419,7 @@ export function useVisualTrainer(
 
     if (phaseRef.current === 'count-in' && elapsedMs >= 0) {
       setPhaseBoth('running')
+      sendPlaybackStatusRef.current({ exerciseId: exercise.id, title: exercise.title, bpm: exercise.bpm, phase: 'running' })
     }
 
     if (isDemoRef.current) {
@@ -400,6 +445,10 @@ export function useVisualTrainer(
           for (const event of missed) next.set(event.eventId, 'miss')
           return next
         })
+        if (lastNotationPayloadRef.current) {
+          for (const event of missed) lastNotationPayloadRef.current.gradedEventIds[event.eventId] = 'miss'
+          sendNotationStateRef.current(lastNotationPayloadRef.current)
+        }
         setLastGrade('miss')
         recomputeScoring()
       }
@@ -407,6 +456,10 @@ export function useVisualTrainer(
 
     if (pendingRef.current.length === 0 && phaseRef.current !== 'finished' && phaseRef.current !== 'idle') {
       setPhaseBoth('finished')
+      setDynamicsSummary(summarizeDynamics(hitResultsRef.current))
+      lastNotationPayloadRef.current = null
+      sendNotationStateRef.current(null)
+      sendPlaybackStatusRef.current({ exerciseId: exercise.id, title: exercise.title, bpm: exercise.bpm, phase: 'finished' })
       stopLoops()
       // All notes are resolved, but the playback engine's own click schedule
       // covers the whole declared exercise length independent of the notes
@@ -417,14 +470,19 @@ export function useVisualTrainer(
     }
 
     rafIdRef.current = requestAnimationFrame(() => tickRef.current())
-  }, [autoHit, noteHighwayRef, recomputeScoring, setPhaseBoth, stopLoops, thresholds])
+  }, [autoHit, exercise.bpm, exercise.id, exercise.title, noteHighwayRef, recomputeScoring, setPhaseBoth, stopLoops, thresholds])
 
   useEffect(() => {
     tickRef.current = tick
   }, [tick])
 
   const handleHit = useCallback(
-    (instrument: DrumInstrument, hitTimeMs: number) => {
+    // velocity is only ever real for a MIDI hit (handleMidiHit below) —
+    // keyboard (useKeyboardDrums) and phone (handleRemoteHit) both call
+    // this with no 3rd argument, so it's undefined there, which is the
+    // single gate dynamics grading needs (see below): no per-input-source
+    // special-casing anywhere else in this function.
+    (instrument: DrumInstrument, hitTimeMs: number, velocity?: number) => {
       const engine = engineRef.current
       if (!engine) return
 
@@ -443,12 +501,17 @@ export function useVisualTrainer(
       // inconsistent with every other input method already playing sound
       // through the computer.
       engine.playHitNow(instrument)
-      setActiveHits((prev) => ({ ...prev, [instrument]: createId() }))
+      setActiveHits((prev) => markHit(prev, instrument, createId()))
 
       const match = findMatchingEvent(pendingRef.current, instrument, elapsedMs, thresholds)
       if (match) {
         pendingRef.current = pendingRef.current.filter((event) => event.eventId !== match.eventId)
         const grade = gradeTimingError(match.timingErrorMs, thresholds)
+        // Only meaningful (and only computed) when the matched event was
+        // actually accented AND this hit carried real velocity data —
+        // undefined otherwise, which is exactly what a non-accented note
+        // or a keyboard/phone hit should report (nothing to grade).
+        const dynamicsGrade = match.accent && velocity !== undefined ? gradeDynamics(match.velocity, velocity) : undefined
         hitResultsRef.current.push({
           id: createId(),
           expectedEventId: match.eventId,
@@ -457,13 +520,21 @@ export function useVisualTrainer(
           actualTimeMs: elapsedMs,
           timingErrorMs: match.timingErrorMs,
           grade,
+          actualVelocity: velocity,
+          dynamicsGrade,
         })
         noteHighwayRef.current?.markResult(match.eventId, 'hit')
         setGradedEventIds((prev) => new Map(prev).set(match.eventId, 'hit'))
+        if (lastNotationPayloadRef.current) {
+          lastNotationPayloadRef.current.gradedEventIds[match.eventId] = 'hit'
+          sendNotationStateRef.current(lastNotationPayloadRef.current)
+        }
         setLastGrade(grade)
+        setLastDynamicsGrade(dynamicsGrade)
       } else {
         extraHitsRef.current.push({ id: createId(), instrument, hitTimeMs: elapsedMs })
         setLastGrade('extra')
+        setLastDynamicsGrade(undefined)
       }
       recomputeScoring()
     },
@@ -472,17 +543,10 @@ export function useVisualTrainer(
 
   useKeyboardDrums({ enabled: (phase === 'running' || phase === 'count-in') && !isDemo, onHit: handleHit })
 
-  const togglePhoneControl = useCallback(() => {
-    setIsPhoneControlEnabled((prev) => {
-      const next = !prev
-      localStorage.setItem(PHONE_CONTROL_ENABLED_STORAGE_KEY, String(next))
-      return next
-    })
-  }, [])
-
   const toggleMidiControl = useCallback(() => {
     setIsMidiControlEnabled((prev) => {
       const next = !prev
+      isMidiControlEnabledRef.current = next
       localStorage.setItem(MIDI_CONTROL_ENABLED_STORAGE_KEY, String(next))
       return next
     })
@@ -517,16 +581,38 @@ export function useVisualTrainer(
     [handleHit],
   )
 
-  const remoteStatus = useRemoteDrumInput({ enabled: isPhoneControlEnabled, onHit: handleRemoteHit })
+  // Full remote control (RemoteHostProvider, src/features/visual-trainer/
+  // remote-host-context.tsx) — owns the single desktop/"host" relay
+  // connection for the whole app (not just while this exercise's page is
+  // mounted), and forwards phone hits/transport commands into whichever
+  // useVisualTrainer instance is currently registered as the active
+  // session. See the registration effect further down, placed after start/
+  // pause/resume/exit are all declared.
+  const remoteHost = useRemoteHost()
+  const {
+    status: remoteStatus,
+    isEnabled: isPhoneControlEnabled,
+    toggleEnabled: togglePhoneControl,
+    sendNotationState,
+    sendPlaybackStatus,
+    registerSession,
+  } = remoteHost
+
+  useEffect(() => {
+    sendNotationStateRef.current = sendNotationState
+  }, [sendNotationState])
+  useEffect(() => {
+    sendPlaybackStatusRef.current = sendPlaybackStatus
+  }, [sendPlaybackStatus])
 
   // Same phase/demo gating as handleRemoteHit, and the same reasoning for
   // why (useMidiDrumInput's own connection lifecycle is decoupled from
   // `phase` too).
   const handleMidiHit = useCallback(
-    (instrument: DrumInstrument, hitTimeMs: number) => {
+    (instrument: DrumInstrument, hitTimeMs: number, velocity: number) => {
       if (isDemoRef.current) return
       if (phaseRef.current !== 'running' && phaseRef.current !== 'count-in') return
-      handleHit(instrument, hitTimeMs)
+      handleHit(instrument, hitTimeMs, velocity)
     },
     [handleHit],
   )
@@ -580,6 +666,8 @@ export function useVisualTrainer(
           eventId: event.id,
           instrument: event.instrument,
           expectedTimeMs: applyStaffCursorTimingBias(event.instrument, timeMs, displayMode),
+          velocity: event.velocity,
+          accent: event.accent ?? false,
         }))
       hitResultsRef.current = []
       extraHitsRef.current = []
@@ -621,6 +709,32 @@ export function useVisualTrainer(
       setScoring(EMPTY_SCORING)
       setGradeCounts(EMPTY_GRADE_COUNTS)
       setLastGrade(undefined)
+      setLastDynamicsGrade(undefined)
+      setDynamicsSummary(EMPTY_DYNAMICS_SUMMARY)
+
+      // Mirror this run's notation to the phone (explicit user request) —
+      // scoped to exactly the scenario it's for: a real (non-demo)
+      // staff_cursor run with a real e-kit connected. Anything else (demo,
+      // note_highway, or MIDI not enabled) explicitly clears whatever the
+      // phone was showing, so switching modes/input never leaves it stale.
+      // sessionId is Date.now(), not playSessionId state — the phone's own
+      // ExerciseNotationSheet only needs *some* value that changes per run
+      // to remount its CSS animation, not one numerically matching the
+      // desktop's own React state.
+      if (!demo && displayMode === 'staff_cursor' && isMidiControlEnabledRef.current) {
+        const notationPayload: NotationStatePayload = {
+          exercise,
+          playbackProgress: { bpm: exercise.bpm, sessionId: Date.now(), startOffsetMs: startOffsetMs - countInDurationMsRef.current },
+          paused: false,
+          gradedEventIds: {},
+        }
+        lastNotationPayloadRef.current = notationPayload
+        sendNotationState(notationPayload)
+      } else {
+        lastNotationPayloadRef.current = null
+        sendNotationState(null)
+      }
+
       setActiveHits({})
       setStickClickToken(undefined)
       setGradedEventIds(new Map())
@@ -629,12 +743,17 @@ export function useVisualTrainer(
       setCurrentBeat(1)
       setElapsedMs(startOffsetMs)
       noteHighwayRef.current?.reset()
-      setPhaseBoth(countInBars > 0 ? 'count-in' : 'running')
+      const startingPhase = countInBars > 0 ? 'count-in' : 'running'
+      setPhaseBoth(startingPhase)
+      // Unconditional, unlike the notation_state block above (staff_cursor+
+      // MIDI only) — this is what drives the phone's transport buttons
+      // regardless of display mode, so it always fires.
+      sendPlaybackStatus({ exerciseId: exercise.id, title: exercise.title, bpm: exercise.bpm, phase: startingPhase })
 
       rafIdRef.current = requestAnimationFrame(tick)
       startBarInterval()
     },
-    [clearStickClickTimeouts, displayMode, exercise, noteHighwayRef, setPhaseBoth, startBarInterval, stopLoops, tick],
+    [clearStickClickTimeouts, displayMode, exercise, noteHighwayRef, sendNotationState, sendPlaybackStatus, setPhaseBoth, startBarInterval, stopLoops, tick],
   )
 
   const start = useCallback(() => beginPlayback(false), [beginPlayback])
@@ -658,7 +777,12 @@ export function useVisualTrainer(
     engineRef.current?.pause()
     stopLoops()
     setPhaseBoth('paused')
-  }, [setPhaseBoth, stopLoops])
+    sendPlaybackStatus({ exerciseId: exercise.id, title: exercise.title, bpm: exercise.bpm, phase: 'paused' })
+    if (lastNotationPayloadRef.current) {
+      lastNotationPayloadRef.current.paused = true
+      sendNotationState(lastNotationPayloadRef.current)
+    }
+  }, [exercise, sendNotationState, sendPlaybackStatus, setPhaseBoth, stopLoops])
 
   const resume = useCallback(() => {
     if (phaseRef.current !== 'paused') return
@@ -666,7 +790,12 @@ export function useVisualTrainer(
     setPhaseBoth(prePausePhaseRef.current)
     rafIdRef.current = requestAnimationFrame(tick)
     startBarInterval()
-  }, [setPhaseBoth, startBarInterval, tick])
+    sendPlaybackStatus({ exerciseId: exercise.id, title: exercise.title, bpm: exercise.bpm, phase: prePausePhaseRef.current })
+    if (lastNotationPayloadRef.current) {
+      lastNotationPayloadRef.current.paused = false
+      sendNotationState(lastNotationPayloadRef.current)
+    }
+  }, [exercise, sendNotationState, sendPlaybackStatus, setPhaseBoth, startBarInterval, tick])
 
   const restart = useCallback(() => {
     beginPlayback(isDemoRef.current)
@@ -677,7 +806,29 @@ export function useVisualTrainer(
     stopLoops()
     clearStickClickTimeouts()
     setPhaseBoth('idle')
-  }, [clearStickClickTimeouts, setPhaseBoth, stopLoops])
+    lastNotationPayloadRef.current = null
+    sendNotationState(null)
+    sendPlaybackStatus({ exerciseId: null, title: null, bpm: null, phase: 'none' })
+  }, [clearStickClickTimeouts, sendNotationState, sendPlaybackStatus, setPhaseBoth, stopLoops])
+
+  // Registers this instance as RemoteHostProvider's "active session" — a
+  // phone hit or transport_command reaches whichever useVisualTrainer
+  // instance is currently registered (only one VisualTrainerRunner is ever
+  // mounted at a time, see VisualTrainerPage.tsx's key={exercise.id}).
+  // Placed after start/pause/resume/exit/handleRemoteHit are all declared,
+  // so it can reference them directly (no ref-mirror needed here, unlike
+  // tick()/handleHit() further up). Also reports the initial 'idle' status
+  // on mount and 'none' on unmount, since a phone that was already browsing
+  // when this exercise loads (or that navigates away while it's still open)
+  // needs to know either way.
+  useEffect(() => {
+    sendPlaybackStatus({ exerciseId: exercise.id, title: exercise.title, bpm: exercise.bpm, phase: 'idle' })
+    const unregister = registerSession({ handleHit: handleRemoteHit, start, pause, resume, stop: exit })
+    return () => {
+      unregister()
+      sendPlaybackStatus({ exerciseId: null, title: null, bpm: null, phase: 'none' })
+    }
+  }, [exercise, handleRemoteHit, pause, registerSession, resume, sendPlaybackStatus, start, exit])
 
   return {
     phase,
@@ -685,6 +836,8 @@ export function useVisualTrainer(
     scoring,
     gradeCounts,
     lastGrade,
+    lastDynamicsGrade,
+    dynamicsSummary,
     activeHits,
     stickClickToken,
     gradedEventIds,

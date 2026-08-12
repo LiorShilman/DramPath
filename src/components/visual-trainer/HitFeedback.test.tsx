@@ -12,28 +12,28 @@ const SCORING: ScoringSummary = {
 
 describe('HitFeedback', () => {
   it('shows no grade badge when nothing has happened yet', () => {
-    render(<HitFeedback lastGrade={undefined} scoring={SCORING} />)
+    render(<HitFeedback lastGrade={undefined} lastDynamicsGrade={undefined} scoring={SCORING} />)
     expect(screen.queryByText('מושלם!')).not.toBeInTheDocument()
     expect(screen.queryByText('פספוס')).not.toBeInTheDocument()
   })
 
   it('shows the Hebrew label for a perfect hit', () => {
-    render(<HitFeedback lastGrade="perfect" scoring={SCORING} />)
+    render(<HitFeedback lastGrade="perfect" lastDynamicsGrade={undefined} scoring={SCORING} />)
     expect(screen.getByText('מושלם!')).toBeInTheDocument()
   })
 
   it('shows the Hebrew label for a miss', () => {
-    render(<HitFeedback lastGrade="miss" scoring={SCORING} />)
+    render(<HitFeedback lastGrade="miss" lastDynamicsGrade={undefined} scoring={SCORING} />)
     expect(screen.getByText('פספוס')).toBeInTheDocument()
   })
 
   it('shows the Hebrew label for an extra (unmatched) hit', () => {
-    render(<HitFeedback lastGrade="extra" scoring={SCORING} />)
+    render(<HitFeedback lastGrade="extra" lastDynamicsGrade={undefined} scoring={SCORING} />)
     expect(screen.getByText('הקשה שגויה')).toBeInTheDocument()
   })
 
   it('renders rounded accuracy, combo, and timing error stats', () => {
-    render(<HitFeedback lastGrade={undefined} scoring={SCORING} />)
+    render(<HitFeedback lastGrade={undefined} lastDynamicsGrade={undefined} scoring={SCORING} />)
     expect(screen.getByText('88%')).toBeInTheDocument()
     expect(screen.getByText('3')).toBeInTheDocument()
     expect(screen.getByText('10')).toBeInTheDocument()
@@ -41,7 +41,24 @@ describe('HitFeedback', () => {
   })
 
   it('shows a placeholder when there is no timing error data yet', () => {
-    render(<HitFeedback lastGrade={undefined} scoring={{ ...SCORING, averageTimingErrorMs: undefined }} />)
+    render(<HitFeedback lastGrade={undefined} lastDynamicsGrade={undefined} scoring={{ ...SCORING, averageTimingErrorMs: undefined }} />)
     expect(screen.getByText('—')).toBeInTheDocument()
+  })
+
+  it('shows no dynamics badge when there is nothing to grade', () => {
+    render(<HitFeedback lastGrade="perfect" lastDynamicsGrade={undefined} scoring={SCORING} />)
+    expect(screen.queryByText('אקצנט מדויק')).not.toBeInTheDocument()
+    expect(screen.queryByText('אקצנט רך מדי')).not.toBeInTheDocument()
+  })
+
+  it('shows the correct-accent badge alongside the timing grade', () => {
+    render(<HitFeedback lastGrade="perfect" lastDynamicsGrade="correct" scoring={SCORING} />)
+    expect(screen.getByText('מושלם!')).toBeInTheDocument()
+    expect(screen.getByText('אקצנט מדויק')).toBeInTheDocument()
+  })
+
+  it('shows the too-soft-accent badge alongside the timing grade', () => {
+    render(<HitFeedback lastGrade="perfect" lastDynamicsGrade="too-soft" scoring={SCORING} />)
+    expect(screen.getByText('אקצנט רך מדי')).toBeInTheDocument()
   })
 })

@@ -1,11 +1,14 @@
-import { useState } from 'react'
-import { ArrowLeft, Maximize2, Minimize2, Pause, Play, Volume2, VolumeX, Wifi, WifiOff } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { ArrowLeft, List, Maximize2, Minimize2, Pause, Play, Square, Volume2, VolumeX, Wifi, WifiOff, X } from 'lucide-react'
 import { DrumKit } from '../../components/visual-trainer/DrumKit'
+import { ExerciseNotationSheet } from '../../components/visual-trainer/ExerciseNotationSheet'
 import { StickingPatternGuide } from '../../components/visual-trainer/StickingPatternGuide'
 import { useTouchDrumPlayback } from '../../hooks/useTouchDrumPlayback'
 import { useFullscreen } from '../../hooks/useFullscreen'
 import { useFitSize } from '../../hooks/useFitSize'
 import { REMOTE_RELAY_URL_STORAGE_KEY, useRemoteDrumSender } from '../../hooks/useRemoteDrumSender'
+import type { RemotePlaybackStatus } from '../../hooks/useRemoteDrumSender'
+import type { ExerciseListItem, TransportCommandAction } from '../../lib/visual-trainer/remote-drum-protocol'
 import { useMetronome } from '../practice-session/useMetronome'
 import { withBaseUrl } from '../../lib/asset-url'
 import { SUBDIVISION_LABELS } from '../exercises/exercise-labels'
@@ -43,6 +46,127 @@ const REMOTE_STATUS_LABELS: Record<ReturnType<typeof useRemoteDrumSender>['statu
   error: 'שגיאת חיבור',
 }
 
+/** Full remote control's transport buttons — shared between the normal kit
+ * view and the full-screen notation view (the phone-propped-next-to-the-kit
+ * scenario, where this matters most, since that view otherwise has zero
+ * controls). Which buttons show derives purely from playbackStatus.phase —
+ * no local state of its own, the desktop is the source of truth. */
+function TransportBar({
+  status,
+  onAction,
+}: {
+  status: RemotePlaybackStatus
+  onAction: (action: TransportCommandAction) => void
+}) {
+  const isRunning = status.phase === 'running' || status.phase === 'count-in'
+  const isPaused = status.phase === 'paused'
+  const canStart = status.phase === 'idle' || status.phase === 'finished'
+  const canStop = status.phase !== 'idle' && status.phase !== 'finished' && status.phase !== 'none'
+  return (
+    <div className="flex items-center gap-2 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 [box-shadow:var(--shadow-card)]">
+      <span className="min-w-0 flex-1 truncate text-sm font-semibold">{status.title}</span>
+      {canStart && (
+        <button
+          type="button"
+          onClick={() => onAction('start')}
+          aria-label="נגן"
+          className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--color-primary)] text-white"
+        >
+          <Play className="h-4 w-4" aria-hidden="true" />
+        </button>
+      )}
+      {isRunning && (
+        <button
+          type="button"
+          onClick={() => onAction('pause')}
+          aria-label="השהה"
+          className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--color-primary)] text-white"
+        >
+          <Pause className="h-4 w-4" aria-hidden="true" />
+        </button>
+      )}
+      {isPaused && (
+        <button
+          type="button"
+          onClick={() => onAction('resume')}
+          aria-label="המשך"
+          className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--color-primary)] text-white"
+        >
+          <Play className="h-4 w-4" aria-hidden="true" />
+        </button>
+      )}
+      {canStop && (
+        <button
+          type="button"
+          onClick={() => onAction('stop')}
+          aria-label="עצור"
+          className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--color-text-muted)] text-white"
+        >
+          <Square className="h-4 w-4" aria-hidden="true" />
+        </button>
+      )}
+    </div>
+  )
+}
+
+/** Full remote control's exercise picker — a fixed-overlay list (same
+ * role="dialog"/inset-0/bg-black-40 pattern VisualTrainerPage's own
+ * finished-session modal already uses), not a dedicated Sheet primitive
+ * (this UI library doesn't have one). exerciseList is undefined while the
+ * request is in flight, and an empty array once it resolves to nothing. */
+function ExerciseBrowserSheet({
+  exercises,
+  onSelect,
+  onClose,
+}: {
+  exercises: ExerciseListItem[] | undefined
+  onSelect: (exerciseId: string) => void
+  onClose: () => void
+}) {
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="בחירת תרגיל"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+    >
+      <div className="flex max-h-[80vh] w-full max-w-sm flex-col gap-2 overflow-hidden rounded-[var(--radius-card)] bg-[var(--color-surface)] p-3 [box-shadow:var(--shadow-card)]">
+        <div className="flex items-center justify-between">
+          <span className="font-semibold">בחירת תרגיל</span>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="סגירה"
+            className="flex h-9 w-9 items-center justify-center rounded-full text-[var(--color-text-muted)]"
+          >
+            <X className="h-5 w-5" aria-hidden="true" />
+          </button>
+        </div>
+        <ul className="flex flex-col gap-1 overflow-y-auto">
+          {exercises === undefined ? (
+            <li className="p-2 text-sm text-[var(--color-text-muted)]">טוען…</li>
+          ) : exercises.length === 0 ? (
+            <li className="p-2 text-sm text-[var(--color-text-muted)]">לא נמצאו תרגילים</li>
+          ) : (
+            exercises.map((exercise) => (
+              <li key={exercise.id}>
+                <button
+                  type="button"
+                  onClick={() => onSelect(exercise.id)}
+                  className="flex w-full items-center justify-between gap-2 rounded-[var(--radius-card)] border border-[var(--color-border)] p-2 text-start"
+                >
+                  <span className="truncate">{exercise.title}</span>
+                  <span className="shrink-0 text-xs text-[var(--color-text-muted)]">{exercise.bpm} BPM</span>
+                </button>
+              </li>
+            ))
+          )}
+        </ul>
+      </div>
+    </div>
+  )
+}
+
 /** Standalone, chrome-free touch practice screen. Mounted two ways: as
  * routes.tsx's top-level /practice/touch (client-side nav from within the
  * main app), and as touch-main.tsx's whole-page root for touch.html — a
@@ -73,6 +197,28 @@ export function TouchDrumKitPage() {
   // useful stand-alone (e.g. practicing quietly).
   const [isLocalSoundMuted, setIsLocalSoundMuted] = useState(false)
   const { containerRef: kitAreaRef, width: fitWidth } = useFitSize<HTMLDivElement>(KIT_WRAPPER_ASPECT_RATIO)
+  // A manual "back to kit" (below) only hides the current notation view
+  // locally — it doesn't disconnect or tell the desktop anything. Reset to
+  // false whenever a genuinely NEW notation push arrives (a fresh
+  // sessionId), so the next practice run auto-shows again even if the
+  // previous one was dismissed; identity-compared on sessionId rather than
+  // just "notationState went from undefined to defined", since pause/resume
+  // resend the same run's payload and shouldn't undo a dismissal.
+  const [dismissedSessionId, setDismissedSessionId] = useState<number | undefined>(undefined)
+  // Full remote control's exercise-picker sheet — local UI state, not tied
+  // to the connection itself. requestExerciseList() is fired fresh every
+  // time it opens (no caching): the desktop is the source of truth and this
+  // is cheap enough to just re-ask.
+  const [isBrowsingExercises, setIsBrowsingExercises] = useState(false)
+  // ExerciseNotationSheet wants a Map (its own established prop shape);
+  // the wire format is a plain object (Map isn't JSON-serializable, see
+  // remote-drum-protocol.ts) — converted once per actual change, not
+  // rebuilt every render, so a same-value re-render doesn't remount the
+  // colored noteheads for no reason.
+  const remoteGradedEventIds = useMemo(
+    () => new Map(Object.entries(remoteSender.notationState?.gradedEventIds ?? {})),
+    [remoteSender.notationState?.gradedEventIds],
+  )
 
   function adjustBpm(delta: number) {
     const next = Math.min(MAX_BPM, Math.max(MIN_BPM, bpm + delta))
@@ -97,6 +243,16 @@ export function TouchDrumKitPage() {
     }
   }
 
+  function handleOpenExerciseBrowser() {
+    remoteSender.requestExerciseList()
+    setIsBrowsingExercises(true)
+  }
+
+  function handleSelectExercise(exerciseId: string) {
+    remoteSender.selectExercise(exerciseId)
+    setIsBrowsingExercises(false)
+  }
+
   function handleToggleMetronome() {
     if (metronome.isPlaying) {
       metronome.stop()
@@ -108,6 +264,66 @@ export function TouchDrumKitPage() {
   function handleSubdivisionChange(next: Subdivision) {
     setSubdivision(next)
     if (metronome.isPlaying) metronome.updateSubdivision(next)
+  }
+
+  // Mirrors the desktop's own currently-playing notation (explicit user
+  // request — hands on a real e-kit, not the keyboard, so the phone becomes
+  // the display instead of the computer screen). Replaces the whole
+  // kit/metronome UI below rather than sharing the screen with it — this is
+  // a read-only companion display while a real session is running, not
+  // something the player needs to also tap during. sessionId (not just
+  // "notationState is defined") is what dismissal compares against, so
+  // pause/resume resending the same run's payload doesn't un-dismiss it,
+  // but a genuinely new practice run does.
+  const notationState = remoteSender.notationState
+  if (notationState && notationState.playbackProgress.sessionId !== dismissedSessionId) {
+    return (
+      <div className="relative flex h-svh w-full flex-col overflow-hidden bg-[var(--color-bg)] p-2 landscape:p-3">
+        <button
+          type="button"
+          onClick={() => setDismissedSessionId(notationState.playbackProgress.sessionId)}
+          aria-label="חזרה לתצוגת הקיט"
+          className="absolute start-2 top-2 z-10 flex h-11 w-11 items-center justify-center rounded-full bg-[var(--color-text-muted)] text-white shadow-[var(--shadow-card)]"
+        >
+          <X className="h-5 w-5" aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          onClick={toggleFullscreen}
+          aria-label={isFullscreen ? 'צא ממסך מלא' : 'מסך מלא'}
+          className="absolute end-2 top-2 z-10 flex h-11 w-11 items-center justify-center rounded-full bg-[var(--color-warning)] text-white shadow-[var(--shadow-card)]"
+        >
+          {isFullscreen ? <Minimize2 className="h-5 w-5" aria-hidden="true" /> : <Maximize2 className="h-5 w-5" aria-hidden="true" />}
+        </button>
+        <div className="flex flex-1 items-center overflow-y-auto pt-14">
+          <ExerciseNotationSheet
+            exercise={notationState.exercise}
+            playbackProgress={notationState.playbackProgress}
+            paused={notationState.paused}
+            gradedEventIds={remoteGradedEventIds}
+            showFill={false}
+            showBeatLabels
+            rowBreakBars={notationState.exercise.rowBreakBars}
+          />
+        </div>
+        {/* Full remote control's play/pause/stop — this view otherwise has
+            zero controls, and it's exactly the "phone propped next to the
+            real kit" scenario where reaching for the desktop isn't an
+            option. */}
+        {remoteSender.playbackStatus && remoteSender.playbackStatus.phase !== 'none' && (
+          <div className="shrink-0 pt-2">
+            <TransportBar status={remoteSender.playbackStatus} onAction={remoteSender.sendTransportCommand} />
+          </div>
+        )}
+        {isBrowsingExercises && (
+          <ExerciseBrowserSheet
+            exercises={remoteSender.exerciseList}
+            onSelect={handleSelectExercise}
+            onClose={() => setIsBrowsingExercises(false)}
+          />
+        )}
+      </div>
+    )
   }
 
   return (
@@ -251,10 +467,29 @@ export function TouchDrumKitPage() {
             >
               {isLocalSoundMuted ? <VolumeX className="h-4 w-4" aria-hidden="true" /> : <Volume2 className="h-4 w-4" aria-hidden="true" />}
             </button>
+            {/* Full remote control's exercise browser — only meaningful once
+                actually connected, same gating handlePieceHit's own
+                remoteSender.sendHit already uses. */}
+            {remoteSender.status === 'connected' && (
+              <button
+                type="button"
+                onClick={handleOpenExerciseBrowser}
+                aria-label="בחירת תרגיל מהמחשב"
+                className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--color-text-muted)] text-white"
+              >
+                <List className="h-4 w-4" aria-hidden="true" />
+              </button>
+            )}
           </div>
           <span className="text-[10px] text-[var(--color-text-muted)]">{REMOTE_STATUS_LABELS[remoteSender.status]}</span>
         </div>
       </div>
+
+      {remoteSender.playbackStatus && remoteSender.playbackStatus.phase !== 'none' && (
+        <div className="w-full shrink-0 landscape:w-auto">
+          <TransportBar status={remoteSender.playbackStatus} onAction={remoteSender.sendTransportCommand} />
+        </div>
+      )}
 
       {/* flex-1 + min-h-0/min-w-0: takes exactly whatever space is left
           after the toolbar above (min-h-0 in portrait, min-w-0 in
@@ -281,6 +516,14 @@ export function TouchDrumKitPage() {
           <DrumKit activeHits={activeHits} onPieceHit={handlePieceHit} />
         </div>
       </div>
+
+      {isBrowsingExercises && (
+        <ExerciseBrowserSheet
+          exercises={remoteSender.exerciseList}
+          onSelect={handleSelectExercise}
+          onClose={() => setIsBrowsingExercises(false)}
+        />
+      )}
     </div>
   )
 }

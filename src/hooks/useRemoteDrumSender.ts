@@ -1,8 +1,36 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { buildProductionRelayWsUrl } from '../lib/visual-trainer/remote-drum-protocol'
-import type { DrumInstrument } from '../domain'
+import { buildProductionRelayWsUrl, parseRemoteRelayMessage } from '../lib/visual-trainer/remote-drum-protocol'
+import type { ExerciseListItem, TransportCommandAction } from '../lib/visual-trainer/remote-drum-protocol'
+import type { DrumInstrument, InteractiveExercise } from '../domain'
 
 export type RemoteDrumSenderStatus = 'disconnected' | 'connecting' | 'connected' | 'error'
+
+/** The desktop's currently-playing notation, mirrored here (explicit user
+ * request — hands on a real e-kit, not the keyboard, so the phone becomes
+ * the display instead of the computer screen) — undefined whenever nothing
+ * is being mirrored right now (no session, or one this feature doesn't
+ * cover; see useVisualTrainer's own gating on the sending side). */
+export interface RemoteNotationState {
+  exercise: InteractiveExercise
+  playbackProgress: { bpm: number; sessionId: number; startOffsetMs?: number }
+  paused: boolean
+  gradedEventIds: Record<string, 'hit' | 'miss'>
+}
+
+/** Mirrors the desktop's unconditional session status (unlike
+ * RemoteNotationState, which only ever arrives for staff_cursor+MIDI runs)
+ * — drives the transport buttons regardless of display mode. undefined
+ * before the first playback_status ever arrives (or after disconnect);
+ * once received it's never cleared back to undefined, only its own `phase`
+ * field goes to 'none' — same reasoning notationState doesn't apply here:
+ * a 'none' status is itself meaningful information ("nothing is loaded"),
+ * not "no data yet". */
+export interface RemotePlaybackStatus {
+  exerciseId: string | null
+  title: string | null
+  bpm: number | null
+  phase: 'idle' | 'count-in' | 'running' | 'paused' | 'finished' | 'none'
+}
 
 export interface UseRemoteDrumSenderResult {
   status: RemoteDrumSenderStatus
@@ -13,6 +41,14 @@ export interface UseRemoteDrumSenderResult {
   connect: (relayUrl?: string) => void
   disconnect: () => void
   sendHit: (instrument: DrumInstrument) => void
+  notationState: RemoteNotationState | undefined
+  /** Full remote control (browse/select/play/pause/resume/stop) — see
+   * remote-host-context.tsx for the desktop side. */
+  exerciseList: ExerciseListItem[] | undefined
+  playbackStatus: RemotePlaybackStatus | undefined
+  requestExerciseList: () => void
+  selectExercise: (exerciseId: string) => void
+  sendTransportCommand: (action: TransportCommandAction) => void
 }
 
 /** Where the phone's remembered relay address (desktop LAN host:port,
@@ -41,6 +77,9 @@ const MAX_QUIET_RETRIES = 3
  * of quiet retries (a Wi-Fi hiccup is worth smoothing over automatically). */
 export function useRemoteDrumSender(): UseRemoteDrumSenderResult {
   const [status, setStatus] = useState<RemoteDrumSenderStatus>('disconnected')
+  const [notationState, setNotationState] = useState<RemoteNotationState | undefined>(undefined)
+  const [exerciseList, setExerciseList] = useState<ExerciseListItem[] | undefined>(undefined)
+  const [playbackStatus, setPlaybackStatus] = useState<RemotePlaybackStatus | undefined>(undefined)
   const socketRef = useRef<WebSocket | undefined>(undefined)
   const retryTimeoutIdRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const hasConnectedOnceRef = useRef(false)
@@ -70,6 +109,34 @@ export function useRemoteDrumSender(): UseRemoteDrumSenderResult {
       hasConnectedOnceRef.current = true
       retryCountRef.current = 0
       setStatus('connected')
+    }
+
+    // Receive side of the host->controller notation-mirroring direction —
+    // this hook was write-only (sendHit) before. notation_clear (or any
+    // other/malformed frame) resets to undefined rather than leaving a
+    // stale exercise showing.
+    socket.onmessage = (event) => {
+      if (typeof event.data !== 'string') return
+      const message = parseRemoteRelayMessage(event.data)
+      if (message?.type === 'notation_state') {
+        setNotationState({
+          exercise: message.exercise,
+          playbackProgress: message.playbackProgress,
+          paused: message.paused,
+          gradedEventIds: message.gradedEventIds,
+        })
+      } else if (message?.type === 'notation_clear') {
+        setNotationState(undefined)
+      } else if (message?.type === 'exercise_list') {
+        setExerciseList(message.exercises)
+      } else if (message?.type === 'playback_status') {
+        setPlaybackStatus({
+          exerciseId: message.exerciseId,
+          title: message.title,
+          bpm: message.bpm,
+          phase: message.phase,
+        })
+      }
     }
 
     socket.onclose = () => {
@@ -108,6 +175,11 @@ export function useRemoteDrumSender(): UseRemoteDrumSenderResult {
     socketRef.current?.close()
     socketRef.current = undefined
     setStatus('disconnected')
+    // A manual disconnect shouldn't leave a stale previous session's
+    // notation/list/status showing if this phone reconnects later.
+    setNotationState(undefined)
+    setExerciseList(undefined)
+    setPlaybackStatus(undefined)
   }, [clearRetryTimeout])
 
   const sendHit = useCallback((instrument: DrumInstrument) => {
@@ -116,5 +188,34 @@ export function useRemoteDrumSender(): UseRemoteDrumSenderResult {
     socket.send(JSON.stringify({ type: 'hit', instrument }))
   }, [])
 
-  return { status, connect, disconnect, sendHit }
+  const requestExerciseList = useCallback(() => {
+    const socket = socketRef.current
+    if (!socket || socket.readyState !== WebSocket.OPEN) return
+    socket.send(JSON.stringify({ type: 'request_exercise_list' }))
+  }, [])
+
+  const selectExercise = useCallback((exerciseId: string) => {
+    const socket = socketRef.current
+    if (!socket || socket.readyState !== WebSocket.OPEN) return
+    socket.send(JSON.stringify({ type: 'select_exercise', exerciseId }))
+  }, [])
+
+  const sendTransportCommand = useCallback((action: TransportCommandAction) => {
+    const socket = socketRef.current
+    if (!socket || socket.readyState !== WebSocket.OPEN) return
+    socket.send(JSON.stringify({ type: 'transport_command', action }))
+  }, [])
+
+  return {
+    status,
+    connect,
+    disconnect,
+    sendHit,
+    notationState,
+    exerciseList,
+    playbackStatus,
+    requestExerciseList,
+    selectExercise,
+    sendTransportCommand,
+  }
 }

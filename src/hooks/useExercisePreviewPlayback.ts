@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { calculateBarDurationMs } from '../domain/calculations/event-timing'
 import { ExercisePlaybackEngine } from '../lib/visual-trainer/exercise-playback-engine'
 import { playDrumSound } from '../lib/visual-trainer/drum-synth'
+import { markHit } from '../lib/visual-trainer/active-hits'
 import { useRemoteDrumInput } from './useRemoteDrumInput'
 import type { RemoteDrumInputStatus } from './useRemoteDrumInput'
 import { createId } from '../domain'
@@ -115,7 +116,7 @@ export function useExercisePreviewPlayback(exercise: InteractiveExercise | undef
         const delayMs = Math.max(0, (audioTimeSeconds - audioContext.currentTime) * 1000)
         const timeoutId = setTimeout(() => {
           hitTimeoutIdsRef.current.delete(timeoutId)
-          setActiveHits((current) => ({ ...current, [event.instrument]: createId() }))
+          setActiveHits((current) => markHit(current, event.instrument, createId()))
           setHighlightedEventIds((current) => new Set(current).add(event.id))
 
           const unhighlightTimeoutId = setTimeout(() => {
@@ -142,10 +143,10 @@ export function useExercisePreviewPlayback(exercise: InteractiveExercise | undef
   function handlePhoneHit(instrument: DrumInstrument) {
     const { audioContext, outputNode } = ensureAudio()
     playDrumSound(audioContext, outputNode, audioContext.currentTime, instrument, PHONE_HIT_VELOCITY)
-    setActiveHits((current) => ({ ...current, [instrument]: createId() }))
+    setActiveHits((current) => markHit(current, instrument, createId()))
   }
 
-  const remoteStatus = useRemoteDrumInput({ enabled: isPhoneControlEnabled, onHit: handlePhoneHit })
+  const { status: remoteStatus } = useRemoteDrumInput({ enabled: isPhoneControlEnabled, onHit: handlePhoneHit })
 
   function togglePhoneControl() {
     setIsPhoneControlEnabled((current) => {

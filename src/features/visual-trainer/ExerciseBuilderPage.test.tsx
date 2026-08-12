@@ -93,7 +93,7 @@ describe('ExerciseBuilderPage', () => {
     expect(screen.getAllByRole('button', { name: /בס דראם תיבה/ })).toHaveLength(16)
   })
 
-  it('toggles a cell on click and reflects it via aria-pressed', async () => {
+  it('cycles a cell through empty -> normal -> accent -> empty on repeated clicks', async () => {
     renderPage()
     const user = userEvent.setup()
     await user.type(screen.getByLabelText('שם התרגיל'), 'התרגיל שלי')
@@ -102,11 +102,20 @@ describe('ExerciseBuilderPage', () => {
     const firstKickCell = screen.getAllByRole('button', { name: /בס דראם תיבה/ })[0]!
     expect(firstKickCell).toHaveAttribute('aria-pressed', 'false')
 
+    // Click 1: empty -> normal note.
     await user.click(firstKickCell)
     expect(firstKickCell).toHaveAttribute('aria-pressed', 'true')
+    expect(firstKickCell.getAttribute('aria-label')).not.toMatch(/אקצנט/)
 
+    // Click 2: normal -> accented.
+    await user.click(firstKickCell)
+    expect(firstKickCell).toHaveAttribute('aria-pressed', 'true')
+    expect(firstKickCell.getAttribute('aria-label')).toMatch(/אקצנט/)
+
+    // Click 3: accented -> empty again.
     await user.click(firstKickCell)
     expect(firstKickCell).toHaveAttribute('aria-pressed', 'false')
+    expect(firstKickCell.getAttribute('aria-label')).not.toMatch(/אקצנט/)
   })
 
   it('shows a validation error when saving with no notes placed', async () => {
@@ -135,6 +144,29 @@ describe('ExerciseBuilderPage', () => {
     expect(saved.title).toBe('התרגיל שלי')
     expect(saved.events).toHaveLength(1)
     expect(saved.events[0]).toMatchObject({ bar: 1, beat: 1, subdivisionIndex: 0, instrument: 'kick' })
+  })
+
+  it('saves an accented cell with accent:true, and a plain cell with accent left unset', async () => {
+    renderPage()
+    const user = userEvent.setup()
+    await user.type(screen.getByLabelText('שם התרגיל'), 'התרגיל שלי')
+    await user.click(screen.getByRole('button', { name: 'המשך לעריכת התווים' }))
+
+    const kickCells = screen.getAllByRole('button', { name: /בס דראם תיבה/ })
+    // First cell: click twice -> accented. Second cell: click once -> plain.
+    await user.click(kickCells[0]!)
+    await user.click(kickCells[0]!)
+    await user.click(kickCells[1]!)
+    await user.click(screen.getByRole('button', { name: 'שמירה והתחלת תרגול' }))
+
+    await waitFor(async () => expect(await db.interactiveExercises.count()).toBe(1))
+    const saved = (await db.interactiveExercises.toArray())[0]!
+    expect(saved.events).toHaveLength(2)
+    const accentedEvent = saved.events.find((event) => event.subdivisionIndex === 0 && event.beat === 1)!
+    const plainEvent = saved.events.find((event) => event !== accentedEvent)!
+    expect(accentedEvent.accent).toBe(true)
+    expect(accentedEvent.velocity).toBe(100)
+    expect(plainEvent.accent).toBeUndefined()
   })
 
   it('seeking via the ruler moves the cursor without auto-starting playback', async () => {
@@ -237,6 +269,35 @@ describe('ExerciseBuilderPage', () => {
     const firstKickCell = await screen.findAllByRole('button', { name: /בס דראם תיבה 1 פעימה 1\.1/ })
     expect(firstKickCell[0]).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByRole('heading', { name: /עריכת תרגיל — תרגיל קיים/ })).toBeInTheDocument()
+  })
+
+  it('edit mode round-trips an accented note: loaded showing accented, and re-saves as accent:true', async () => {
+    const existing = await interactiveExerciseRepository.create({
+      title: 'תרגיל עם אקצנט',
+      difficulty: 'intermediate',
+      bpm: 110,
+      minBpm: 80,
+      maxBpm: 160,
+      timeSignature: { numerator: 4, denominator: 4 },
+      subdivision: 'quarter',
+      bars: 1,
+      loopCount: 2,
+      displayMode: 'note_highway',
+      events: [{ id: createId(), bar: 1, beat: 1, subdivisionIndex: 0, instrument: 'kick', velocity: 100, accent: true }],
+    })
+
+    renderEditPage(existing.id)
+    const user = userEvent.setup()
+
+    const firstKickCell = (await screen.findAllByRole('button', { name: /בס דראם תיבה 1 פעימה 1\.1/ }))[0]!
+    expect(firstKickCell).toHaveAttribute('aria-pressed', 'true')
+    expect(firstKickCell.getAttribute('aria-label')).toMatch(/אקצנט/)
+
+    await user.click(screen.getByRole('button', { name: 'שמירה והתחלת תרגול' }))
+
+    await waitFor(async () => expect((await db.interactiveExercises.toArray())[0]?.id).toBe(existing.id))
+    const saved = (await db.interactiveExercises.toArray())[0]!
+    expect(saved.events[0]?.accent).toBe(true)
   })
 
   it('edit mode saves via patch, keeping the same exercise id', async () => {

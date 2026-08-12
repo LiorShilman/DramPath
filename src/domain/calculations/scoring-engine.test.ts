@@ -1,8 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { calculateAccuracy, calculateAverageTimingError, calculateCombo } from './scoring-engine'
-import type { ExtraHitEvent, HitGrade, HitResult } from '../hit-result'
+import { calculateAccuracy, calculateAverageTimingError, calculateCombo, summarizeDynamics } from './scoring-engine'
+import type { DynamicsGrade, ExtraHitEvent, HitGrade, HitResult } from '../hit-result'
 
-function makeHit(grade: HitGrade, expectedTimeMs: number, timingErrorMs?: number): HitResult {
+function makeHit(
+  grade: HitGrade,
+  expectedTimeMs: number,
+  timingErrorMs?: number,
+  dynamics?: { actualVelocity: number; dynamicsGrade?: DynamicsGrade },
+): HitResult {
   return {
     id: `hit-${expectedTimeMs}`,
     expectedEventId: `event-${expectedTimeMs}`,
@@ -10,6 +15,8 @@ function makeHit(grade: HitGrade, expectedTimeMs: number, timingErrorMs?: number
     expectedTimeMs,
     grade,
     timingErrorMs,
+    actualVelocity: dynamics?.actualVelocity,
+    dynamicsGrade: dynamics?.dynamicsGrade,
   }
 }
 
@@ -88,5 +95,26 @@ describe('calculateAverageTimingError', () => {
   it('returns undefined when every hit is a miss', () => {
     const hitResults = [makeHit('miss', 1), makeHit('miss', 2)]
     expect(calculateAverageTimingError(hitResults)).toBeUndefined()
+  })
+})
+
+describe('summarizeDynamics', () => {
+  it('excludes hits with no actualVelocity (keyboard/phone input)', () => {
+    const hitResults = [makeHit('perfect', 1), makeHit('perfect', 2, undefined, { actualVelocity: 100 })]
+    expect(summarizeDynamics(hitResults).points).toHaveLength(1)
+  })
+
+  it('includes a non-accented MIDI hit with dynamicsGrade undefined', () => {
+    const hitResults = [makeHit('perfect', 1, undefined, { actualVelocity: 90 })]
+    expect(summarizeDynamics(hitResults).points).toEqual([{ hitId: 'hit-1', actualVelocity: 90, dynamicsGrade: undefined }])
+  })
+
+  it('includes an accented MIDI hit with its dynamicsGrade', () => {
+    const hitResults = [makeHit('perfect', 1, undefined, { actualVelocity: 120, dynamicsGrade: 'correct' })]
+    expect(summarizeDynamics(hitResults).points).toEqual([{ hitId: 'hit-1', actualVelocity: 120, dynamicsGrade: 'correct' }])
+  })
+
+  it('returns an empty points array for empty input', () => {
+    expect(summarizeDynamics([])).toEqual({ points: [] })
   })
 })

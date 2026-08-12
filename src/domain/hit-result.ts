@@ -6,6 +6,18 @@ import { drumInstrumentSchema } from './interactive-exercise'
 export const hitGradeSchema = z.enum(['perfect', 'early', 'late', 'miss'])
 export type HitGrade = z.infer<typeof hitGradeSchema>
 
+// Whether an accented note was actually struck harder than its own
+// authored velocity (see hit-matcher.ts's gradeDynamics/ACCENT_VELOCITY_MARGIN)
+// — kept as its own parallel schema rather than added to hitGradeSchema,
+// since that's a closed enum consumed by exhaustive Record<HitGrade,...>
+// maps elsewhere (HitFeedback.tsx, SessionResults.tsx) that have nothing
+// to do with dynamics. Only ever set for a real MIDI hit (the only input
+// source with genuine per-hit velocity) matched against an accented event
+// — undefined for every other case (keyboard/phone hits, non-accented
+// notes, misses).
+export const dynamicsGradeSchema = z.enum(['correct', 'too-soft'])
+export type DynamicsGrade = z.infer<typeof dynamicsGradeSchema>
+
 // A hit tied to a real DrumNoteEvent — expectedEventId always refers to one.
 export const hitResultSchema = z.object({
   id: uuidSchema,
@@ -15,6 +27,13 @@ export const hitResultSchema = z.object({
   actualTimeMs: z.number().nonnegative().optional(),
   timingErrorMs: z.number().optional(),
   grade: hitGradeSchema,
+  // The real MIDI velocity (0-127) of the strike that produced this hit —
+  // undefined for keyboard/phone input, which have no genuine per-hit
+  // velocity. Set regardless of whether the matched event was accented
+  // (feeds the post-session velocity-consistency graph); dynamicsGrade
+  // below is the narrower "was this specific accent hit hard enough" signal.
+  actualVelocity: z.number().int().min(0).max(127).optional(),
+  dynamicsGrade: dynamicsGradeSchema.optional(),
 })
 export type HitResult = z.infer<typeof hitResultSchema>
 

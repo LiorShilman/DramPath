@@ -1,6 +1,6 @@
 import { Badge, Card } from '../ui'
 import type { BadgeVariant } from '../ui'
-import type { HitGrade, ScoringSummary } from '../../domain'
+import type { DynamicsGrade, HitGrade, ScoringSummary } from '../../domain'
 import type { ReactNode } from 'react'
 
 export type HitFeedbackGrade = HitGrade | 'extra'
@@ -21,8 +21,23 @@ const GRADE_VARIANTS: Record<HitFeedbackGrade, BadgeVariant> = {
   extra: 'danger',
 }
 
+// Dynamics (MIDI-only, see useVisualTrainer's lastDynamicsGrade doc
+// comment) — a separate badge from the timing grade above, not merged
+// into GRADE_LABELS/HitFeedbackGrade, since it answers a different
+// question ("hit hard enough") and is only ever present for a subset of
+// hits (accented notes struck via a real e-kit).
+const DYNAMICS_GRADE_LABELS: Record<DynamicsGrade, string> = {
+  correct: 'אקצנט מדויק',
+  'too-soft': 'אקצנט רך מדי',
+}
+const DYNAMICS_GRADE_VARIANTS: Record<DynamicsGrade, BadgeVariant> = {
+  correct: 'success',
+  'too-soft': 'warning',
+}
+
 export interface HitFeedbackProps {
   lastGrade: HitFeedbackGrade | undefined
+  lastDynamicsGrade: DynamicsGrade | undefined
   scoring: ScoringSummary
 }
 
@@ -41,7 +56,7 @@ function CompactStat({ label, value }: { label: string; value: ReactNode }) {
 
 /** VISUAL_DRUM_TRAINER_SPEC.md §5's feedback area — Perfect/Early/Late/Miss,
  * Combo, Accuracy, and Timing Error. */
-export function HitFeedback({ lastGrade, scoring }: HitFeedbackProps) {
+export function HitFeedback({ lastGrade, lastDynamicsGrade, scoring }: HitFeedbackProps) {
   return (
     <div className="flex flex-col gap-1.5">
       {/* Always reserved (even empty) at a fixed height — letting this row
@@ -50,8 +65,11 @@ export function HitFeedback({ lastGrade, scoring }: HitFeedbackProps) {
           newly appear despite fitting perfectly at idle. A fixed h-6 (not
           the original h-8) keeps that growth from ever happening while
           still being smaller than before. */}
-      <div className="flex h-6 items-center">
+      <div className="flex h-6 items-center gap-1.5">
         {lastGrade && <Badge variant={GRADE_VARIANTS[lastGrade]}>{GRADE_LABELS[lastGrade]}</Badge>}
+        {lastDynamicsGrade && (
+          <Badge variant={DYNAMICS_GRADE_VARIANTS[lastDynamicsGrade]}>{DYNAMICS_GRADE_LABELS[lastDynamicsGrade]}</Badge>
+        )}
       </div>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <CompactStat label="דיוק" value={`${Math.round(scoring.accuracyPercent)}%`} />

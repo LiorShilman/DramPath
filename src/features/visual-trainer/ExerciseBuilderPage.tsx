@@ -69,20 +69,31 @@ function cellKey(step: Step, instrument: DrumInstrument): string {
   return `${step.bar}-${step.beat}-${step.subdivisionIndex}-${instrument}`
 }
 
-function buildEvents(steps: Step[], activeCells: Set<string>): DrumNoteEvent[] {
+// A cell cycles through 3 states on click (see toggleCell) — absent from
+// the map means empty, so only 'normal'/'accent' need representing here.
+type CellState = 'normal' | 'accent'
+
+function buildEvents(steps: Step[], cellStates: Map<string, CellState>): DrumNoteEvent[] {
   const events: DrumNoteEvent[] = []
   for (const step of steps) {
     for (const instrument of LANE_ORDER) {
-      if (activeCells.has(cellKey(step, instrument))) {
-        events.push({
-          id: createId(),
-          bar: step.bar,
-          beat: step.beat,
-          subdivisionIndex: step.subdivisionIndex,
-          instrument,
-          velocity: NOTE_VELOCITY,
-        })
-      }
+      const state = cellStates.get(cellKey(step, instrument))
+      if (state === undefined) continue
+      events.push({
+        id: createId(),
+        bar: step.bar,
+        beat: step.beat,
+        subdivisionIndex: step.subdivisionIndex,
+        instrument,
+        // Deliberately the same NOTE_VELOCITY as a normal note, not a
+        // higher one — accent is a separate boolean signal (matching the
+        // rest of this codebase's flat-velocity convention), and the
+        // dynamics-grading margin (hit-matcher.ts's
+        // ACCENT_VELOCITY_MARGIN) is defined as a boost *over* this same
+        // baseline, not over some separately-authored "accent velocity".
+        velocity: NOTE_VELOCITY,
+        accent: state === 'accent' ? true : undefined,
+      })
     }
   }
   return events
@@ -125,7 +136,7 @@ export function ExerciseBuilderPage() {
   const isEditing = Boolean(exerciseId)
   const [setup, setSetup] = useState<Setup>(DEFAULT_SETUP)
   const [gridStarted, setGridStarted] = useState(false)
-  const [activeCells, setActiveCells] = useState<Set<string>>(new Set())
+  const [cellStates, setCellStates] = useState<Map<string, CellState>>(new Map())
   const [beamCymbals, setBeamCymbals] = useState(false)
   // How the real practice runner (VisualTrainerPage) shows this exercise —
   // falling rectangles (the original mode) or real notation with a moving
@@ -202,7 +213,9 @@ export function ExerciseBuilderPage() {
       if (cancelled) return
       if (found) {
         setSetup(setupFromExercise(found))
-        setActiveCells(new Set(found.events.map((event) => cellKey(event, event.instrument))))
+        setCellStates(
+          new Map(found.events.map((event) => [cellKey(event, event.instrument), event.accent ? 'accent' : 'normal'])),
+        )
         setBeamCymbals(found.beamCymbals ?? false)
         setDisplayMode(found.displayMode)
         // Only round-trips a *periodic* saved list (bar 1 + a constant
@@ -260,7 +273,7 @@ export function ExerciseBuilderPage() {
   // the graded runner, then unmounted from there per the user — but it's a
   // pure display of exactly the same STAFF_POSITION mapping they specced,
   // so it's a natural fit for previewing a pattern while building it here.
-  const previewEvents = useMemo(() => buildEvents(steps, activeCells), [steps, activeCells])
+  const previewEvents = useMemo(() => buildEvents(steps, cellStates), [steps, cellStates])
   const previewExercise = useMemo(
     () => ({
       events: previewEvents,
@@ -441,25 +454,33 @@ export function ExerciseBuilderPage() {
     [steps, visibleStepRange],
   )
 
-  function playPreview(instrument: DrumInstrument) {
+  function playPreview(instrument: DrumInstrument, accent = false) {
     if (!audioContextRef.current) {
       audioContextRef.current = new AudioContext()
       outputNodeRef.current = audioContextRef.current.createGain()
       outputNodeRef.current.connect(audioContextRef.current.destination)
     }
     void audioContextRef.current.resume()
-    playDrumSound(audioContextRef.current, outputNodeRef.current!, audioContextRef.current.currentTime, instrument, NOTE_VELOCITY)
+    playDrumSound(audioContextRef.current, outputNodeRef.current!, audioContextRef.current.currentTime, instrument, NOTE_VELOCITY, accent)
   }
 
+  // Empty → 'normal' (a plain note) → 'accent' → empty again. A 3-state
+  // cycle on the same click target, not a second control: cells are only
+  // 32×32px and there's no existing modifier-key/secondary-click pattern
+  // in this codebase to reuse for a separate accent toggle.
   function toggleCell(step: Step, instrument: DrumInstrument) {
     const key = cellKey(step, instrument)
-    setActiveCells((current) => {
-      const next = new Set(current)
-      if (next.has(key)) {
-        next.delete(key)
-      } else {
-        next.add(key)
+    setCellStates((current) => {
+      const next = new Map(current)
+      const state = next.get(key)
+      if (state === undefined) {
+        next.set(key, 'normal')
         playPreview(instrument)
+      } else if (state === 'normal') {
+        next.set(key, 'accent')
+        playPreview(instrument, true)
+      } else {
+        next.delete(key)
       }
       return next
     })
@@ -470,13 +491,13 @@ export function ExerciseBuilderPage() {
       setSaveError('צריך לתת שם לתרגיל.')
       return
     }
-    if (activeCells.size === 0) {
+    if (cellStates.size === 0) {
       setSaveError('צריך למקם לפחות תו אחד.')
       return
     }
     setSaveError(null)
 
-    const events = buildEvents(steps, activeCells)
+    const events = buildEvents(steps, cellStates)
 
     const fields = {
       title: setup.title.trim(),
@@ -746,7 +767,9 @@ export function ExerciseBuilderPage() {
                   </div>
                   {visibleSteps.map(({ step, stepIndex }) => {
                     const key = cellKey(step, instrument)
-                    const isActive = activeCells.has(key)
+                    const state = cellStates.get(key)
+                    const isActive = state !== undefined
+                    const isAccented = state === 'accent'
                     const isBarStart = step.beat === 1 && step.subdivisionIndex === 0
                     const isBeatStart = step.subdivisionIndex === 0
                     const isPlayingNow = stepIndex === cursorStepIndex
@@ -761,17 +784,28 @@ export function ExerciseBuilderPage() {
                         <button
                           type="button"
                           onClick={() => toggleCell(step, instrument)}
-                          aria-label={`${INSTRUMENT_LABELS[instrument]} תיבה ${step.bar} פעימה ${step.beat}.${step.subdivisionIndex + 1}`}
+                          aria-label={`${INSTRUMENT_LABELS[instrument]} תיבה ${step.bar} פעימה ${step.beat}.${step.subdivisionIndex + 1}${isAccented ? ' (אקצנט)' : ''}`}
                           aria-pressed={isActive}
-                          className={`flex h-8 w-8 items-center justify-center border font-bold transition-shadow ${
+                          className={`relative flex h-8 w-8 items-center justify-center border font-bold transition-shadow ${
                             isCymbal ? 'rounded-[var(--radius-card)]' : 'rounded-full'
                           } ${
                             isActive
-                              ? 'border-[var(--color-primary)] bg-[var(--color-primary)] text-white'
+                              ? `bg-[var(--color-primary)] text-white ${isAccented ? 'border-2 border-[var(--color-primary)]' : 'border-[var(--color-primary)]'}`
                               : 'border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-muted)] hover:bg-[var(--color-surface-raised)]'
                           } ${isPlayingNow && isActive ? 'ring-2 ring-offset-1 ring-[var(--color-warning-text)]' : ''}`}
                         >
                           {isCymbal ? '✕' : ''}
+                          {/* Matches ExerciseNotationSheet.tsx's own accent
+                              glyph for visual consistency. Plain white, not
+                              --color-warning-text: that color's already used
+                              by the now-playing ring above, and reusing it
+                              here would make an accented cell mid-playback
+                              ambiguous about which signal is which. */}
+                          {isAccented && (
+                            <span aria-hidden="true" className="absolute -top-1 -end-1 text-[10px] leading-none text-white">
+                              &gt;
+                            </span>
+                          )}
                         </button>
                       </div>
                     )

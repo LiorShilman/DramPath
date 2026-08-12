@@ -1,0 +1,51 @@
+import { createContext, useContext } from 'react'
+import type { NotationStatePayload, PlaybackStatusPayload, RemoteDrumInputStatus } from '../../hooks/useRemoteDrumInput'
+import type { DrumInstrument } from '../../domain'
+
+/** What a mounted useVisualTrainer instance registers with
+ * RemoteHostProvider so inbound phone commands (a hit, or a
+ * transport_command) reach the actual practice session currently on
+ * screen. Exactly one of these is ever registered at a time — only one
+ * VisualTrainerRunner is ever mounted. */
+export interface RemoteSession {
+  handleHit: (instrument: DrumInstrument, hitTimeMs: number) => void
+  start: () => void
+  pause: () => void
+  resume: () => void
+  stop: () => void
+}
+
+export interface RemoteHostContextValue {
+  status: RemoteDrumInputStatus
+  /** Phone-as-remote-controller (ADR 0007) — off by default, persisted
+   * across sessions. Owned by RemoteHostProvider (not useVisualTrainer) so
+   * the connection exists for the whole app, not just while a practice page
+   * is mounted — required for exercise-list browsing to work before any
+   * exercise is even open, and a side effect worth knowing: the WS now
+   * stays open everywhere (dashboard, lessons, settings) whenever this is
+   * on, not just mid-run. */
+  isEnabled: boolean
+  toggleEnabled: () => void
+  sendNotationState: (state: NotationStatePayload | null) => void
+  sendPlaybackStatus: (status: PlaybackStatusPayload) => void
+  /** Called by useVisualTrainer on mount (and whenever its callbacks'
+   * identities change); returns an unregister function. The unregister
+   * function only clears the slot if it's still the registration that
+   * created it (same identity-guard pattern as useRemoteDrumInput's own
+   * socketRef) — a late cleanup from an already-superseded registration
+   * must not wipe out a newer one. */
+  registerSession: (session: RemoteSession) => () => void
+}
+
+// Kept in its own (non-.tsx) file, separate from RemoteHostProvider.tsx's
+// actual component — react-refresh/only-export-components requires a file
+// to export only components, so the context object/hook (not components)
+// live here instead, same reasoning lazy-pages.tsx's own doc comment
+// already documents for that file's split.
+export const RemoteHostContext = createContext<RemoteHostContextValue | undefined>(undefined)
+
+export function useRemoteHost(): RemoteHostContextValue {
+  const context = useContext(RemoteHostContext)
+  if (!context) throw new Error('useRemoteHost must be used within a RemoteHostProvider')
+  return context
+}

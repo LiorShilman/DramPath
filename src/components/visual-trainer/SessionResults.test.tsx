@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { SessionResults } from './SessionResults'
-import type { ScoringSummary } from '../../domain'
+import type { DynamicsSummary, ScoringSummary } from '../../domain'
 import type { GradeCounts } from '../../hooks/useVisualTrainer'
 
 const SCORING: ScoringSummary = {
@@ -13,6 +13,7 @@ const SCORING: ScoringSummary = {
 }
 
 const GRADE_COUNTS: GradeCounts = { perfect: 4, early: 1, late: 1, miss: 2, extra: 0 }
+const NO_DYNAMICS: DynamicsSummary = { points: [] }
 
 describe('SessionResults', () => {
   it('shows the exercise title and rounded stats', () => {
@@ -21,6 +22,7 @@ describe('SessionResults', () => {
         exerciseTitle="מקצב Rock בסיסי"
         scoring={SCORING}
         gradeCounts={GRADE_COUNTS}
+        dynamicsSummary={NO_DYNAMICS}
         onRestart={vi.fn()}
         onExit={vi.fn()}
       />,
@@ -37,6 +39,7 @@ describe('SessionResults', () => {
         exerciseTitle="x"
         scoring={SCORING}
         gradeCounts={GRADE_COUNTS}
+        dynamicsSummary={NO_DYNAMICS}
         onRestart={vi.fn()}
         onExit={vi.fn()}
       />,
@@ -50,7 +53,14 @@ describe('SessionResults', () => {
     const onExit = vi.fn()
     const user = userEvent.setup()
     render(
-      <SessionResults exerciseTitle="x" scoring={SCORING} gradeCounts={GRADE_COUNTS} onRestart={onRestart} onExit={onExit} />,
+      <SessionResults
+        exerciseTitle="x"
+        scoring={SCORING}
+        gradeCounts={GRADE_COUNTS}
+        dynamicsSummary={NO_DYNAMICS}
+        onRestart={onRestart}
+        onExit={onExit}
+      />,
     )
 
     await user.click(screen.getByRole('button', { name: 'תרגול נוסף' }))
@@ -58,5 +68,41 @@ describe('SessionResults', () => {
 
     await user.click(screen.getByRole('button', { name: 'חזרה לרשימת התרגילים' }))
     expect(onExit).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows no velocity-consistency chart when no hit carried real MIDI data', () => {
+    render(
+      <SessionResults
+        exerciseTitle="x"
+        scoring={SCORING}
+        gradeCounts={GRADE_COUNTS}
+        dynamicsSummary={NO_DYNAMICS}
+        onRestart={vi.fn()}
+        onExit={vi.fn()}
+      />,
+    )
+    expect(screen.queryByTestId('dynamics-chart')).not.toBeInTheDocument()
+    expect(screen.queryByText('עקביות דינמיקה (מהירות הקשה)')).not.toBeInTheDocument()
+  })
+
+  it('shows the velocity-consistency chart when at least one hit carried real MIDI data', () => {
+    const dynamicsSummary: DynamicsSummary = {
+      points: [
+        { hitId: 'a', actualVelocity: 100, dynamicsGrade: undefined },
+        { hitId: 'b', actualVelocity: 120, dynamicsGrade: 'correct' },
+      ],
+    }
+    render(
+      <SessionResults
+        exerciseTitle="x"
+        scoring={SCORING}
+        gradeCounts={GRADE_COUNTS}
+        dynamicsSummary={dynamicsSummary}
+        onRestart={vi.fn()}
+        onExit={vi.fn()}
+      />,
+    )
+    expect(screen.getByTestId('dynamics-chart')).toBeInTheDocument()
+    expect(screen.getByText('עקביות דינמיקה (מהירות הקשה)')).toBeInTheDocument()
   })
 })

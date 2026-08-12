@@ -1,5 +1,5 @@
 import type { DrumInstrument, InteractiveExerciseDifficulty } from '../interactive-exercise'
-import type { HitGrade } from '../hit-result'
+import type { DynamicsGrade, HitGrade } from '../hit-result'
 
 // VISUAL_DRUM_TRAINER_SPEC.md §11 — grading windows by difficulty.
 export interface GradingThresholds {
@@ -21,11 +21,20 @@ export interface PendingDrumEvent {
   eventId: string
   instrument: DrumInstrument
   expectedTimeMs: number
+  // The matched DrumNoteEvent's own authored velocity/accent, carried
+  // through so a real (MIDI) hit can be graded on dynamics, not just
+  // timing — see gradeDynamics below. accent is normalized to a plain
+  // boolean here (DrumNoteEvent.accent is optional) so callers never have
+  // to handle a third undefined state.
+  velocity: number
+  accent: boolean
 }
 
 export interface MatchedHit {
   eventId: string
   timingErrorMs: number
+  velocity: number
+  accent: boolean
 }
 
 // §11 steps 1-4: among still-unanswered events for the pressed instrument,
@@ -54,7 +63,12 @@ export function findMatchingEvent(
   }
 
   if (!nearest || nearestAbsError > thresholds.hitMs) return undefined
-  return { eventId: nearest.eventId, timingErrorMs: hitTimeMs - nearest.expectedTimeMs }
+  return {
+    eventId: nearest.eventId,
+    timingErrorMs: hitTimeMs - nearest.expectedTimeMs,
+    velocity: nearest.velocity,
+    accent: nearest.accent,
+  }
 }
 
 // Grades a hit already known to be a match (within the hit window) — never
@@ -65,6 +79,24 @@ export function gradeTimingError(
 ): Exclude<HitGrade, 'miss'> {
   if (Math.abs(timingErrorMs) <= thresholds.perfectMs) return 'perfect'
   return timingErrorMs < 0 ? 'early' : 'late'
+}
+
+// A drummer's own repeated strikes at the same intended dynamic vary by
+// roughly ±10-15 (out of MIDI's 0-127 velocity range) from kit
+// sensitivity/motor noise alone; a real accent typically adds 20-40+ over
+// the surrounding baseline. 15 sits just above that noise floor (a
+// same-dynamic re-hit essentially never accidentally clears it) while
+// staying well below what a real accent produces, so a genuine accent
+// isn't graded too-soft on a technicality. Not scaled per
+// InteractiveExerciseDifficulty like GRADING_THRESHOLDS — striking force
+// is a motor-control concept, not a rhythmic-complexity one.
+export const ACCENT_VELOCITY_MARGIN = 15
+
+// Only meaningful for a matched event with accent:true and a real
+// actualVelocity (MIDI-only) — callers gate on both before calling this;
+// it stays a pure two-number comparison, same shape as gradeTimingError.
+export function gradeDynamics(eventVelocity: number, actualVelocity: number): DynamicsGrade {
+  return actualVelocity >= eventVelocity + ACCENT_VELOCITY_MARGIN ? 'correct' : 'too-soft'
 }
 
 // §11 step 6: pending events whose hit window has fully elapsed with no

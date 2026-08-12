@@ -6,7 +6,11 @@ export type MidiDrumInputStatus = 'disabled' | 'unsupported' | 'requesting' | 'n
 
 export interface UseMidiDrumInputOptions {
   enabled: boolean
-  onHit: (instrument: DrumInstrument, hitTimeMs: number) => void
+  /** velocity is the real MIDI byte (1-127, 0 is filtered out as a
+   * note-off — see handleMessage below) — the only input source in this
+   * app with genuine per-hit strike force, used for dynamics/accent
+   * grading (see hit-matcher.ts's gradeDynamics). */
+  onHit: (instrument: DrumInstrument, hitTimeMs: number, velocity: number) => void
 }
 
 const NOTE_ON = 0x90
@@ -67,7 +71,7 @@ export function useMidiDrumInput({ enabled, onHit }: UseMidiDrumInputOptions): M
 
       const instrument = MIDI_NOTE_TO_INSTRUMENT[note]
       if (!instrument) return
-      onHitRef.current(instrument, performance.now())
+      onHitRef.current(instrument, performance.now(), velocity)
     }
 
     function attach(access: MIDIAccess) {

@@ -1,4 +1,4 @@
-import type { HitResult, ExtraHitEvent } from '../hit-result'
+import type { DynamicsGrade, HitResult, ExtraHitEvent } from '../hit-result'
 
 // VISUAL_DRUM_TRAINER_SPEC.md §2/§5 — the spec names Accuracy/Combo/Timing
 // Error as feedback metrics but doesn't give exact formulas; these were
@@ -80,4 +80,30 @@ export function summarizeScoring(
     bestCombo: combo.best,
     averageTimingErrorMs: calculateAverageTimingError(hitResults),
   }
+}
+
+export interface DynamicsDataPoint {
+  hitId: string
+  actualVelocity: number
+  dynamicsGrade: DynamicsGrade | undefined
+}
+
+export interface DynamicsSummary {
+  points: DynamicsDataPoint[]
+}
+
+// Every hit that carried real MIDI velocity data, in the order they were
+// recorded — the post-session velocity-consistency graph's data source.
+// dynamicsGrade is only populated for the subset that were accented notes
+// (see hit-matcher.ts's gradeDynamics); a plain (non-accented) hit still
+// contributes its velocity point, just uncolored by correctness.
+export function summarizeDynamics(hitResults: HitResult[]): DynamicsSummary {
+  const points = hitResults
+    .filter((result) => result.actualVelocity !== undefined)
+    .map((result) => ({
+      hitId: result.id,
+      actualVelocity: result.actualVelocity!,
+      dynamicsGrade: result.dynamicsGrade,
+    }))
+  return { points }
 }

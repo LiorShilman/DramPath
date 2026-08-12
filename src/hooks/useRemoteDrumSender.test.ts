@@ -2,6 +2,28 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, renderHook } from '@testing-library/react'
 import { REMOTE_RELAY_URL_STORAGE_KEY, useRemoteDrumSender } from './useRemoteDrumSender'
 import { PRODUCTION_RELAY_PORT } from '../lib/visual-trainer/remote-drum-protocol'
+import { createId, nowIso } from '../domain'
+import type { InteractiveExercise } from '../domain'
+
+function makeExercise(): InteractiveExercise {
+  const now = nowIso()
+  return {
+    id: createId(),
+    title: 'test exercise',
+    difficulty: 'beginner',
+    bpm: 100,
+    minBpm: 60,
+    maxBpm: 160,
+    timeSignature: { numerator: 4, denominator: 4 },
+    subdivision: 'quarter',
+    bars: 1,
+    loopCount: 1,
+    displayMode: 'staff_cursor',
+    events: [{ id: createId(), bar: 1, beat: 1, subdivisionIndex: 0, instrument: 'kick', velocity: 100 }],
+    createdAt: now,
+    updatedAt: now,
+  }
+}
 
 // Same hand-rolled test-double technique as useRemoteDrumInput.test.ts.
 // readyState/OPEN/CLOSED mirror the real WebSocket constants since the hook
@@ -17,6 +39,7 @@ class FakeWebSocket {
   readyState = FakeWebSocket.CONNECTING
   onopen: (() => void) | null = null
   onclose: (() => void) | null = null
+  onmessage: ((event: { data: string }) => void) | null = null
   sentMessages: string[] = []
 
   constructor(url: string) {
@@ -40,6 +63,10 @@ class FakeWebSocket {
   simulateClose() {
     this.readyState = FakeWebSocket.CLOSED
     this.onclose?.()
+  }
+
+  simulateMessage(data: unknown) {
+    this.onmessage?.({ data: JSON.stringify(data) })
   }
 }
 
@@ -171,5 +198,163 @@ describe('useRemoteDrumSender', () => {
 
     expect(result.current.status).toBe('error')
     expect(FakeWebSocket.instances).toHaveLength(4)
+  })
+
+  it('receiving a notation_state message sets notationState', () => {
+    vi.stubGlobal('WebSocket', FakeWebSocket)
+    const { result } = renderHook(() => useRemoteDrumSender())
+    const exercise = makeExercise()
+
+    act(() => result.current.connect('192.168.1.59:8001'))
+    act(() => latestSocket().simulateOpen())
+    expect(result.current.notationState).toBeUndefined()
+
+    act(() =>
+      latestSocket().simulateMessage({
+        type: 'notation_state',
+        exercise,
+        playbackProgress: { bpm: 100, sessionId: 1 },
+        paused: false,
+        gradedEventIds: { 'event-1': 'hit' },
+      }),
+    )
+
+    expect(result.current.notationState).toEqual({
+      exercise,
+      playbackProgress: { bpm: 100, sessionId: 1 },
+      paused: false,
+      gradedEventIds: { 'event-1': 'hit' },
+    })
+  })
+
+  it('a following notation_clear message resets notationState to undefined', () => {
+    vi.stubGlobal('WebSocket', FakeWebSocket)
+    const { result } = renderHook(() => useRemoteDrumSender())
+
+    act(() => result.current.connect('192.168.1.59:8001'))
+    act(() => latestSocket().simulateOpen())
+    act(() =>
+      latestSocket().simulateMessage({
+        type: 'notation_state',
+        exercise: makeExercise(),
+        playbackProgress: { bpm: 100, sessionId: 1 },
+        paused: false,
+        gradedEventIds: {},
+      }),
+    )
+    expect(result.current.notationState).toBeDefined()
+
+    act(() => latestSocket().simulateMessage({ type: 'notation_clear' }))
+
+    expect(result.current.notationState).toBeUndefined()
+  })
+
+  it('disconnect() clears notationState, so a stale previous session does not survive a reconnect', () => {
+    vi.stubGlobal('WebSocket', FakeWebSocket)
+    const { result } = renderHook(() => useRemoteDrumSender())
+
+    act(() => result.current.connect('192.168.1.59:8001'))
+    act(() => latestSocket().simulateOpen())
+    act(() =>
+      latestSocket().simulateMessage({
+        type: 'notation_state',
+        exercise: makeExercise(),
+        playbackProgress: { bpm: 100, sessionId: 1 },
+        paused: false,
+        gradedEventIds: {},
+      }),
+    )
+    expect(result.current.notationState).toBeDefined()
+
+    act(() => result.current.disconnect())
+
+    expect(result.current.notationState).toBeUndefined()
+  })
+
+  // Full remote control (browse/select/play/pause/resume/stop) — receiving
+  // exercise_list/playback_status, and sending the 3 new outbound commands.
+
+  it('receiving an exercise_list message sets exerciseList', () => {
+    vi.stubGlobal('WebSocket', FakeWebSocket)
+    const { result } = renderHook(() => useRemoteDrumSender())
+
+    act(() => result.current.connect('192.168.1.59:8001'))
+    act(() => latestSocket().simulateOpen())
+    expect(result.current.exerciseList).toBeUndefined()
+
+    const exercises = [{ id: 'ex-1', title: 'Basic Rock Beat', bpm: 90, difficulty: 'beginner' as const, isCustom: true }]
+    act(() => latestSocket().simulateMessage({ type: 'exercise_list', exercises }))
+
+    expect(result.current.exerciseList).toEqual(exercises)
+  })
+
+  it('disconnect() clears exerciseList and playbackStatus too', () => {
+    vi.stubGlobal('WebSocket', FakeWebSocket)
+    const { result } = renderHook(() => useRemoteDrumSender())
+
+    act(() => result.current.connect('192.168.1.59:8001'))
+    act(() => latestSocket().simulateOpen())
+    act(() => latestSocket().simulateMessage({ type: 'exercise_list', exercises: [] }))
+    act(() =>
+      latestSocket().simulateMessage({ type: 'playback_status', exerciseId: 'ex-1', title: 'x', bpm: 90, phase: 'running' }),
+    )
+    expect(result.current.exerciseList).toBeDefined()
+    expect(result.current.playbackStatus).toBeDefined()
+
+    act(() => result.current.disconnect())
+
+    expect(result.current.exerciseList).toBeUndefined()
+    expect(result.current.playbackStatus).toBeUndefined()
+  })
+
+  it('receiving a playback_status message sets playbackStatus, including the all-null "nothing loaded" shape', () => {
+    vi.stubGlobal('WebSocket', FakeWebSocket)
+    const { result } = renderHook(() => useRemoteDrumSender())
+
+    act(() => result.current.connect('192.168.1.59:8001'))
+    act(() => latestSocket().simulateOpen())
+
+    act(() =>
+      latestSocket().simulateMessage({ type: 'playback_status', exerciseId: null, title: null, bpm: null, phase: 'none' }),
+    )
+    expect(result.current.playbackStatus).toEqual({ exerciseId: null, title: null, bpm: null, phase: 'none' })
+
+    act(() =>
+      latestSocket().simulateMessage({ type: 'playback_status', exerciseId: 'ex-1', title: 'x', bpm: 90, phase: 'paused' }),
+    )
+    expect(result.current.playbackStatus).toEqual({ exerciseId: 'ex-1', title: 'x', bpm: 90, phase: 'paused' })
+  })
+
+  it('requestExerciseList/selectExercise/sendTransportCommand send the right frames once connected', () => {
+    vi.stubGlobal('WebSocket', FakeWebSocket)
+    const { result } = renderHook(() => useRemoteDrumSender())
+
+    act(() => result.current.connect('192.168.1.59:8001'))
+    act(() => latestSocket().simulateOpen())
+
+    act(() => result.current.requestExerciseList())
+    act(() => result.current.selectExercise('ex-1'))
+    act(() => result.current.sendTransportCommand('pause'))
+
+    expect(latestSocket().sentMessages.map((raw) => JSON.parse(raw))).toEqual([
+      { type: 'request_exercise_list' },
+      { type: 'select_exercise', exerciseId: 'ex-1' },
+      { type: 'transport_command', action: 'pause' },
+    ])
+  })
+
+  it('requestExerciseList/selectExercise/sendTransportCommand are silent no-ops while not connected', () => {
+    vi.stubGlobal('WebSocket', FakeWebSocket)
+    const { result } = renderHook(() => useRemoteDrumSender())
+
+    act(() => result.current.connect('192.168.1.59:8001'))
+    // Still 'connecting' — socket never opened.
+    act(() => {
+      result.current.requestExerciseList()
+      result.current.selectExercise('ex-1')
+      result.current.sendTransportCommand('stop')
+    })
+
+    expect(latestSocket().sentMessages).toEqual([])
   })
 })
