@@ -194,6 +194,19 @@ function countGrades(hitResults: HitResult[], extraHits: ExtraHitEvent[]): Grade
  * function calls into the already-tested Stage 1 modules; this hook's own
  * job is state/lifecycle orchestration around them.
  */
+export interface UseVisualTrainerOptions {
+  /** Only ever supplied by RoutinePlayerPage — advances to the next step of
+   * a practice routine. Wired into the registered RemoteSession's own
+   * `skip`, so a remote 'skip' transport_command reaches it too. Absent for
+   * a plain single-exercise run. */
+  onSkip?: () => void
+  /** Only ever supplied by RoutinePlayerPage — rides along on every
+   * sendPlaybackStatus call (see routineProgressRef below) so the phone's
+   * "skip" button/step indicator stays in sync with every phase transition
+   * instead of racing a separate message. */
+  routineProgress?: { stepIndex: number; stepCount: number }
+}
+
 export function useVisualTrainer(
   exercise: InteractiveExercise,
   noteHighwayRef: RefObject<NoteHighwayHandle | null>,
@@ -203,6 +216,7 @@ export function useVisualTrainer(
   // visual is actually on screen for applyStaffCursorTimingBias above.
   // Defaults to the exercise's own saved value for any other caller.
   displayMode: DisplayMode = exercise.displayMode,
+  options?: UseVisualTrainerOptions,
 ): UseVisualTrainerResult {
   const [phase, setPhase] = useState<VisualTrainerPhase>('idle')
   const [isDemo, setIsDemo] = useState(false)
@@ -290,6 +304,12 @@ export function useVisualTrainer(
   // that declared it).
   const sendNotationStateRef = useRef<(state: NotationStatePayload | null) => void>(() => {})
   const sendPlaybackStatusRef = useRef<(status: PlaybackStatusPayload) => void>(() => {})
+  // Mirrors options?.routineProgress — read from every sendPlaybackStatus
+  // call site below (tick/beginPlayback/pause/resume/the registration
+  // effect) so a routine step's progress always rides on the SAME message
+  // as every phase transition, never a separate one that could race it
+  // (useRemoteDrumSender's playbackStatus is a full replace, not a merge).
+  const routineProgressRef = useRef(options?.routineProgress)
   const totalExpectedEventsRef = useRef(0)
 
   const clockOffsetMsRef = useRef(0)
@@ -419,7 +439,13 @@ export function useVisualTrainer(
 
     if (phaseRef.current === 'count-in' && elapsedMs >= 0) {
       setPhaseBoth('running')
-      sendPlaybackStatusRef.current({ exerciseId: exercise.id, title: exercise.title, bpm: exercise.bpm, phase: 'running' })
+      sendPlaybackStatusRef.current({
+        exerciseId: exercise.id,
+        title: exercise.title,
+        bpm: exercise.bpm,
+        phase: 'running',
+        routineProgress: routineProgressRef.current,
+      })
     }
 
     if (isDemoRef.current) {
@@ -459,7 +485,13 @@ export function useVisualTrainer(
       setDynamicsSummary(summarizeDynamics(hitResultsRef.current))
       lastNotationPayloadRef.current = null
       sendNotationStateRef.current(null)
-      sendPlaybackStatusRef.current({ exerciseId: exercise.id, title: exercise.title, bpm: exercise.bpm, phase: 'finished' })
+      sendPlaybackStatusRef.current({
+        exerciseId: exercise.id,
+        title: exercise.title,
+        bpm: exercise.bpm,
+        phase: 'finished',
+        routineProgress: routineProgressRef.current,
+      })
       stopLoops()
       // All notes are resolved, but the playback engine's own click schedule
       // covers the whole declared exercise length independent of the notes
@@ -604,6 +636,9 @@ export function useVisualTrainer(
   useEffect(() => {
     sendPlaybackStatusRef.current = sendPlaybackStatus
   }, [sendPlaybackStatus])
+  useEffect(() => {
+    routineProgressRef.current = options?.routineProgress
+  }, [options?.routineProgress])
 
   // Same phase/demo gating as handleRemoteHit, and the same reasoning for
   // why (useMidiDrumInput's own connection lifecycle is decoupled from
@@ -748,7 +783,13 @@ export function useVisualTrainer(
       // Unconditional, unlike the notation_state block above (staff_cursor+
       // MIDI only) — this is what drives the phone's transport buttons
       // regardless of display mode, so it always fires.
-      sendPlaybackStatus({ exerciseId: exercise.id, title: exercise.title, bpm: exercise.bpm, phase: startingPhase })
+      sendPlaybackStatus({
+        exerciseId: exercise.id,
+        title: exercise.title,
+        bpm: exercise.bpm,
+        phase: startingPhase,
+        routineProgress: routineProgressRef.current,
+      })
 
       rafIdRef.current = requestAnimationFrame(tick)
       startBarInterval()
@@ -777,7 +818,13 @@ export function useVisualTrainer(
     engineRef.current?.pause()
     stopLoops()
     setPhaseBoth('paused')
-    sendPlaybackStatus({ exerciseId: exercise.id, title: exercise.title, bpm: exercise.bpm, phase: 'paused' })
+    sendPlaybackStatus({
+      exerciseId: exercise.id,
+      title: exercise.title,
+      bpm: exercise.bpm,
+      phase: 'paused',
+      routineProgress: routineProgressRef.current,
+    })
     if (lastNotationPayloadRef.current) {
       lastNotationPayloadRef.current.paused = true
       sendNotationState(lastNotationPayloadRef.current)
@@ -790,7 +837,13 @@ export function useVisualTrainer(
     setPhaseBoth(prePausePhaseRef.current)
     rafIdRef.current = requestAnimationFrame(tick)
     startBarInterval()
-    sendPlaybackStatus({ exerciseId: exercise.id, title: exercise.title, bpm: exercise.bpm, phase: prePausePhaseRef.current })
+    sendPlaybackStatus({
+      exerciseId: exercise.id,
+      title: exercise.title,
+      bpm: exercise.bpm,
+      phase: prePausePhaseRef.current,
+      routineProgress: routineProgressRef.current,
+    })
     if (lastNotationPayloadRef.current) {
       lastNotationPayloadRef.current.paused = false
       sendNotationState(lastNotationPayloadRef.current)
@@ -822,13 +875,19 @@ export function useVisualTrainer(
   // when this exercise loads (or that navigates away while it's still open)
   // needs to know either way.
   useEffect(() => {
-    sendPlaybackStatus({ exerciseId: exercise.id, title: exercise.title, bpm: exercise.bpm, phase: 'idle' })
-    const unregister = registerSession({ handleHit: handleRemoteHit, start, pause, resume, stop: exit })
+    sendPlaybackStatus({
+      exerciseId: exercise.id,
+      title: exercise.title,
+      bpm: exercise.bpm,
+      phase: 'idle',
+      routineProgress: routineProgressRef.current,
+    })
+    const unregister = registerSession({ handleHit: handleRemoteHit, start, pause, resume, stop: exit, skip: options?.onSkip })
     return () => {
       unregister()
       sendPlaybackStatus({ exerciseId: null, title: null, bpm: null, phase: 'none' })
     }
-  }, [exercise, handleRemoteHit, pause, registerSession, resume, sendPlaybackStatus, start, exit])
+  }, [exercise, handleRemoteHit, options?.onSkip, pause, registerSession, resume, sendPlaybackStatus, start, exit])
 
   return {
     phase,

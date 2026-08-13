@@ -3,10 +3,10 @@ import { act, renderHook, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { RemoteHostProvider } from './RemoteHostProvider'
 import { useRemoteHost } from './remote-host-context'
-import { interactiveExerciseRepository } from '../../data/repositories'
+import { interactiveExerciseRepository, practiceRoutineRepository } from '../../data/repositories'
 import { DEMO_EXERCISES } from './demo-exercises'
 import { createId } from '../../domain'
-import type { InteractiveExercise } from '../../domain'
+import type { InteractiveExercise, PracticeRoutine } from '../../domain'
 
 // RemoteHostProvider calls useNavigate() (select_exercise -> navigate to
 // the chosen exercise) — mocked here rather than dragging in a real router
@@ -54,7 +54,7 @@ function wrapper({ children }: { children: ReactNode }) {
 }
 
 function makeFakeSession() {
-  return { handleHit: vi.fn(), start: vi.fn(), pause: vi.fn(), resume: vi.fn(), stop: vi.fn() }
+  return { handleHit: vi.fn(), start: vi.fn(), pause: vi.fn(), resume: vi.fn(), stop: vi.fn(), skip: vi.fn() }
 }
 
 async function seedExercise(): Promise<InteractiveExercise> {
@@ -73,6 +73,10 @@ async function seedExercise(): Promise<InteractiveExercise> {
   })
 }
 
+async function seedRoutine(exerciseIds: string[]): Promise<PracticeRoutine> {
+  return practiceRoutineRepository.create({ title: 'Seeded routine', exerciseIds })
+}
+
 describe('RemoteHostProvider / useRemoteHost', () => {
   afterEach(async () => {
     vi.unstubAllGlobals()
@@ -83,8 +87,10 @@ describe('RemoteHostProvider / useRemoteHost', () => {
     // later test's own toggleEnabled() call would actually turn the
     // connection OFF instead of on.
     localStorage.clear()
-    const all = await interactiveExerciseRepository.getAll()
-    await Promise.all(all.map((exercise) => interactiveExerciseRepository.remove(exercise.id)))
+    const allExercises = await interactiveExerciseRepository.getAll()
+    await Promise.all(allExercises.map((exercise) => interactiveExerciseRepository.remove(exercise.id)))
+    const allRoutines = await practiceRoutineRepository.getAll()
+    await Promise.all(allRoutines.map((routine) => practiceRoutineRepository.remove(routine.id)))
   })
 
   it('starts disabled, no connection opened', () => {
@@ -120,9 +126,10 @@ describe('RemoteHostProvider / useRemoteHost', () => {
     expect(() => act(() => latestSocket().simulateMessage({ type: 'hit', instrument: 'kick' }))).not.toThrow()
   })
 
-  it('request_exercise_list queries the repository + demo catalog and sends exercise_list back', async () => {
+  it('request_exercise_list queries the repository + demo catalog and sends exercise_list back, including routines', async () => {
     vi.stubGlobal('WebSocket', FakeWebSocket)
     const seeded = await seedExercise()
+    const seededRoutine = await seedRoutine([seeded.id])
     const { result } = renderHook(() => useRemoteHost(), { wrapper })
 
     act(() => result.current.toggleEnabled())
@@ -139,6 +146,7 @@ describe('RemoteHostProvider / useRemoteHost', () => {
       isCustom: true,
     })
     expect(sent.exercises).toHaveLength(1 + DEMO_EXERCISES.length)
+    expect(sent.routines).toEqual([{ id: seededRoutine.id, title: seededRoutine.title, exerciseCount: 1 }])
   })
 
   it('select_exercise sends an immediate {phase: none} playback_status, then navigates', () => {
@@ -151,6 +159,18 @@ describe('RemoteHostProvider / useRemoteHost', () => {
     const sent = JSON.parse(latestSocket().sentMessages.at(-1)!)
     expect(sent).toEqual({ type: 'playback_status', exerciseId: null, title: null, bpm: null, phase: 'none' })
     expect(navigateSpy).toHaveBeenCalledWith('/practice/visual/ex-1')
+  })
+
+  it('select_routine sends an immediate {phase: none} playback_status, then navigates to the routine player', () => {
+    vi.stubGlobal('WebSocket', FakeWebSocket)
+    const { result } = renderHook(() => useRemoteHost(), { wrapper })
+
+    act(() => result.current.toggleEnabled())
+    act(() => latestSocket().simulateMessage({ type: 'select_routine', routineId: 'routine-1' }))
+
+    const sent = JSON.parse(latestSocket().sentMessages.at(-1)!)
+    expect(sent).toEqual({ type: 'playback_status', exerciseId: null, title: null, bpm: null, phase: 'none' })
+    expect(navigateSpy).toHaveBeenCalledWith('/practice/visual/routines/routine-1/play')
   })
 
   it('transport_command dispatches to the matching registered session method', () => {
@@ -174,6 +194,22 @@ describe('RemoteHostProvider / useRemoteHost', () => {
 
     act(() => latestSocket().simulateMessage({ type: 'transport_command', action: 'stop' }))
     expect(session.stop).toHaveBeenCalledTimes(1)
+
+    act(() => latestSocket().simulateMessage({ type: 'transport_command', action: 'skip' }))
+    expect(session.skip).toHaveBeenCalledTimes(1)
+  })
+
+  it("transport_command 'skip' no-ops when the registered session has no skip (a plain, non-routine run)", () => {
+    vi.stubGlobal('WebSocket', FakeWebSocket)
+    const { result } = renderHook(() => useRemoteHost(), { wrapper })
+    const sessionWithoutSkip = { handleHit: vi.fn(), start: vi.fn(), pause: vi.fn(), resume: vi.fn(), stop: vi.fn() }
+
+    act(() => result.current.toggleEnabled())
+    act(() => {
+      result.current.registerSession(sessionWithoutSkip)
+    })
+
+    expect(() => act(() => latestSocket().simulateMessage({ type: 'transport_command', action: 'skip' }))).not.toThrow()
   })
 
   it('transport_command no-ops silently when no session is registered', () => {
@@ -221,6 +257,31 @@ describe('RemoteHostProvider / useRemoteHost', () => {
       title: 'x',
       bpm: 90,
       phase: 'running',
+    })
+  })
+
+  it('sendPlaybackStatus carries routineProgress through when supplied', () => {
+    vi.stubGlobal('WebSocket', FakeWebSocket)
+    const { result } = renderHook(() => useRemoteHost(), { wrapper })
+
+    act(() => result.current.toggleEnabled())
+    act(() =>
+      result.current.sendPlaybackStatus({
+        exerciseId: 'ex-1',
+        title: 'x',
+        bpm: 90,
+        phase: 'running',
+        routineProgress: { stepIndex: 1, stepCount: 3 },
+      }),
+    )
+
+    expect(JSON.parse(latestSocket().sentMessages.at(-1)!)).toEqual({
+      type: 'playback_status',
+      exerciseId: 'ex-1',
+      title: 'x',
+      bpm: 90,
+      phase: 'running',
+      routineProgress: { stepIndex: 1, stepCount: 3 },
     })
   })
 })

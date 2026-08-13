@@ -12,6 +12,7 @@ import type { UserSettings } from '../../domain/user-settings'
 import type { NotationPracticeState } from '../../domain/notation-practice-state'
 import type { InteractiveExercise } from '../../domain/interactive-exercise'
 import type { DrumImportMetadata } from '../../domain/drum-import-metadata'
+import type { PracticeRoutine } from '../../domain/practice-routine'
 import { buildLessonSeed } from '../seed/course-seed'
 import { buildInteractiveExerciseSeed } from '../seed/interactive-exercise-seed'
 
@@ -44,6 +45,8 @@ export class DrumPathDatabase extends Dexie {
   // ADR 0006: one row per approved drum-audio import (provenance, not
   // per-event data) — see src/domain/drum-import-metadata.ts.
   drumImportMetadata!: EntityTable<DrumImportMetadata, 'id'>
+  // Practice routines (setlists) — see src/domain/practice-routine.ts.
+  practiceRoutines!: EntityTable<PracticeRoutine, 'id'>
 
   constructor(name = 'drumpath') {
     super(name)
@@ -375,6 +378,17 @@ export class DrumPathDatabase extends Dexie {
       notationPracticeState: 'id',
       interactiveExercises: 'id, difficulty, updatedAt',
       drumImportMetadata: 'id, interactiveExerciseId, createdAt',
+    })
+
+    // Practice routines (setlists) — an ordered chain of existing
+    // InteractiveExercise ids that auto-advance during a run. New table
+    // only, no upgrade/backfill needed, same precedent as v3/v4/v14.
+    this.version(15).stores({
+      ...storesV1,
+      notationPracticeState: 'id',
+      interactiveExercises: 'id, difficulty, updatedAt',
+      drumImportMetadata: 'id, interactiveExerciseId, createdAt',
+      practiceRoutines: 'id, updatedAt',
     })
   }
 }

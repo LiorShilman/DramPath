@@ -20,6 +20,7 @@ describe('DrumPathDatabase', () => {
         'lessons',
         'notationPracticeState',
         'practiceEntries',
+        'practiceRoutines',
         'practiceSessions',
         'resources',
         'settings',

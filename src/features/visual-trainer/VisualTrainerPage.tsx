@@ -14,13 +14,30 @@ import { HitFeedback } from '../../components/visual-trainer/HitFeedback'
 import { KeyboardGuide } from '../../components/visual-trainer/KeyboardGuide'
 import { SessionResults } from '../../components/visual-trainer/SessionResults'
 import { useVisualTrainer } from '../../hooks/useVisualTrainer'
-import { findDemoExercise } from './demo-exercises'
-import { interactiveExerciseRepository } from '../../data/repositories'
+import { useResolveExercise } from './resolve-exercise'
 import type { DisplayMode, InteractiveExercise } from '../../domain'
 
-interface VisualTrainerRunnerProps {
+export interface VisualTrainerRunnerProps {
   exercise: InteractiveExercise
   highwayRef: RefObject<NoteHighwayHandle | null>
+  /** Defaults match the plain (non-routine) practice flow — RoutinePlayerPage
+   * overrides both to point back at the routine instead of the flat
+   * exercise list. */
+  exitTo?: string
+  exitLabel?: string
+  /** Practice-routine only (RoutinePlayerPage) — when set, SessionResults
+   * gains a "next exercise" action (omitted on the routine's last step) and
+   * the exit button's label changes to reflect leaving/finishing a routine
+   * rather than a single exercise. */
+  routineStep?: { index: number; total: number; onNext: () => void }
+  /** Practice-routine only — auto-starts this exercise once mounted (every
+   * step after the routine's first, which still needs an explicit user
+   * click). See the mount effect below for why this can't just be called
+   * synchronously from the "next" button's own click handler. */
+  autoStartOnMount?: boolean
+  /** Practice-routine only — advances to the next step; forwarded into
+   * useVisualTrainer so a remote 'skip' transport_command reaches it too. */
+  onSkip?: () => void
 }
 
 // DrumKit's own artwork is intentionally laid out to draw a little past its
@@ -110,7 +127,15 @@ function AspectFitBox({ ratio, children }: { ratio: number; children: ReactNode 
 // know the exercise actually exists — same "look up, then delegate to an
 // inner component" pattern used for a possibly-missing entity elsewhere in
 // this codebase (e.g. LessonDetailPage's not-found handling).
-function VisualTrainerRunner({ exercise, highwayRef }: VisualTrainerRunnerProps) {
+export function VisualTrainerRunner({
+  exercise,
+  highwayRef,
+  exitTo = '/practice/visual',
+  exitLabel = '← חזרה לרשימת התרגילים',
+  routineStep,
+  autoStartOnMount = false,
+  onSkip,
+}: VisualTrainerRunnerProps) {
   const navigate = useNavigate()
   // Runtime override of which visual to watch — explicit user request: let
   // them pick notation-vs-rectangles right on the practice screen itself
@@ -124,15 +149,62 @@ function VisualTrainerRunner({ exercise, highwayRef }: VisualTrainerRunnerProps)
   // on screen for its own staff_cursor-only grading correction).
   const [selectedDisplayMode, setSelectedDisplayMode] = useState<DisplayMode>('staff_cursor')
   const effectiveDisplayMode = selectedDisplayMode
-  const trainer = useVisualTrainer(exercise, highwayRef, effectiveDisplayMode)
+  const trainer = useVisualTrainer(exercise, highwayRef, effectiveDisplayMode, {
+    onSkip,
+    routineProgress: routineStep ? { stepIndex: routineStep.index, stepCount: routineStep.total } : undefined,
+  })
   const usedInstruments = useMemo(
     () => new Set(exercise.events.map((event) => event.instrument)),
     [exercise.events],
   )
 
+  // Closes a one-frame "wrong stats, right title" flash unique to the
+  // no-remount routine flow: trainer.phase stays 'finished' from the
+  // PREVIOUS step until the auto-start effect below actually calls
+  // trainer.start() (async — awaits audioContext.resume() — so it can
+  // never land within the same paint as the exercise prop change), but
+  // `exercise` itself already reflects the NEW step the instant this
+  // component re-renders. Comparing against the previous render's
+  // exercise.id — React's own documented "storing information from
+  // previous renders" useState pattern (react.dev/reference/react/useState
+  // #storing-information-from-previous-renders), NOT a ref: the React
+  // Compiler's linter forbids reading/writing a ref during render (only
+  // effects/handlers), but this exact conditional-setState-during-render
+  // shape is the explicitly-endorsed alternative — React bails out and
+  // re-renders with the new state before committing, no extra effect hop.
+  // A plain (non-routine) run never hits this at all — VisualTrainerPage's
+  // own key={exercise.id} remounts this component wholesale on every
+  // exercise change there, so this state is always freshly initialized to
+  // the current exercise.id.
+  const [previousExerciseId, setPreviousExerciseId] = useState(exercise.id)
+  const exerciseJustChanged = previousExerciseId !== exercise.id
+  if (exerciseJustChanged) {
+    setPreviousExerciseId(exercise.id)
+  }
+
+  // Practice-routine auto-advance (RoutinePlayerPage) — this component is
+  // deliberately NOT remounted per step (a fresh AudioContext per step,
+  // resumed from inside an effect one render-and-passive-effect-hop removed
+  // from the user's actual click, is exactly the shape of call browsers can
+  // silently leave suspended — a routine step that auto-advances into dead
+  // silence). So `start()` can't be called synchronously from the "next"
+  // button's own click handler either — that handler runs on the
+  // *finishing* render, before the new step's `start` closure (bound to the
+  // new `exercise`) exists. An effect watching exercise.id is what's left,
+  // guarded by lastAutoStartedIdRef so Strict Mode's double-invoke (or any
+  // unrelated re-render) can't call start() twice for the same step.
+  const { start } = trainer
+  const lastAutoStartedIdRef = useRef<string | undefined>(undefined)
+  useEffect(() => {
+    if (!autoStartOnMount) return
+    if (lastAutoStartedIdRef.current === exercise.id) return
+    lastAutoStartedIdRef.current = exercise.id
+    start()
+  }, [autoStartOnMount, exercise.id, start])
+
   function handleExit() {
     trainer.exit()
-    void navigate('/practice/visual')
+    void navigate(exitTo)
   }
 
   const transportControls = (
@@ -368,13 +440,26 @@ function VisualTrainerRunner({ exercise, highwayRef }: VisualTrainerRunnerProps)
     </>
   )
 
+  const isLastRoutineStep = routineStep ? routineStep.index >= routineStep.total - 1 : false
+
   return (
     <div className="flex h-full min-h-[calc(100svh-8rem)] flex-col gap-1.5">
-      <PageHeader title={exercise.title} backTo="/practice/visual" backLabel="← חזרה לרשימת התרגילים" />
+      <PageHeader
+        title={exercise.title}
+        backTo={exitTo}
+        backLabel={exitLabel}
+        actions={
+          routineStep && (
+            <Badge variant="neutral">
+              שלב {routineStep.index + 1} מתוך {routineStep.total}
+            </Badge>
+          )
+        }
+      />
 
       {body}
 
-      {trainer.phase === 'finished' && (
+      {trainer.phase === 'finished' && !exerciseJustChanged && (
         <div
           role="dialog"
           aria-modal="true"
@@ -389,6 +474,8 @@ function VisualTrainerRunner({ exercise, highwayRef }: VisualTrainerRunnerProps)
               dynamicsSummary={trainer.dynamicsSummary}
               onRestart={trainer.restart}
               onExit={handleExit}
+              exitLabel={routineStep ? (isLastRoutineStep ? 'סיום השגרה' : 'יציאה מהשגרה') : undefined}
+              onNext={routineStep && !isLastRoutineStep ? routineStep.onNext : undefined}
             />
           </div>
         </div>
@@ -399,32 +486,11 @@ function VisualTrainerRunner({ exercise, highwayRef }: VisualTrainerRunnerProps)
 
 export function VisualTrainerPage() {
   const { exerciseId } = useParams<{ exerciseId: string }>()
-  // Demo exercises resolve instantly (in-memory, pure) — a plain derived
-  // value, no effect needed. Only exercises this misses fall through to the
-  // (async) repository lookup below, so the built-in catalog keeps its
-  // current zero-latency load.
-  const demoExercise = useMemo(() => (exerciseId ? findDemoExercise(exerciseId) : undefined), [exerciseId])
-  // undefined = "not resolved yet", 'not-found' = "resolved, doesn't exist"
-  // — a real 3-state result instead of a separate loading boolean, so the
-  // only setState call in the effect below is inside the async callback
-  // (no synchronous setState in the effect body itself).
-  const [persistedResult, setPersistedResult] = useState<InteractiveExercise | 'not-found' | undefined>(undefined)
+  const resolved = useResolveExercise(exerciseId)
   const highwayRef = useRef<NoteHighwayHandle>(null)
 
-  useEffect(() => {
-    if (!exerciseId || demoExercise) return
-
-    let cancelled = false
-    void interactiveExerciseRepository.getById(exerciseId).then((found) => {
-      if (!cancelled) setPersistedResult(found ?? 'not-found')
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [exerciseId, demoExercise])
-
-  const exercise = demoExercise ?? (persistedResult === 'not-found' ? undefined : persistedResult)
-  const isLoading = Boolean(exerciseId) && !demoExercise && persistedResult === undefined
+  const exercise = resolved === 'not-found' ? undefined : resolved
+  const isLoading = Boolean(exerciseId) && resolved === undefined
 
   if (isLoading) {
     return <p className="text-[var(--color-text-muted)]">טוען…</p>

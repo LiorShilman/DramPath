@@ -3,8 +3,8 @@ import type { ReactNode } from 'react'
 import { useNavigate } from 'react-router'
 import { useRemoteDrumInput } from '../../hooks/useRemoteDrumInput'
 import type { PlaybackStatusPayload } from '../../hooks/useRemoteDrumInput'
-import type { ExerciseListItem, TransportCommandAction } from '../../lib/visual-trainer/remote-drum-protocol'
-import { interactiveExerciseRepository } from '../../data/repositories'
+import type { ExerciseListItem, RoutineListItem, TransportCommandAction } from '../../lib/visual-trainer/remote-drum-protocol'
+import { interactiveExerciseRepository, practiceRoutineRepository } from '../../data/repositories'
 import { DEMO_EXERCISES } from './demo-exercises'
 import { RemoteHostContext } from './remote-host-context'
 import type { RemoteHostContextValue, RemoteSession } from './remote-host-context'
@@ -34,7 +34,7 @@ export function RemoteHostProvider({ children }: { children: ReactNode }) {
   // handleSelectExercise (passed INTO that same call as options) need to
   // call them — the same declaration-order problem useVisualTrainer already
   // solved for sendNotationState, same ref-mirror fix.
-  const sendExerciseListRef = useRef<(exercises: ExerciseListItem[]) => void>(() => {})
+  const sendExerciseListRef = useRef<(exercises: ExerciseListItem[], routines: RoutineListItem[]) => void>(() => {})
   const sendPlaybackStatusRef = useRef<(status: PlaybackStatusPayload) => void>(() => {})
 
   const handleHit = useCallback((instrument: DrumInstrument, hitTimeMs: number) => {
@@ -42,29 +42,37 @@ export function RemoteHostProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const handleRequestExerciseList = useCallback(() => {
-    void interactiveExerciseRepository.getAll().then((customExercises) => {
-      // Same newest-first ordering ExerciseSelectPage already uses on the
-      // desktop — getAll() alone returns Dexie's raw (insertion) order,
-      // which doesn't match what the desktop actually shows.
-      const sortedCustomExercises = [...customExercises].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-      const list: ExerciseListItem[] = [
-        ...sortedCustomExercises.map((exercise) => ({
-          id: exercise.id,
-          title: exercise.title,
-          bpm: exercise.bpm,
-          difficulty: exercise.difficulty,
-          isCustom: true,
-        })),
-        ...DEMO_EXERCISES.map((exercise) => ({
-          id: exercise.id,
-          title: exercise.title,
-          bpm: exercise.bpm,
-          difficulty: exercise.difficulty,
-          isCustom: false,
-        })),
-      ]
-      sendExerciseListRef.current(list)
-    })
+    void Promise.all([interactiveExerciseRepository.getAll(), practiceRoutineRepository.getAll()]).then(
+      ([customExercises, routines]) => {
+        // Same newest-first ordering ExerciseSelectPage already uses on the
+        // desktop — getAll() alone returns Dexie's raw (insertion) order,
+        // which doesn't match what the desktop actually shows.
+        const sortedCustomExercises = [...customExercises].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+        const sortedRoutines = [...routines].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+        const exerciseList: ExerciseListItem[] = [
+          ...sortedCustomExercises.map((exercise) => ({
+            id: exercise.id,
+            title: exercise.title,
+            bpm: exercise.bpm,
+            difficulty: exercise.difficulty,
+            isCustom: true,
+          })),
+          ...DEMO_EXERCISES.map((exercise) => ({
+            id: exercise.id,
+            title: exercise.title,
+            bpm: exercise.bpm,
+            difficulty: exercise.difficulty,
+            isCustom: false,
+          })),
+        ]
+        const routineList: RoutineListItem[] = sortedRoutines.map((routine) => ({
+          id: routine.id,
+          title: routine.title,
+          exerciseCount: routine.exerciseIds.length,
+        }))
+        sendExerciseListRef.current(exerciseList, routineList)
+      },
+    )
   }, [])
 
   const handleSelectExercise = useCallback(
@@ -80,6 +88,17 @@ export function RemoteHostProvider({ children }: { children: ReactNode }) {
     [navigate],
   )
 
+  const handleSelectRoutine = useCallback(
+    (routineId: string) => {
+      // Same "clear before navigate" reasoning as handleSelectExercise —
+      // RoutinePlayerPage's own resolution is async too (a whole routine's
+      // worth of exercises, resolved up front).
+      sendPlaybackStatusRef.current({ exerciseId: null, title: null, bpm: null, phase: 'none' })
+      void navigate(`/practice/visual/routines/${routineId}/play`)
+    },
+    [navigate],
+  )
+
   const handleTransportCommand = useCallback((action: TransportCommandAction) => {
     const session = registeredSessionRef.current
     if (!session) return
@@ -87,6 +106,7 @@ export function RemoteHostProvider({ children }: { children: ReactNode }) {
     else if (action === 'pause') session.pause()
     else if (action === 'resume') session.resume()
     else if (action === 'stop') session.stop()
+    else if (action === 'skip') session.skip?.()
   }, [])
 
   const { status, sendNotationState, sendExerciseList, sendPlaybackStatus } = useRemoteDrumInput({
@@ -94,6 +114,7 @@ export function RemoteHostProvider({ children }: { children: ReactNode }) {
     onHit: handleHit,
     onRequestExerciseList: handleRequestExerciseList,
     onSelectExercise: handleSelectExercise,
+    onSelectRoutine: handleSelectRoutine,
     onTransportCommand: handleTransportCommand,
   })
 

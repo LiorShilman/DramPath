@@ -65,6 +65,15 @@ export const FreeNotationPracticePage = lazy(() =>
 export const ExerciseBuilderPage = lazy(() =>
   import('../features/visual-trainer').then((m) => ({ default: m.ExerciseBuilderPage })),
 )
+export const RoutineListPage = lazy(() =>
+  import('../features/visual-trainer').then((m) => ({ default: m.RoutineListPage })),
+)
+export const RoutineBuilderPage = lazy(() =>
+  import('../features/visual-trainer').then((m) => ({ default: m.RoutineBuilderPage })),
+)
+export const RoutinePlayerPage = lazy(() =>
+  import('../features/visual-trainer').then((m) => ({ default: m.RoutinePlayerPage })),
+)
 export const DrumImportPage = lazy(() =>
   import('../features/drum-import').then((m) => ({ default: m.DrumImportPage })),
 )

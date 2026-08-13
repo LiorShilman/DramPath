@@ -10,6 +10,15 @@ export interface SessionResultsProps {
   dynamicsSummary: DynamicsSummary
   onRestart: () => void
   onExit: () => void
+  /** "חזרה לרשימת התרגילים" by default — RoutinePlayerPage overrides it to
+   * "סיום השגרה"/"יציאה מהשגרה" since exiting mid/after a routine goes back
+   * to the routine, not the flat exercise list. */
+  exitLabel?: string
+  /** Practice-routine only (RoutinePlayerPage) — renders an extra button
+   * alongside restart/exit. Absent on a plain single-exercise run and on a
+   * routine's last step. */
+  onNext?: () => void
+  nextLabel?: string
 }
 
 const DYNAMICS_GRADE_COLOR: Record<'correct' | 'too-soft', string> = {
@@ -20,7 +29,17 @@ const DYNAMICS_GRADE_COLOR: Record<'correct' | 'too-soft', string> = {
 /** VISUAL_DRUM_TRAINER_SPEC.md §14's SessionResults — shown inline at the
  * end of a run (no persisted-session route yet; that's Stage 6, see
  * docs/implementation-status.md's Stage 5 entry for why). */
-export function SessionResults({ exerciseTitle, scoring, gradeCounts, dynamicsSummary, onRestart, onExit }: SessionResultsProps) {
+export function SessionResults({
+  exerciseTitle,
+  scoring,
+  gradeCounts,
+  dynamicsSummary,
+  onRestart,
+  onExit,
+  exitLabel = 'חזרה לרשימת התרגילים',
+  onNext,
+  nextLabel = 'לתרגיל הבא',
+}: SessionResultsProps) {
   return (
     <Card padding="lg" className="flex flex-col gap-4">
       <div>
@@ -80,8 +99,9 @@ export function SessionResults({ exerciseTitle, scoring, gradeCounts, dynamicsSu
 
       <div className="flex gap-2">
         <Button onClick={onRestart}>תרגול נוסף</Button>
+        {onNext && <Button onClick={onNext}>{nextLabel}</Button>}
         <Button variant="ghost" onClick={onExit}>
-          חזרה לרשימת התרגילים
+          {exitLabel}
         </Button>
       </div>
     </Card>

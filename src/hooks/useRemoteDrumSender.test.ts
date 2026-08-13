@@ -274,36 +274,41 @@ describe('useRemoteDrumSender', () => {
   // Full remote control (browse/select/play/pause/resume/stop) — receiving
   // exercise_list/playback_status, and sending the 3 new outbound commands.
 
-  it('receiving an exercise_list message sets exerciseList', () => {
+  it('receiving an exercise_list message sets exerciseList and routineList', () => {
     vi.stubGlobal('WebSocket', FakeWebSocket)
     const { result } = renderHook(() => useRemoteDrumSender())
 
     act(() => result.current.connect('192.168.1.59:8001'))
     act(() => latestSocket().simulateOpen())
     expect(result.current.exerciseList).toBeUndefined()
+    expect(result.current.routineList).toBeUndefined()
 
     const exercises = [{ id: 'ex-1', title: 'Basic Rock Beat', bpm: 90, difficulty: 'beginner' as const, isCustom: true }]
-    act(() => latestSocket().simulateMessage({ type: 'exercise_list', exercises }))
+    const routines = [{ id: 'routine-1', title: 'Warm-up', exerciseCount: 3 }]
+    act(() => latestSocket().simulateMessage({ type: 'exercise_list', exercises, routines }))
 
     expect(result.current.exerciseList).toEqual(exercises)
+    expect(result.current.routineList).toEqual(routines)
   })
 
-  it('disconnect() clears exerciseList and playbackStatus too', () => {
+  it('disconnect() clears exerciseList, routineList, and playbackStatus too', () => {
     vi.stubGlobal('WebSocket', FakeWebSocket)
     const { result } = renderHook(() => useRemoteDrumSender())
 
     act(() => result.current.connect('192.168.1.59:8001'))
     act(() => latestSocket().simulateOpen())
-    act(() => latestSocket().simulateMessage({ type: 'exercise_list', exercises: [] }))
+    act(() => latestSocket().simulateMessage({ type: 'exercise_list', exercises: [], routines: [] }))
     act(() =>
       latestSocket().simulateMessage({ type: 'playback_status', exerciseId: 'ex-1', title: 'x', bpm: 90, phase: 'running' }),
     )
     expect(result.current.exerciseList).toBeDefined()
+    expect(result.current.routineList).toBeDefined()
     expect(result.current.playbackStatus).toBeDefined()
 
     act(() => result.current.disconnect())
 
     expect(result.current.exerciseList).toBeUndefined()
+    expect(result.current.routineList).toBeUndefined()
     expect(result.current.playbackStatus).toBeUndefined()
   })
 
@@ -325,7 +330,34 @@ describe('useRemoteDrumSender', () => {
     expect(result.current.playbackStatus).toEqual({ exerciseId: 'ex-1', title: 'x', bpm: 90, phase: 'paused' })
   })
 
-  it('requestExerciseList/selectExercise/sendTransportCommand send the right frames once connected', () => {
+  it('receiving a playback_status message with routineProgress carries it through', () => {
+    vi.stubGlobal('WebSocket', FakeWebSocket)
+    const { result } = renderHook(() => useRemoteDrumSender())
+
+    act(() => result.current.connect('192.168.1.59:8001'))
+    act(() => latestSocket().simulateOpen())
+
+    act(() =>
+      latestSocket().simulateMessage({
+        type: 'playback_status',
+        exerciseId: 'ex-1',
+        title: 'x',
+        bpm: 90,
+        phase: 'running',
+        routineProgress: { stepIndex: 1, stepCount: 3 },
+      }),
+    )
+
+    expect(result.current.playbackStatus).toEqual({
+      exerciseId: 'ex-1',
+      title: 'x',
+      bpm: 90,
+      phase: 'running',
+      routineProgress: { stepIndex: 1, stepCount: 3 },
+    })
+  })
+
+  it('requestExerciseList/selectExercise/selectRoutine/sendTransportCommand send the right frames once connected', () => {
     vi.stubGlobal('WebSocket', FakeWebSocket)
     const { result } = renderHook(() => useRemoteDrumSender())
 
@@ -334,16 +366,18 @@ describe('useRemoteDrumSender', () => {
 
     act(() => result.current.requestExerciseList())
     act(() => result.current.selectExercise('ex-1'))
+    act(() => result.current.selectRoutine('routine-1'))
     act(() => result.current.sendTransportCommand('pause'))
 
     expect(latestSocket().sentMessages.map((raw) => JSON.parse(raw))).toEqual([
       { type: 'request_exercise_list' },
       { type: 'select_exercise', exerciseId: 'ex-1' },
+      { type: 'select_routine', routineId: 'routine-1' },
       { type: 'transport_command', action: 'pause' },
     ])
   })
 
-  it('requestExerciseList/selectExercise/sendTransportCommand are silent no-ops while not connected', () => {
+  it('requestExerciseList/selectExercise/selectRoutine/sendTransportCommand are silent no-ops while not connected', () => {
     vi.stubGlobal('WebSocket', FakeWebSocket)
     const { result } = renderHook(() => useRemoteDrumSender())
 
@@ -352,6 +386,7 @@ describe('useRemoteDrumSender', () => {
     act(() => {
       result.current.requestExerciseList()
       result.current.selectExercise('ex-1')
+      result.current.selectRoutine('routine-1')
       result.current.sendTransportCommand('stop')
     })
 

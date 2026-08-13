@@ -13,6 +13,10 @@ export interface RemoteSession {
   pause: () => void
   resume: () => void
   stop: () => void
+  /** Only set for a practice-routine run (RoutinePlayerPage) — advances to
+   * the next step. Absent for a plain single-exercise session, in which
+   * case a remote 'skip' transport_command is a correct no-op. */
+  skip?: () => void
 }
 
 export interface RemoteHostContextValue {

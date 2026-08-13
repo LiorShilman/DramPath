@@ -371,6 +371,35 @@ describe('useVisualTrainer', () => {
     })
   })
 
+  it('practice-routine options: onSkip is exposed as the registered session\'s skip, and routineProgress rides on every sendPlaybackStatus call', () => {
+    vi.stubGlobal('AudioContext', FakeAudioContext)
+    const exercise = makeExercise([
+      { id: createId(), bar: 1, beat: 1, subdivisionIndex: 0, instrument: 'kick', velocity: 100 },
+    ])
+    const onSkip = vi.fn()
+    const routineProgress = { stepIndex: 1, stepCount: 3 }
+    renderHook(() => useVisualTrainer(exercise, noHighwayRef, undefined, { onSkip, routineProgress }))
+
+    expect(remoteHostMocks.capturedSessionHolder.current?.skip).toBe(onSkip)
+    expect(remoteHostMocks.sendPlaybackStatus).toHaveBeenCalledWith({
+      exerciseId: exercise.id,
+      title: exercise.title,
+      bpm: exercise.bpm,
+      phase: 'idle',
+      routineProgress,
+    })
+  })
+
+  it('a plain (non-routine) hook exposes no skip on the registered session', () => {
+    vi.stubGlobal('AudioContext', FakeAudioContext)
+    const exercise = makeExercise([
+      { id: createId(), bar: 1, beat: 1, subdivisionIndex: 0, instrument: 'kick', velocity: 100 },
+    ])
+    renderHook(() => useVisualTrainer(exercise, noHighwayRef))
+
+    expect(remoteHostMocks.capturedSessionHolder.current?.skip).toBeUndefined()
+  })
+
   it('a hit forwarded from the registered session during running scores identically to a keyboard hit', async () => {
     vi.stubGlobal('AudioContext', FakeAudioContext)
     const exercise = makeExercise([

@@ -4,10 +4,11 @@ desktop's VisualTrainerPage runs a graded practice session — and, in the
 other direction, letting the host push its own currently-playing notation
 state back to every connected controller, so a phone propped next to a real
 e-kit can mirror the desktop's moving-cursor sheet music. Also full remote
-control: the phone can request the desktop's exercise catalog, select one
-(navigating the desktop to it), and send play/pause/resume/stop commands —
-see request_exercise_list/select_exercise/transport_command below and
-exercise_list/playback_status on the host->controller side. See
+control: the phone can request the desktop's exercise/routine catalog,
+select an exercise or a practice routine (navigating the desktop to it),
+and send play/pause/resume/stop/skip commands — see
+request_exercise_list/select_exercise/select_routine/transport_command
+below and exercise_list/playback_status on the host->controller side. See
 docs/adr/0007-remote-drum-relay-local-lan-boundary.md in the DrumPath repo
 for the architectural boundary this serves.
 
@@ -199,7 +200,7 @@ async def ws_controller(websocket: WebSocket) -> None:
                         # controller's own loop down — its disconnect is
                         # handled by /ws/host's own finally block.
                         pass
-            elif msg_type in ("request_exercise_list", "select_exercise", "transport_command"):
+            elif msg_type in ("request_exercise_list", "select_exercise", "select_routine", "transport_command"):
                 # Full remote control — relayed as raw text, no server-side
                 # shape validation (see send_raw_to_host's own doc comment).
                 await send_raw_to_host(raw)

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { buildProductionRelayWsUrl, parseRemoteRelayMessage } from '../lib/visual-trainer/remote-drum-protocol'
-import type { ExerciseListItem, TransportCommandAction } from '../lib/visual-trainer/remote-drum-protocol'
+import type { ExerciseListItem, RoutineListItem, TransportCommandAction } from '../lib/visual-trainer/remote-drum-protocol'
 import type { DrumInstrument, InteractiveExercise } from '../domain'
 
 export type RemoteDrumSenderStatus = 'disconnected' | 'connecting' | 'connected' | 'error'
@@ -30,6 +30,9 @@ export interface RemotePlaybackStatus {
   title: string | null
   bpm: number | null
   phase: 'idle' | 'count-in' | 'running' | 'paused' | 'finished' | 'none'
+  /** Present only while the desktop is running a practice routine — drives
+   * the phone's "skip" button and step indicator. */
+  routineProgress?: { stepIndex: number; stepCount: number }
 }
 
 export interface UseRemoteDrumSenderResult {
@@ -45,9 +48,11 @@ export interface UseRemoteDrumSenderResult {
   /** Full remote control (browse/select/play/pause/resume/stop) — see
    * remote-host-context.tsx for the desktop side. */
   exerciseList: ExerciseListItem[] | undefined
+  routineList: RoutineListItem[] | undefined
   playbackStatus: RemotePlaybackStatus | undefined
   requestExerciseList: () => void
   selectExercise: (exerciseId: string) => void
+  selectRoutine: (routineId: string) => void
   sendTransportCommand: (action: TransportCommandAction) => void
 }
 
@@ -79,6 +84,7 @@ export function useRemoteDrumSender(): UseRemoteDrumSenderResult {
   const [status, setStatus] = useState<RemoteDrumSenderStatus>('disconnected')
   const [notationState, setNotationState] = useState<RemoteNotationState | undefined>(undefined)
   const [exerciseList, setExerciseList] = useState<ExerciseListItem[] | undefined>(undefined)
+  const [routineList, setRoutineList] = useState<RoutineListItem[] | undefined>(undefined)
   const [playbackStatus, setPlaybackStatus] = useState<RemotePlaybackStatus | undefined>(undefined)
   const socketRef = useRef<WebSocket | undefined>(undefined)
   const retryTimeoutIdRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
@@ -129,12 +135,14 @@ export function useRemoteDrumSender(): UseRemoteDrumSenderResult {
         setNotationState(undefined)
       } else if (message?.type === 'exercise_list') {
         setExerciseList(message.exercises)
+        setRoutineList(message.routines)
       } else if (message?.type === 'playback_status') {
         setPlaybackStatus({
           exerciseId: message.exerciseId,
           title: message.title,
           bpm: message.bpm,
           phase: message.phase,
+          routineProgress: message.routineProgress,
         })
       }
     }
@@ -179,6 +187,7 @@ export function useRemoteDrumSender(): UseRemoteDrumSenderResult {
     // notation/list/status showing if this phone reconnects later.
     setNotationState(undefined)
     setExerciseList(undefined)
+    setRoutineList(undefined)
     setPlaybackStatus(undefined)
   }, [clearRetryTimeout])
 
@@ -200,6 +209,12 @@ export function useRemoteDrumSender(): UseRemoteDrumSenderResult {
     socket.send(JSON.stringify({ type: 'select_exercise', exerciseId }))
   }, [])
 
+  const selectRoutine = useCallback((routineId: string) => {
+    const socket = socketRef.current
+    if (!socket || socket.readyState !== WebSocket.OPEN) return
+    socket.send(JSON.stringify({ type: 'select_routine', routineId }))
+  }, [])
+
   const sendTransportCommand = useCallback((action: TransportCommandAction) => {
     const socket = socketRef.current
     if (!socket || socket.readyState !== WebSocket.OPEN) return
@@ -213,9 +228,11 @@ export function useRemoteDrumSender(): UseRemoteDrumSenderResult {
     sendHit,
     notationState,
     exerciseList,
+    routineList,
     playbackStatus,
     requestExerciseList,
     selectExercise,
+    selectRoutine,
     sendTransportCommand,
   }
 }

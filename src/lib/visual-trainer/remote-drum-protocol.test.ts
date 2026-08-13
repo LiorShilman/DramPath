@@ -117,8 +117,19 @@ describe('parseRemoteRelayMessage', () => {
     expect(parseRemoteRelayMessage('{"type":"select_exercise"}')).toBeUndefined()
   })
 
-  it('parses a valid transport_command message for each action', () => {
-    for (const action of ['start', 'pause', 'resume', 'stop']) {
+  it('parses a valid select_routine message', () => {
+    expect(parseRemoteRelayMessage('{"type":"select_routine","routineId":"routine-1"}')).toEqual({
+      type: 'select_routine',
+      routineId: 'routine-1',
+    })
+  })
+
+  it('returns undefined for a select_routine message missing routineId', () => {
+    expect(parseRemoteRelayMessage('{"type":"select_routine"}')).toBeUndefined()
+  })
+
+  it('parses a valid transport_command message for each action, including skip', () => {
+    for (const action of ['start', 'pause', 'resume', 'stop', 'skip']) {
       expect(parseRemoteRelayMessage(`{"type":"transport_command","action":"${action}"}`)).toEqual({
         type: 'transport_command',
         action,
@@ -130,25 +141,46 @@ describe('parseRemoteRelayMessage', () => {
     expect(parseRemoteRelayMessage('{"type":"transport_command","action":"rewind"}')).toBeUndefined()
   })
 
-  it('parses a valid exercise_list message, empty or populated', () => {
-    expect(parseRemoteRelayMessage('{"type":"exercise_list","exercises":[]}')).toEqual({
+  it('parses a valid exercise_list message, exercises and routines, empty or populated', () => {
+    expect(parseRemoteRelayMessage('{"type":"exercise_list","exercises":[],"routines":[]}')).toEqual({
       type: 'exercise_list',
       exercises: [],
+      routines: [],
     })
     const raw = JSON.stringify({
       type: 'exercise_list',
       exercises: [{ id: 'ex-1', title: 'Basic Rock Beat', bpm: 90, difficulty: 'beginner', isCustom: true }],
+      routines: [{ id: 'routine-1', title: 'Warm-up', exerciseCount: 3 }],
     })
     expect(parseRemoteRelayMessage(raw)).toEqual({
       type: 'exercise_list',
       exercises: [{ id: 'ex-1', title: 'Basic Rock Beat', bpm: 90, difficulty: 'beginner', isCustom: true }],
+      routines: [{ id: 'routine-1', title: 'Warm-up', exerciseCount: 3 }],
     })
+  })
+
+  it('returns undefined for an exercise_list message missing routines', () => {
+    const raw = JSON.stringify({
+      type: 'exercise_list',
+      exercises: [],
+    })
+    expect(parseRemoteRelayMessage(raw)).toBeUndefined()
   })
 
   it('returns undefined for an exercise_list item with an invalid difficulty', () => {
     const raw = JSON.stringify({
       type: 'exercise_list',
       exercises: [{ id: 'ex-1', title: 'x', bpm: 90, difficulty: 'expert', isCustom: true }],
+      routines: [],
+    })
+    expect(parseRemoteRelayMessage(raw)).toBeUndefined()
+  })
+
+  it('returns undefined for a routine_list item with a non-positive exerciseCount', () => {
+    const raw = JSON.stringify({
+      type: 'exercise_list',
+      exercises: [],
+      routines: [{ id: 'routine-1', title: 'x', exerciseCount: 0 }],
     })
     expect(parseRemoteRelayMessage(raw)).toBeUndefined()
   })
@@ -165,6 +197,25 @@ describe('parseRemoteRelayMessage', () => {
       title: 'x',
       bpm: 90,
       phase: 'running',
+    })
+  })
+
+  it('parses a valid playback_status message with routineProgress', () => {
+    const raw = JSON.stringify({
+      type: 'playback_status',
+      exerciseId: 'ex-1',
+      title: 'x',
+      bpm: 90,
+      phase: 'running',
+      routineProgress: { stepIndex: 1, stepCount: 3 },
+    })
+    expect(parseRemoteRelayMessage(raw)).toEqual({
+      type: 'playback_status',
+      exerciseId: 'ex-1',
+      title: 'x',
+      bpm: 90,
+      phase: 'running',
+      routineProgress: { stepIndex: 1, stepCount: 3 },
     })
   })
 

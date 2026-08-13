@@ -5,7 +5,7 @@ import {
   buildProductionRelayWsUrl,
   parseRemoteRelayMessage,
 } from '../lib/visual-trainer/remote-drum-protocol'
-import type { ExerciseListItem, TransportCommandAction } from '../lib/visual-trainer/remote-drum-protocol'
+import type { ExerciseListItem, RoutineListItem, TransportCommandAction } from '../lib/visual-trainer/remote-drum-protocol'
 import type { DrumInstrument, InteractiveExercise } from '../domain'
 
 function hostRelayWsUrl(): string {
@@ -27,6 +27,7 @@ export interface UseRemoteDrumInputOptions {
    * useVisualTrainer directly. See remote-host-context.tsx. */
   onRequestExerciseList?: () => void
   onSelectExercise?: (exerciseId: string) => void
+  onSelectRoutine?: (routineId: string) => void
   onTransportCommand?: (action: TransportCommandAction) => void
 }
 
@@ -52,6 +53,9 @@ export interface PlaybackStatusPayload {
   title: string | null
   bpm: number | null
   phase: 'idle' | 'count-in' | 'running' | 'paused' | 'finished' | 'none'
+  /** Present only while running a practice routine (RoutinePlayerPage) —
+   * drives the phone's "skip" button and step indicator. */
+  routineProgress?: { stepIndex: number; stepCount: number }
 }
 
 export interface UseRemoteDrumInputResult {
@@ -63,9 +67,9 @@ export interface UseRemoteDrumInputResult {
    * stance as everything else in this feature (ADR 0007): silently no-ops
    * if nothing is connected right now, rather than buffering for later. */
   sendNotationState: (state: NotationStatePayload | null) => void
-  /** Full remote control (RemoteHostProvider) — the exercise catalog, sent
-   * in response to a request_exercise_list message. */
-  sendExerciseList: (exercises: ExerciseListItem[]) => void
+  /** Full remote control (RemoteHostProvider) — the exercise + routine
+   * catalog, sent in response to a request_exercise_list message. */
+  sendExerciseList: (exercises: ExerciseListItem[], routines: RoutineListItem[]) => void
   /** Full remote control (RemoteHostProvider) — see PlaybackStatusPayload. */
   sendPlaybackStatus: (status: PlaybackStatusPayload) => void
 }
@@ -117,6 +121,7 @@ export function useRemoteDrumInput({
   onHit,
   onRequestExerciseList,
   onSelectExercise,
+  onSelectRoutine,
   onTransportCommand,
 }: UseRemoteDrumInputOptions): UseRemoteDrumInputResult {
   // 'disabled' is a pure derived value (see the return statement below),
@@ -128,6 +133,7 @@ export function useRemoteDrumInput({
   const onHitRef = useRef(onHit)
   const onRequestExerciseListRef = useRef(onRequestExerciseList)
   const onSelectExerciseRef = useRef(onSelectExercise)
+  const onSelectRoutineRef = useRef(onSelectRoutine)
   const onTransportCommandRef = useRef(onTransportCommand)
   const socketRef = useRef<WebSocket | undefined>(undefined)
 
@@ -140,6 +146,9 @@ export function useRemoteDrumInput({
   useEffect(() => {
     onSelectExerciseRef.current = onSelectExercise
   }, [onSelectExercise])
+  useEffect(() => {
+    onSelectRoutineRef.current = onSelectRoutine
+  }, [onSelectRoutine])
   useEffect(() => {
     onTransportCommandRef.current = onTransportCommand
   }, [onTransportCommand])
@@ -168,6 +177,8 @@ export function useRemoteDrumInput({
           onRequestExerciseListRef.current?.()
         } else if (message.type === 'select_exercise') {
           onSelectExerciseRef.current?.(message.exerciseId)
+        } else if (message.type === 'select_routine') {
+          onSelectRoutineRef.current?.(message.routineId)
         } else if (message.type === 'transport_command') {
           onTransportCommandRef.current?.(message.action)
         }
@@ -203,10 +214,10 @@ export function useRemoteDrumInput({
     socket.send(JSON.stringify(state ? { type: 'notation_state', ...state } : { type: 'notation_clear' }))
   }, [])
 
-  const sendExerciseList = useCallback((exercises: ExerciseListItem[]) => {
+  const sendExerciseList = useCallback((exercises: ExerciseListItem[], routines: RoutineListItem[]) => {
     const socket = socketRef.current
     if (!socket || socket.readyState !== WebSocket.OPEN) return
-    socket.send(JSON.stringify({ type: 'exercise_list', exercises }))
+    socket.send(JSON.stringify({ type: 'exercise_list', exercises, routines }))
   }, [])
 
   const sendPlaybackStatus = useCallback((status: PlaybackStatusPayload) => {

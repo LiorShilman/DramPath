@@ -134,11 +134,14 @@ def test_malformed_host_message_does_not_crash_the_loop():
     [
         {"type": "request_exercise_list"},
         {"type": "select_exercise", "exerciseId": "ex-1"},
+        {"type": "select_routine", "routineId": "routine-1"},
         {"type": "transport_command", "action": "pause"},
+        {"type": "transport_command", "action": "skip"},
     ],
 )
 def test_full_remote_control_messages_relay_verbatim_to_the_host(message):
-    # request_exercise_list/select_exercise/transport_command relay
+    # request_exercise_list/select_exercise/select_routine/transport_command
+    # relay
     # verbatim, same as host->controller — no server-side shape validation
     # beyond "is this JSON at all" (see send_raw_to_host's own doc comment),
     # unlike 'hit' which keeps its separate Pydantic-validated path.

@@ -48,15 +48,31 @@ const exerciseListItemSchema = z.object({
   // distinction ExerciseSelectPage already renders as a "שלי" badge.
   isCustom: z.boolean(),
 })
+// Practice routines (setlists, src/domain/practice-routine.ts) — a much
+// lighter summary than exerciseListItemSchema, since the phone only needs
+// enough to show a pickable row (title + how many steps), not per-step
+// detail; the routine's own exerciseIds resolve once the desktop starts it.
+const routineListItemSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  exerciseCount: z.number().int().positive(),
+})
 const exerciseListMessageSchema = z.object({
   type: z.literal('exercise_list'),
   exercises: z.array(exerciseListItemSchema),
+  routines: z.array(routineListItemSchema),
 })
 const requestExerciseListMessageSchema = z.object({ type: z.literal('request_exercise_list') })
 const selectExerciseMessageSchema = z.object({ type: z.literal('select_exercise'), exerciseId: z.string() })
+// Separate from select_exercise (not a shared "select" type with a kind
+// discriminator) — matches this file's convention of one small explicit
+// schema per message rather than a polymorphic one.
+const selectRoutineMessageSchema = z.object({ type: z.literal('select_routine'), routineId: z.string() })
 const transportCommandMessageSchema = z.object({
   type: z.literal('transport_command'),
-  action: z.enum(['start', 'pause', 'resume', 'stop']),
+  // 'skip': advance a running routine to its next step (see
+  // RoutinePlayerPage) — a no-op if the current session isn't a routine.
+  action: z.enum(['start', 'pause', 'resume', 'stop', 'skip']),
 })
 // Unconditional session status (unlike notation_state, which only fires for
 // staff_cursor+MIDI runs) — this is what drives the phone's transport
@@ -72,6 +88,11 @@ const playbackStatusMessageSchema = z.object({
   title: z.string().nullable(),
   bpm: z.number().nullable(),
   phase: z.enum(['idle', 'count-in', 'running', 'paused', 'finished', 'none']),
+  // Present only while running a practice routine (RoutinePlayerPage) —
+  // drives the phone's "skip" button and step indicator ("2/5"). Optional
+  // so every existing non-routine sendPlaybackStatus call site needs no
+  // changes.
+  routineProgress: z.object({ stepIndex: z.number().int().nonnegative(), stepCount: z.number().int().positive() }).optional(),
 })
 
 export const remoteRelayMessageSchema = z.discriminatedUnion('type', [
@@ -83,6 +104,7 @@ export const remoteRelayMessageSchema = z.discriminatedUnion('type', [
   exerciseListMessageSchema,
   requestExerciseListMessageSchema,
   selectExerciseMessageSchema,
+  selectRoutineMessageSchema,
   transportCommandMessageSchema,
   playbackStatusMessageSchema,
 ])
@@ -114,9 +136,11 @@ export type ControllerStatusMessage = z.infer<typeof controllerStatusMessageSche
 export type NotationStateMessage = z.infer<typeof notationStateMessageSchema>
 export type NotationClearMessage = z.infer<typeof notationClearMessageSchema>
 export type ExerciseListItem = z.infer<typeof exerciseListItemSchema>
+export type RoutineListItem = z.infer<typeof routineListItemSchema>
 export type ExerciseListMessage = z.infer<typeof exerciseListMessageSchema>
 export type RequestExerciseListMessage = z.infer<typeof requestExerciseListMessageSchema>
 export type SelectExerciseMessage = z.infer<typeof selectExerciseMessageSchema>
+export type SelectRoutineMessage = z.infer<typeof selectRoutineMessageSchema>
 export type TransportCommandAction = z.infer<typeof transportCommandMessageSchema>['action']
 export type TransportCommandMessage = z.infer<typeof transportCommandMessageSchema>
 export type PlaybackStatusMessage = z.infer<typeof playbackStatusMessageSchema>

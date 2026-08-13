@@ -21,6 +21,9 @@ import {
   VisualTrainerPage,
   FreeNotationPracticePage,
   ExerciseBuilderPage,
+  RoutineListPage,
+  RoutineBuilderPage,
+  RoutinePlayerPage,
   DrumImportPage,
   TouchDrumKitPage,
   CurriculumGeneratorPage,
@@ -65,6 +68,12 @@ export const routes: RouteObject[] = [
       { path: 'practice/visual/build', element: <ExerciseBuilderPage /> },
       { path: 'practice/visual/build/:exerciseId', element: <ExerciseBuilderPage /> },
       { path: 'practice/visual/import', element: <DrumImportPage /> },
+      // Practice routines (setlists) — same list+detail(+build) convention
+      // as exercises, one level down.
+      { path: 'practice/visual/routines', element: <RoutineListPage /> },
+      { path: 'practice/visual/routines/build', element: <RoutineBuilderPage /> },
+      { path: 'practice/visual/routines/build/:routineId', element: <RoutineBuilderPage /> },
+      { path: 'practice/visual/routines/:routineId/play', element: <RoutinePlayerPage /> },
     ],
   },
   // Standalone, chrome-free (no AppLayout/sidebar/nav) — a direct,

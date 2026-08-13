@@ -6,6 +6,7 @@ import {
   Minimize2,
   Pause,
   Play,
+  SkipForward,
   Square,
   Volume2,
   VolumeX,
@@ -26,6 +27,7 @@ import {
 import type { RemotePlaybackStatus } from '../../hooks/useRemoteDrumSender'
 import type {
   ExerciseListItem,
+  RoutineListItem,
   TransportCommandAction,
 } from '../../lib/visual-trainer/remote-drum-protocol'
 import { useMetronome } from '../practice-session/useMetronome'
@@ -106,6 +108,11 @@ function RemoteControlBar({
       </button>
       <span className="min-w-0 flex-1 truncate text-sm font-semibold">
         {hasSession ? playbackStatus.title : 'לא נבחר תרגיל'}
+        {playbackStatus?.routineProgress && (
+          <span className="ms-1 text-xs font-normal text-[var(--color-text-muted)]">
+            ({playbackStatus.routineProgress.stepIndex + 1}/{playbackStatus.routineProgress.stepCount})
+          </span>
+        )}
       </span>
       {hasSession && (
         <>
@@ -147,24 +154,41 @@ function RemoteControlBar({
           >
             <Square className="h-4 w-4" aria-hidden="true" />
           </button>
+          {/* Only meaningful while running a practice routine — advances
+              to the next step. Absent from a plain single-exercise run. */}
+          {playbackStatus?.routineProgress && (
+            <button
+              type="button"
+              onClick={() => onAction('skip')}
+              aria-label="דלג לתרגיל הבא ברצף"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--color-text-muted)] text-white"
+            >
+              <SkipForward className="h-4 w-4" aria-hidden="true" />
+            </button>
+          )}
         </>
       )}
     </div>
   )
 }
 
-/** Full remote control's exercise picker — a fixed-overlay list (same
- * role="dialog"/inset-0/bg-black-40 pattern VisualTrainerPage's own
+/** Full remote control's exercise/routine picker — a fixed-overlay list
+ * (same role="dialog"/inset-0/bg-black-40 pattern VisualTrainerPage's own
  * finished-session modal already uses), not a dedicated Sheet primitive
- * (this UI library doesn't have one). exerciseList is undefined while the
- * request is in flight, and an empty array once it resolves to nothing. */
+ * (this UI library doesn't have one). exercises/routines are each undefined
+ * while the request is still in flight, and an empty array once resolved
+ * to nothing. */
 function ExerciseBrowserSheet({
   exercises,
-  onSelect,
+  routines,
+  onSelectExercise,
+  onSelectRoutine,
   onClose,
 }: {
   exercises: ExerciseListItem[] | undefined
-  onSelect: (exerciseId: string) => void
+  routines: RoutineListItem[] | undefined
+  onSelectExercise: (exerciseId: string) => void
+  onSelectRoutine: (routineId: string) => void
   onClose: () => void
 }) {
   return (
@@ -174,7 +198,7 @@ function ExerciseBrowserSheet({
       aria-label="בחירת תרגיל"
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
     >
-      <div className="flex max-h-[80vh] w-full max-w-sm flex-col gap-2 overflow-hidden rounded-[var(--radius-card)] bg-[var(--color-surface)] p-3 [box-shadow:var(--shadow-card)]">
+      <div className="flex max-h-[80vh] w-full max-w-sm flex-col gap-3 overflow-hidden rounded-[var(--radius-card)] bg-[var(--color-surface)] p-3 [box-shadow:var(--shadow-card)]">
         <div className="flex items-center justify-between">
           <span className="font-semibold">בחירת תרגיל</span>
           <button
@@ -186,32 +210,52 @@ function ExerciseBrowserSheet({
             <X className="h-5 w-5" aria-hidden="true" />
           </button>
         </div>
-        <ul className="flex flex-col gap-1 overflow-y-auto">
-          {exercises === undefined ? (
-            <li className="p-2 text-sm text-[var(--color-text-muted)]">
-              טוען…
-            </li>
-          ) : exercises.length === 0 ? (
-            <li className="p-2 text-sm text-[var(--color-text-muted)]">
-              לא נמצאו תרגילים
-            </li>
-          ) : (
-            exercises.map((exercise) => (
-              <li key={exercise.id}>
-                <button
-                  type="button"
-                  onClick={() => onSelect(exercise.id)}
-                  className="flex w-full items-center justify-between gap-2 rounded-[var(--radius-card)] border border-[var(--color-border)] p-2 text-start"
-                >
-                  <span className="truncate">{exercise.title}</span>
-                  <span className="shrink-0 text-xs text-[var(--color-text-muted)]">
-                    {exercise.bpm} BPM
-                  </span>
-                </button>
-              </li>
-            ))
+        <div className="flex flex-col gap-2 overflow-y-auto">
+          {routines !== undefined && routines.length > 0 && (
+            <div className="flex flex-col gap-1">
+              <span className="text-xs font-semibold text-[var(--color-text-muted)]">רצפי תרגול</span>
+              <ul className="flex flex-col gap-1">
+                {routines.map((routine) => (
+                  <li key={routine.id}>
+                    <button
+                      type="button"
+                      onClick={() => onSelectRoutine(routine.id)}
+                      className="flex w-full items-center justify-between gap-2 rounded-[var(--radius-card)] border border-[var(--color-primary)] p-2 text-start"
+                    >
+                      <span className="truncate">{routine.title}</span>
+                      <span className="shrink-0 text-xs text-[var(--color-text-muted)]">{routine.exerciseCount} תרגילים</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
-        </ul>
+          <div className="flex flex-col gap-1">
+            {routines !== undefined && routines.length > 0 && (
+              <span className="text-xs font-semibold text-[var(--color-text-muted)]">תרגילים</span>
+            )}
+            <ul className="flex flex-col gap-1">
+              {exercises === undefined ? (
+                <li className="p-2 text-sm text-[var(--color-text-muted)]">טוען…</li>
+              ) : exercises.length === 0 ? (
+                <li className="p-2 text-sm text-[var(--color-text-muted)]">לא נמצאו תרגילים</li>
+              ) : (
+                exercises.map((exercise) => (
+                  <li key={exercise.id}>
+                    <button
+                      type="button"
+                      onClick={() => onSelectExercise(exercise.id)}
+                      className="flex w-full items-center justify-between gap-2 rounded-[var(--radius-card)] border border-[var(--color-border)] p-2 text-start"
+                    >
+                      <span className="truncate">{exercise.title}</span>
+                      <span className="shrink-0 text-xs text-[var(--color-text-muted)]">{exercise.bpm} BPM</span>
+                    </button>
+                  </li>
+                ))
+              )}
+            </ul>
+          </div>
+        </div>
       </div>
     </div>
   )
@@ -312,6 +356,11 @@ export function TouchDrumKitPage() {
     setIsBrowsingExercises(false)
   }
 
+  function handleSelectRoutine(routineId: string) {
+    remoteSender.selectRoutine(routineId)
+    setIsBrowsingExercises(false)
+  }
+
   function handleToggleMetronome() {
     if (metronome.isPlaying) {
       metronome.stop()
@@ -398,7 +447,9 @@ export function TouchDrumKitPage() {
         {isBrowsingExercises && (
           <ExerciseBrowserSheet
             exercises={remoteSender.exerciseList}
-            onSelect={handleSelectExercise}
+            routines={remoteSender.routineList}
+            onSelectExercise={handleSelectExercise}
+            onSelectRoutine={handleSelectRoutine}
             onClose={() => setIsBrowsingExercises(false)}
           />
         )}
@@ -445,13 +496,19 @@ export function TouchDrumKitPage() {
           than guessed via CSS (see useFitSize's own comment for why).
           shrink-0: this row/column keeps its natural size so the kit area
           reliably gets whatever's left, instead of the two fighting over
-          space. In landscape it becomes a narrow side column instead of a
-          top row — stacking the two vertically was wasting all the spare
+          space. In landscape it becomes a side column instead of a top row
+          — stacking the two vertically was wasting all the spare
           horizontal room a wide-but-short screen actually has, leaving the
-          kit stuck small even though there was plenty of space beside it;
-          overflow-y-auto is a safety net in case a narrow phone still can't
-          fit every control in the available height. */}
-        <div className="flex shrink-0 flex-wrap items-center justify-center gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 [box-shadow:var(--shadow-card)] landscape:h-full landscape:w-40 landscape:flex-col landscape:flex-nowrap landscape:justify-start landscape:overflow-y-auto">
+          kit stuck small even though there was plenty of space beside it.
+          Widened (w-64, not w-40) and still flex-wrap (not forced
+          flex-col/flex-nowrap) — a single-file column of every control
+          stacked one-per-row was reported as excessive vertical scrolling;
+          wrapping lets pairs of controls share a row instead, roughly
+          halving the column's height. content-start packs wrapped rows
+          against the top instead of spreading them across the full height;
+          overflow-y-auto stays as a safety net for a narrow-but-short
+          phone that still can't fit everything. */}
+        <div className="flex shrink-0 flex-wrap items-center justify-center gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 [box-shadow:var(--shadow-card)] landscape:h-full landscape:w-64 landscape:content-start landscape:overflow-y-auto">
           <button
             type="button"
             onClick={handleToggleMetronome}
@@ -640,7 +697,9 @@ export function TouchDrumKitPage() {
       {isBrowsingExercises && (
         <ExerciseBrowserSheet
           exercises={remoteSender.exerciseList}
-          onSelect={handleSelectExercise}
+          routines={remoteSender.routineList}
+          onSelectExercise={handleSelectExercise}
+          onSelectRoutine={handleSelectRoutine}
           onClose={() => setIsBrowsingExercises(false)}
         />
       )}

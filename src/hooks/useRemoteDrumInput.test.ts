@@ -244,6 +244,17 @@ describe('useRemoteDrumInput', () => {
     expect(onSelectExercise).toHaveBeenCalledWith('ex-1')
   })
 
+  it('calls onSelectRoutine with the routineId on a select_routine message', () => {
+    vi.stubGlobal('WebSocket', FakeWebSocket)
+    const onHit = vi.fn()
+    const onSelectRoutine = vi.fn()
+    renderHook(() => useRemoteDrumInput({ enabled: true, onHit, onSelectRoutine }))
+
+    act(() => latestSocket().simulateMessage({ type: 'select_routine', routineId: 'routine-1' }))
+
+    expect(onSelectRoutine).toHaveBeenCalledWith('routine-1')
+  })
+
   it('calls onTransportCommand with the action on a transport_command message', () => {
     vi.stubGlobal('WebSocket', FakeWebSocket)
     const onHit = vi.fn()
@@ -255,7 +266,7 @@ describe('useRemoteDrumInput', () => {
     expect(onTransportCommand).toHaveBeenCalledWith('pause')
   })
 
-  it('a request_exercise_list/select_exercise/transport_command message is silently ignored when no matching option was given', () => {
+  it('a request_exercise_list/select_exercise/select_routine/transport_command message is silently ignored when no matching option was given', () => {
     vi.stubGlobal('WebSocket', FakeWebSocket)
     const onHit = vi.fn()
     renderHook(() => useRemoteDrumInput({ enabled: true, onHit }))
@@ -263,6 +274,7 @@ describe('useRemoteDrumInput', () => {
     expect(() => {
       act(() => latestSocket().simulateMessage({ type: 'request_exercise_list' }))
       act(() => latestSocket().simulateMessage({ type: 'select_exercise', exerciseId: 'ex-1' }))
+      act(() => latestSocket().simulateMessage({ type: 'select_routine', routineId: 'routine-1' }))
       act(() => latestSocket().simulateMessage({ type: 'transport_command', action: 'stop' }))
     }).not.toThrow()
     expect(onHit).not.toHaveBeenCalled()
@@ -273,10 +285,11 @@ describe('useRemoteDrumInput', () => {
     const onHit = vi.fn()
     const { result } = renderHook(() => useRemoteDrumInput({ enabled: true, onHit }))
     const exercises = [{ id: 'ex-1', title: 'Basic Rock Beat', bpm: 90, difficulty: 'beginner' as const, isCustom: true }]
+    const routines = [{ id: 'routine-1', title: 'Warm-up', exerciseCount: 3 }]
 
-    act(() => result.current.sendExerciseList(exercises))
+    act(() => result.current.sendExerciseList(exercises, routines))
 
-    expect(JSON.parse(latestSocket().sentMessages[0]!)).toEqual({ type: 'exercise_list', exercises })
+    expect(JSON.parse(latestSocket().sentMessages[0]!)).toEqual({ type: 'exercise_list', exercises, routines })
   })
 
   it('sendPlaybackStatus sends a playback_status frame with the given status once connected', () => {
@@ -296,7 +309,7 @@ describe('useRemoteDrumInput', () => {
     const { result } = renderHook(() => useRemoteDrumInput({ enabled: false, onHit }))
 
     expect(() => {
-      result.current.sendExerciseList([])
+      result.current.sendExerciseList([], [])
       result.current.sendPlaybackStatus({ exerciseId: null, title: null, bpm: null, phase: 'none' })
     }).not.toThrow()
     expect(FakeWebSocket.instances).toHaveLength(0)
