@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import { DrumKit } from '../../components/visual-trainer/DrumKit'
 import { ExerciseNotationSheet } from '../../components/visual-trainer/ExerciseNotationSheet'
+import { LiveAccuracyMeter } from '../../components/visual-trainer/LiveAccuracyMeter'
 import { StickingPatternGuide } from '../../components/visual-trainer/StickingPatternGuide'
 import { useTouchDrumPlayback } from '../../hooks/useTouchDrumPlayback'
 import { useFullscreen } from '../../hooks/useFullscreen'
@@ -490,6 +491,14 @@ export function TouchDrumKitPage() {
             where reaching for the desktop isn't an option. pt-14 clears the
             absolute X/fullscreen buttons above. */}
         <div className="shrink-0 pt-14">{remoteControlBar}</div>
+        {/* Explicit user request: see accuracy live during the run, not
+            just at the end — hidden once 'finished' since RemoteControlBar's
+            own resultsSummary badge already covers that moment. */}
+        {remoteSender.playbackStatus?.phase !== 'finished' && (
+          <div className="flex shrink-0 justify-end px-1 pb-1">
+            <LiveAccuracyMeter accuracyPercent={notationState.liveAccuracyPercent} />
+          </div>
+        )}
         <div className="flex flex-1 items-center overflow-y-auto">
           <ExerciseNotationSheet
             exercise={notationState.exercise}

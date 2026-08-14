@@ -46,12 +46,18 @@ export interface NotationStatePayload {
    * ExerciseNotationSheet's own hitTimingByEventId prop, same plain-object
    * shape/reasoning as gradedEventIds above. */
   hitTimingByEventId: Record<string, number>
+  /** Live running accuracy (0-100), recomputed on every hit/miss — the
+   * phone's own view of what useVisualTrainer's own `scoring.accuracyPercent`
+   * already tracks locally on the desktop, mid-run rather than only once
+   * `resultsSummary` shows up at 'finished'. */
+  liveAccuracyPercent: number
 }
 
 /** Unconditional session status (unlike NotationStatePayload, which only
- * ever gets sent for staff_cursor+MIDI runs) — exerciseId/title/bpm are all
- * null together exactly when phase is 'none' (nothing loaded on the
- * desktop). Mirrors remote-drum-protocol.ts's playback_status message. */
+ * ever gets sent for a real, non-demo run with MIDI enabled, regardless of
+ * display mode) — exerciseId/title/bpm are all null together exactly when
+ * phase is 'none' (nothing loaded on the desktop). Mirrors
+ * remote-drum-protocol.ts's playback_status message. */
 export interface PlaybackStatusPayload {
   exerciseId: string | null
   title: string | null

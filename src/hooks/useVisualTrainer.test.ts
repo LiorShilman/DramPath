@@ -807,6 +807,42 @@ describe('useVisualTrainer', () => {
     // established for the desktop's own ExerciseNotationSheet.
     expect((payload as NotationStatePayload).playbackProgress.startOffsetMs).toBeLessThan(0)
     expect((payload as NotationStatePayload).gradedEventIds).toEqual({})
+    expect((payload as NotationStatePayload).liveAccuracyPercent).toBe(0)
+  })
+
+  it('a graded hit updates liveAccuracyPercent, and a subsequent extra hit lowers it — mirrored live, not just at finish', async () => {
+    vi.stubGlobal('AudioContext', FakeAudioContext)
+    const exercise = {
+      ...makeExercise([
+        { id: createId(), bar: 1, beat: 1, subdivisionIndex: 0, instrument: 'kick', velocity: 100 },
+        { id: createId(), bar: 1, beat: 4, subdivisionIndex: 0, instrument: 'snare', velocity: 100 },
+      ]),
+      displayMode: 'staff_cursor' as const,
+    }
+    const { result } = renderHook(() => useVisualTrainer(exercise, noHighwayRef))
+
+    act(() => result.current.toggleMidiControl())
+    await act(() => result.current.start())
+    await waitFor(() => expect(result.current.phase).toBe('running'), { timeout: 3000 })
+
+    // A well-timed kick hit matches the exercise's own 1st event — 100%
+    // accuracy (1 non-miss out of 1 expected event so far isn't how
+    // calculateAccuracy works — it's actually 1/(2 total events), i.e. 50%,
+    // since the 2nd event hasn't been missed or hit yet but still counts
+    // toward the exercise's total).
+    act(() => {
+      fireEvent.keyDown(window, { code: 'KeyJ' })
+    })
+    await waitFor(() => expect(result.current.lastGrade).not.toBeUndefined())
+    expect((latestNotationCall() as NotationStatePayload).liveAccuracyPercent).toBe(50)
+
+    // An extra (unmatched) hit grows the denominator without growing the
+    // numerator — accuracy drops.
+    act(() => {
+      fireEvent.keyDown(window, { code: 'KeyK' })
+    })
+    await waitFor(() => expect(result.current.lastGrade).toBe('extra'))
+    expect((latestNotationCall() as NotationStatePayload).liveAccuracyPercent).toBeCloseTo(33.33, 1)
   })
 
   it('a graded hit during a mirrored staff_cursor+MIDI run pushes an updated gradedEventIds', async () => {

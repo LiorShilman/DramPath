@@ -1,5 +1,6 @@
 import { Badge, Card } from '../ui'
 import type { BadgeVariant } from '../ui'
+import { LiveAccuracyMeter } from './LiveAccuracyMeter'
 import type { DynamicsGrade, HitGrade, ScoringSummary } from '../../domain'
 import type { ReactNode } from 'react'
 
@@ -72,7 +73,14 @@ export function HitFeedback({ lastGrade, lastDynamicsGrade, scoring }: HitFeedba
         )}
       </div>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <CompactStat label="דיוק" value={`${Math.round(scoring.accuracyPercent)}%`} />
+        {/* A visual gauge alongside the number (explicit user request: see
+            accuracy at a glance during the run, not just read a digit) —
+            its own component instead of CompactStat's plain text `value`,
+            since the bar needs its own markup, not just a bigger font. */}
+        <Card padding="sm" className="flex flex-col justify-center gap-0.5">
+          <h3 className="text-xs text-[var(--color-text-muted)]">דיוק</h3>
+          <LiveAccuracyMeter accuracyPercent={scoring.accuracyPercent} />
+        </Card>
         <CompactStat label="קומבו נוכחי" value={scoring.currentCombo} />
         <CompactStat label="קומבו שיא" value={scoring.bestCombo} />
         <CompactStat

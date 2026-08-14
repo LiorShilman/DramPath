@@ -70,6 +70,7 @@ describe('parseRemoteRelayMessage', () => {
       paused: false,
       gradedEventIds: { 'event-1': 'perfect', 'event-2': 'miss' },
       hitTimingByEventId: { 'event-1': 1234 },
+      liveAccuracyPercent: 50,
     })
     expect(parseRemoteRelayMessage(raw)).toEqual({
       type: 'notation_state',
@@ -78,6 +79,7 @@ describe('parseRemoteRelayMessage', () => {
       paused: false,
       gradedEventIds: { 'event-1': 'perfect', 'event-2': 'miss' },
       hitTimingByEventId: { 'event-1': 1234 },
+      liveAccuracyPercent: 50,
     })
   })
 

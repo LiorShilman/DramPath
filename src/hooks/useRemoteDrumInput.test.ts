@@ -188,6 +188,7 @@ describe('useRemoteDrumInput', () => {
         paused: false,
         gradedEventIds: { 'event-1': 'perfect' },
         hitTimingByEventId: { 'event-1': 1234 },
+        liveAccuracyPercent: 100,
       }),
     )
 
@@ -199,6 +200,7 @@ describe('useRemoteDrumInput', () => {
       paused: false,
       gradedEventIds: { 'event-1': 'perfect' },
       hitTimingByEventId: { 'event-1': 1234 },
+      liveAccuracyPercent: 100,
     })
   })
 

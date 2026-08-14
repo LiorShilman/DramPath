@@ -6,7 +6,7 @@ import { calculateBarDurationMs } from '../domain/calculations/event-timing'
 import { resolveEventScheduleMs } from '../domain/calculations/exercise-schedule'
 import { GRADING_THRESHOLDS, detectMissedEvents, findMatchingEvent, gradeDynamics, gradeTimingError } from '../domain/calculations/hit-matcher'
 import type { PendingDrumEvent } from '../domain/calculations/hit-matcher'
-import { summarizeScoring, summarizeDynamics } from '../domain/calculations/scoring-engine'
+import { calculateAccuracy, summarizeScoring, summarizeDynamics } from '../domain/calculations/scoring-engine'
 import type { DynamicsSummary } from '../domain/calculations/scoring-engine'
 import { markHit } from '../lib/visual-trainer/active-hits'
 import { useKeyboardDrums } from './useKeyboardDrums'
@@ -387,6 +387,14 @@ export function useVisualTrainer(
     setGradeCounts(countGrades(hitResultsRef.current, extraHitsRef.current))
   }, [])
 
+  // Synchronous read of the same accuracy number recomputeScoring's own
+  // setScoring will land on — needed at every lastNotationPayloadRef mutation
+  // site below, which run inside the same synchronous handler as the ref
+  // mutations that feed it, before React would ever flush the `scoring`
+  // state update itself.
+  const currentLiveAccuracyPercent = () =>
+    calculateAccuracy(hitResultsRef.current, extraHitsRef.current, totalExpectedEventsRef.current)
+
   // Grading/lifecycle logic (count-in->running, miss detection, finished) is
   // invoked through this ref from BOTH the rAF-driven tick() below AND
   // startBarInterval's own setInterval right below — see runGradingTick's
@@ -510,6 +518,7 @@ export function useVisualTrainer(
           })
           if (lastNotationPayloadRef.current) {
             for (const event of missed) lastNotationPayloadRef.current.gradedEventIds[event.eventId] = 'miss'
+            lastNotationPayloadRef.current.liveAccuracyPercent = currentLiveAccuracyPercent()
             sendNotationStateRef.current(lastNotationPayloadRef.current)
           }
           setLastGrade('miss')
@@ -642,6 +651,7 @@ export function useVisualTrainer(
         if (lastNotationPayloadRef.current) {
           lastNotationPayloadRef.current.gradedEventIds[match.eventId] = grade
           lastNotationPayloadRef.current.hitTimingByEventId[match.eventId] = elapsedMs
+          lastNotationPayloadRef.current.liveAccuracyPercent = currentLiveAccuracyPercent()
           sendNotationStateRef.current(lastNotationPayloadRef.current)
         }
         setLastGrade(grade)
@@ -650,6 +660,14 @@ export function useVisualTrainer(
         return grade
       }
       extraHitsRef.current.push({ id: createId(), instrument, hitTimeMs: elapsedMs })
+      if (lastNotationPayloadRef.current) {
+        // An 'extra' hit has no eventId to key gradedEventIds/hitTimingByEventId
+        // by, but it still moves the denominator (see calculateAccuracy) —
+        // the phone's own live accuracy needs this update just as much as a
+        // graded hit's does.
+        lastNotationPayloadRef.current.liveAccuracyPercent = currentLiveAccuracyPercent()
+        sendNotationStateRef.current(lastNotationPayloadRef.current)
+      }
       setLastGrade('extra')
       setLastDynamicsGrade(undefined)
       recomputeScoring()
@@ -891,6 +909,9 @@ export function useVisualTrainer(
           paused: false,
           gradedEventIds: {},
           hitTimingByEventId: {},
+          // Matches EMPTY_SCORING.accuracyPercent — nothing graded yet at
+          // the very start of a run.
+          liveAccuracyPercent: 0,
         }
         lastNotationPayloadRef.current = notationPayload
         sendNotationState(notationPayload)

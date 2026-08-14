@@ -42,6 +42,13 @@ const notationStateMessageSchema = z.object({
   // ExerciseNotationSheet's own hitTimingByEventId prop, same
   // keyed-by-DrumNoteEvent-id/plain-object shape as gradedEventIds above.
   hitTimingByEventId: z.record(z.string(), z.number()),
+  // Live running accuracy (0-100), recomputed on every hit/miss — explicit
+  // user request: seeing where you stand mid-run, not just at the end.
+  // Rides this same message (not a separate one) for the same reason
+  // gradedEventIds/hitTimingByEventId do: it needs to stay in lockstep with
+  // whichever hit/miss just changed it, not risk arriving out of order on
+  // its own channel.
+  liveAccuracyPercent: z.number(),
 })
 const notationClearMessageSchema = z.object({ type: z.literal('notation_clear') })
 
@@ -87,8 +94,8 @@ const transportCommandMessageSchema = z.object({
   action: z.enum(['start', 'pause', 'resume', 'stop', 'skip', 'previous']),
 })
 // Unconditional session status (unlike notation_state, which only fires for
-// staff_cursor+MIDI runs) — this is what drives the phone's transport
-// buttons regardless of display mode. exerciseId/title/bpm are all null
+// a real, non-demo run with MIDI enabled — regardless of display mode) —
+// this is what drives the phone's transport buttons. exerciseId/title/bpm are all null
 // together exactly when phase is 'none' (nothing loaded on the desktop).
 // Deliberately NOT importing VisualTrainerPhase from useVisualTrainer.ts
 // here — this lib module is imported BY that hook (via useRemoteDrumInput),

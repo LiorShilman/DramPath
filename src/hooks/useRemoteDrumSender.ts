@@ -18,11 +18,15 @@ export interface RemoteNotationState {
   /** Per-note actual strike time (ms), keyed by DrumNoteEvent id — see
    * remote-drum-protocol.ts's own doc comment on the wire field. */
   hitTimingByEventId: Record<string, number>
+  /** Live running accuracy (0-100) — see remote-drum-protocol.ts's own doc
+   * comment on the wire field. */
+  liveAccuracyPercent: number
 }
 
 /** Mirrors the desktop's unconditional session status (unlike
- * RemoteNotationState, which only ever arrives for staff_cursor+MIDI runs)
- * — drives the transport buttons regardless of display mode. undefined
+ * RemoteNotationState, which only ever arrives for a real, non-demo run
+ * with MIDI enabled — see useVisualTrainer's own gating on the sending
+ * side) — drives the transport buttons regardless of display mode. undefined
  * before the first playback_status ever arrives (or after disconnect);
  * once received it's never cleared back to undefined, only its own `phase`
  * field goes to 'none' — same reasoning notationState doesn't apply here:
@@ -142,6 +146,7 @@ export function useRemoteDrumSender(): UseRemoteDrumSenderResult {
           paused: message.paused,
           gradedEventIds: message.gradedEventIds,
           hitTimingByEventId: message.hitTimingByEventId,
+          liveAccuracyPercent: message.liveAccuracyPercent,
         })
       } else if (message?.type === 'notation_clear') {
         setNotationState(undefined)
