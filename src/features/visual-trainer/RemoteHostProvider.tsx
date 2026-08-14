@@ -85,9 +85,15 @@ export function RemoteHostProvider({ children }: { children: ReactNode }) {
       // no-op, so nothing remounts and the "cleared" status below would
       // never get corrected by a fresh one, leaving the phone stuck on
       // "nothing selected" even though the exercise is still right there,
-      // fully loaded, on the desktop. Skip both the clear and the
-      // navigation entirely — there's nothing to change.
-      if (location.pathname === targetPath) return
+      // fully loaded, on the desktop. Re-assert the session's own real
+      // current status instead of clearing+navigating — a plain no-op here
+      // wasn't enough either (reported directly): if the phone's display
+      // was ALREADY stuck wrong (e.g. from before this fix, or a dropped
+      // message), nothing would ever correct it without an actual resend.
+      if (location.pathname === targetPath) {
+        registeredSessionRef.current?.resendStatus()
+        return
+      }
       // Tell the phone nothing is active BEFORE navigating — VisualTrainerPage's
       // own exercise resolution is genuinely async (a Dexie lookup for a
       // persisted exercise), so without this the phone could keep showing the
@@ -102,9 +108,12 @@ export function RemoteHostProvider({ children }: { children: ReactNode }) {
   const handleSelectRoutine = useCallback(
     (routineId: string) => {
       const targetPath = `/practice/visual/routines/${routineId}/play`
-      // Same "re-selecting the current route is a no-op navigation" fix as
-      // handleSelectExercise above.
-      if (location.pathname === targetPath) return
+      // Same "re-selecting the current route re-asserts real status instead
+      // of clearing+navigating" fix as handleSelectExercise above.
+      if (location.pathname === targetPath) {
+        registeredSessionRef.current?.resendStatus()
+        return
+      }
       // Same "clear before navigate" reasoning as handleSelectExercise —
       // RoutinePlayerPage's own resolution is async too (a whole routine's
       // worth of exercises, resolved up front).

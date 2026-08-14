@@ -23,6 +23,15 @@ export interface RemoteSession {
    * step, not just move forward). Absent otherwise, in which case a remote
    * 'previous' transport_command is a correct no-op. */
   previous?: () => void
+  /** Re-sends this session's real current status (exercise + live phase) —
+   * used when the phone re-selects whatever's already the current
+   * exercise/routine: navigate() to an unchanged route is a no-op (nothing
+   * remounts), so this is the only way to correct a phone whose own
+   * display is stuck wrong (e.g. from a dropped message or a reconnect)
+   * short of an actual phase transition happening to occur. Always
+   * present, unlike skip/previous — every session has SOME current status
+   * worth re-asserting. */
+  resendStatus: () => void
 }
 
 export interface RemoteHostContextValue {

@@ -67,6 +67,7 @@ function makeFakeSession() {
     stop: vi.fn(),
     skip: vi.fn(),
     previous: vi.fn(),
+    resendStatus: vi.fn(),
   }
 }
 
@@ -187,28 +188,53 @@ describe('RemoteHostProvider / useRemoteHost', () => {
     expect(navigateSpy).toHaveBeenCalledWith('/practice/visual/routines/routine-1/play')
   })
 
-  it("re-selecting the exercise already at the current route is a no-op — doesn't clear or navigate, since navigate() to an unchanged location never remounts anything to correct that clear", () => {
+  it("re-selecting the exercise already at the current route doesn't navigate, and re-asserts the registered session's real status instead of clearing it", () => {
+    vi.stubGlobal('WebSocket', FakeWebSocket)
+    mockPathname = '/practice/visual/ex-1'
+    const { result } = renderHook(() => useRemoteHost(), { wrapper })
+    const session = makeFakeSession()
+
+    act(() => result.current.toggleEnabled())
+    act(() => {
+      result.current.registerSession(session)
+    })
+    act(() => latestSocket().simulateMessage({ type: 'select_exercise', exerciseId: 'ex-1' }))
+
+    expect(navigateSpy).not.toHaveBeenCalled()
+    // No clearing {phase: 'none'} sent — a stuck-wrong phone display gets
+    // corrected via the session's own resendStatus instead.
+    expect(latestSocket().sentMessages).toHaveLength(0)
+    expect(session.resendStatus).toHaveBeenCalledTimes(1)
+  })
+
+  it('re-selecting the routine already at the current route re-asserts real status the same way', () => {
+    vi.stubGlobal('WebSocket', FakeWebSocket)
+    mockPathname = '/practice/visual/routines/routine-1/play'
+    const { result } = renderHook(() => useRemoteHost(), { wrapper })
+    const session = makeFakeSession()
+
+    act(() => result.current.toggleEnabled())
+    act(() => {
+      result.current.registerSession(session)
+    })
+    act(() => latestSocket().simulateMessage({ type: 'select_routine', routineId: 'routine-1' }))
+
+    expect(navigateSpy).not.toHaveBeenCalled()
+    expect(latestSocket().sentMessages).toHaveLength(0)
+    expect(session.resendStatus).toHaveBeenCalledTimes(1)
+  })
+
+  it('re-selecting the current route with no session registered does not throw', () => {
     vi.stubGlobal('WebSocket', FakeWebSocket)
     mockPathname = '/practice/visual/ex-1'
     const { result } = renderHook(() => useRemoteHost(), { wrapper })
 
     act(() => result.current.toggleEnabled())
-    act(() => latestSocket().simulateMessage({ type: 'select_exercise', exerciseId: 'ex-1' }))
 
+    expect(() =>
+      act(() => latestSocket().simulateMessage({ type: 'select_exercise', exerciseId: 'ex-1' })),
+    ).not.toThrow()
     expect(navigateSpy).not.toHaveBeenCalled()
-    expect(latestSocket().sentMessages).toHaveLength(0)
-  })
-
-  it('re-selecting the routine already at the current route is a no-op', () => {
-    vi.stubGlobal('WebSocket', FakeWebSocket)
-    mockPathname = '/practice/visual/routines/routine-1/play'
-    const { result } = renderHook(() => useRemoteHost(), { wrapper })
-
-    act(() => result.current.toggleEnabled())
-    act(() => latestSocket().simulateMessage({ type: 'select_routine', routineId: 'routine-1' }))
-
-    expect(navigateSpy).not.toHaveBeenCalled()
-    expect(latestSocket().sentMessages).toHaveLength(0)
   })
 
   it('transport_command dispatches to the matching registered session method', () => {
@@ -243,7 +269,14 @@ describe('RemoteHostProvider / useRemoteHost', () => {
   it("transport_command 'skip'/'previous' no-op when the registered session has neither (a plain, non-routine run)", () => {
     vi.stubGlobal('WebSocket', FakeWebSocket)
     const { result } = renderHook(() => useRemoteHost(), { wrapper })
-    const sessionWithoutSkip = { handleHit: vi.fn(), start: vi.fn(), pause: vi.fn(), resume: vi.fn(), stop: vi.fn() }
+    const sessionWithoutSkip = {
+      handleHit: vi.fn(),
+      start: vi.fn(),
+      pause: vi.fn(),
+      resume: vi.fn(),
+      stop: vi.fn(),
+      resendStatus: vi.fn(),
+    }
 
     act(() => result.current.toggleEnabled())
     act(() => {

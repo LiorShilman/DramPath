@@ -931,6 +931,27 @@ export function useVisualTrainer(
     sendPlaybackStatus({ exerciseId: null, title: null, bpm: null, phase: 'none' })
   }, [clearStickClickTimeouts, sendNotationState, sendPlaybackStatus, setPhaseBoth, stopLoops])
 
+  // Re-asserts THIS session's real current status on demand — not the
+  // registration effect's own mount-time 'idle' snapshot below, which would
+  // be wrong once the run has actually moved past idle (running/paused/
+  // finished). Exists specifically for RemoteHostProvider's "re-selecting
+  // whatever's already the current route" case: navigate() to an unchanged
+  // location is a no-op (nothing remounts), so if the phone's own display
+  // is already stuck wrong for any reason — a dropped message, or simply
+  // reconnecting mid-run — there's otherwise no way to correct it short of
+  // an actual phase transition happening to occur. Reads phaseRef (the
+  // live value tick()/handleHit() themselves already trust), not the
+  // `phase` state closed over at whatever render defined this callback.
+  const resendStatus = useCallback(() => {
+    sendPlaybackStatus({
+      exerciseId: exercise.id,
+      title: exercise.title,
+      bpm: exercise.bpm,
+      phase: phaseRef.current,
+      routineProgress: routineProgressRef.current,
+    })
+  }, [exercise, sendPlaybackStatus])
+
   // Registers this instance as RemoteHostProvider's "active session" — a
   // phone hit or transport_command reaches whichever useVisualTrainer
   // instance is currently registered (only one VisualTrainerRunner is ever
@@ -957,6 +978,7 @@ export function useVisualTrainer(
       stop: exit,
       skip: options?.onSkip,
       previous: options?.onPrevious,
+      resendStatus,
     })
     return () => {
       unregister()
@@ -969,6 +991,7 @@ export function useVisualTrainer(
     options?.onPrevious,
     pause,
     registerSession,
+    resendStatus,
     resume,
     sendPlaybackStatus,
     start,
