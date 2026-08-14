@@ -146,6 +146,12 @@ const METRONOME_MUTED_STORAGE_KEY = 'drumpath.isMetronomeMuted'
 
 const COUNT_IN_BARS = 1
 const BAR_UPDATE_INTERVAL_MS = 200
+// Two kick hits that both land outside the exercise's own pattern (graded
+// 'extra', not matched to any scheduled note) within this window count as a
+// deliberate "jump to start" gesture — gating on 'extra' specifically is
+// what lets this coexist with genuine fast double-kick patterns in the
+// curriculum, whose hits match real events and are graded normally instead.
+const DOUBLE_KICK_RESTART_WINDOW_MS = 350
 
 // staff_cursor-only grading correction (explicit user request/investigation).
 // Used to also carry a per-instrument "kick reads early" extra (removed) —
@@ -339,10 +345,15 @@ export function useVisualTrainer(
   // Mirrors isDemo state — tick() reads this ref directly (like phaseRef)
   // so it doesn't need isDemo in its own dependency array.
   const isDemoRef = useRef(false)
-  // handleMidiHit (below) needs to call start() on a kick hit while idle —
-  // same declaration-order problem sendNotationStateRef etc. already solve:
-  // start isn't declared until well after this point in the hook.
+  // handleMidiHit (below) needs to call start()/restart() on a kick gesture
+  // while idle/finished or mid-run — same declaration-order problem
+  // sendNotationStateRef etc. already solve: start/restart aren't declared
+  // until well after this point in the hook.
   const startRef = useRef<() => void>(() => {})
+  const restartRef = useRef<() => void>(() => {})
+  // Timestamp (performance.now()) of the last kick hit that counted toward
+  // a "jump to start" double-click gesture — see DOUBLE_KICK_RESTART_WINDOW_MS.
+  const lastExtraKickAtRef = useRef<number | null>(null)
 
   const thresholds = GRADING_THRESHOLDS[exercise.difficulty]
 
@@ -581,9 +592,12 @@ export function useVisualTrainer(
     // this with no 3rd argument, so it's undefined there, which is the
     // single gate dynamics grading needs (see below): no per-input-source
     // special-casing anywhere else in this function.
-    (instrument: DrumInstrument, hitTimeMs: number, velocity?: number) => {
+    // Return value (the grade just assigned) exists purely for
+    // handleMidiHit's double-kick "jump to start" detection below — every
+    // other caller (useKeyboardDrums, handleRemoteHit) ignores it.
+    (instrument: DrumInstrument, hitTimeMs: number, velocity?: number): HitGrade | 'extra' | undefined => {
       const engine = engineRef.current
-      if (!engine) return
+      if (!engine) return undefined
 
       const elapsedMs = convertHitTimeToExerciseElapsedMs(
         hitTimeMs,
@@ -632,12 +646,14 @@ export function useVisualTrainer(
         }
         setLastGrade(grade)
         setLastDynamicsGrade(dynamicsGrade)
-      } else {
-        extraHitsRef.current.push({ id: createId(), instrument, hitTimeMs: elapsedMs })
-        setLastGrade('extra')
-        setLastDynamicsGrade(undefined)
+        recomputeScoring()
+        return grade
       }
+      extraHitsRef.current.push({ id: createId(), instrument, hitTimeMs: elapsedMs })
+      setLastGrade('extra')
+      setLastDynamicsGrade(undefined)
       recomputeScoring()
+      return 'extra'
     },
     [noteHighwayRef, recomputeScoring, thresholds],
   )
@@ -730,7 +746,29 @@ export function useVisualTrainer(
         }
         return
       }
-      handleHit(instrument, hitTimeMs, velocity)
+      const grade = handleHit(instrument, hitTimeMs, velocity)
+      if (instrument !== 'kick') return
+      if (grade !== 'extra') {
+        // A kick that matched a real scheduled note breaks any pending
+        // double-click — two legitimate pattern hits should never chain
+        // into an accidental restart later.
+        lastExtraKickAtRef.current = null
+        return
+      }
+      // Explicit user request: two kick hits that both miss the pattern
+      // (graded 'extra' — not matched to any scheduled note) close together
+      // read as a deliberate "jump to start" gesture, mirroring the
+      // idle/finished kick-to-start above but for mid-run restarts. Gating
+      // on 'extra' (rather than any kick) is what lets this coexist with
+      // genuine fast double-kick patterns in the curriculum, whose hits
+      // match real events and are graded normally instead.
+      const now = performance.now()
+      const lastExtraKickAt = lastExtraKickAtRef.current
+      lastExtraKickAtRef.current = now
+      if (lastExtraKickAt !== null && now - lastExtraKickAt <= DOUBLE_KICK_RESTART_WINDOW_MS) {
+        lastExtraKickAtRef.current = null
+        restartRef.current()
+      }
     },
     [handleHit],
   )
@@ -831,15 +869,22 @@ export function useVisualTrainer(
       setDynamicsSummary(EMPTY_DYNAMICS_SUMMARY)
 
       // Mirror this run's notation to the phone (explicit user request) —
-      // scoped to exactly the scenario it's for: a real (non-demo)
-      // staff_cursor run with a real e-kit connected. Anything else (demo,
-      // note_highway, or MIDI not enabled) explicitly clears whatever the
-      // phone was showing, so switching modes/input never leaves it stale.
-      // sessionId is Date.now(), not playSessionId state — the phone's own
+      // scoped to exactly the scenario it's for: a real (non-demo) run with
+      // a real e-kit connected, so the phone becomes a companion display
+      // while the player's hands stay on the kit. Sent for every
+      // displayMode, not just staff_cursor — the phone's own
+      // ExerciseNotationSheet is a generic rows-of-notation view that works
+      // for any exercise, including the regular note_highway curriculum
+      // lessons the desktop itself still shows as a scrolling highway; only
+      // the *desktop's* rendering choice is staff_cursor-gated (see
+      // effectiveDisplayMode in VisualTrainerPage.tsx). Anything else (demo,
+      // or MIDI not enabled) explicitly clears whatever the phone was
+      // showing, so switching modes/input never leaves it stale. sessionId
+      // is Date.now(), not playSessionId state — the phone's own
       // ExerciseNotationSheet only needs *some* value that changes per run
       // to remount its CSS animation, not one numerically matching the
       // desktop's own React state.
-      if (!demo && displayMode === 'staff_cursor' && isMidiControlEnabledRef.current) {
+      if (!demo && isMidiControlEnabledRef.current) {
         const notationPayload: NotationStatePayload = {
           exercise,
           playbackProgress: { bpm: exercise.bpm, sessionId: Date.now(), startOffsetMs: startOffsetMs - countInDurationMsRef.current },
@@ -941,6 +986,9 @@ export function useVisualTrainer(
   const restart = useCallback(() => {
     beginPlayback(isDemoRef.current)
   }, [beginPlayback])
+  useEffect(() => {
+    restartRef.current = restart
+  }, [restart])
 
   const exit = useCallback(() => {
     engineRef.current?.stop()

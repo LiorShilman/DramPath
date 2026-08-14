@@ -702,6 +702,77 @@ describe('useVisualTrainer', () => {
     expect(result.current.phase).toBe('paused')
   })
 
+  // "Jump to start" mid-run: two kick hits that both miss the pattern
+  // (graded 'extra') land close together — an exercise with no kick events
+  // at all means every kick hit during the run is guaranteed 'extra',
+  // regardless of exact timing, so these tests don't need to line up with
+  // real note-grading windows.
+  it('two rapid extra kick hits during a run restart the exercise (jump to start)', async () => {
+    vi.stubGlobal('AudioContext', FakeAudioContext)
+    const input = new FakeMIDIInput()
+    stubMidiAccess(input)
+    const exercise = makeExercise([
+      { id: createId(), bar: 1, beat: 1, subdivisionIndex: 0, instrument: 'snare', velocity: 100 },
+    ])
+    const { result } = renderHook(() => useVisualTrainer(exercise, noHighwayRef))
+
+    act(() => result.current.toggleMidiControl())
+    await waitFor(() => expect(result.current.midiStatus).toBe('connected'))
+    await act(() => result.current.start())
+    await waitFor(() => expect(result.current.phase).toBe('running'), { timeout: 3000 })
+
+    // Note 36 = kick (midi-drum-map.ts) — never matches this snare-only
+    // exercise, so both hits grade 'extra'.
+    act(() => input.simulateMessage([0x99, 36, 100]))
+    act(() => input.simulateMessage([0x99, 36, 100]))
+
+    await waitFor(() => expect(result.current.phase).toBe('count-in'), { timeout: 3000 })
+  })
+
+  it('two extra kick hits further apart than the double-click window do not restart the exercise', async () => {
+    vi.stubGlobal('AudioContext', FakeAudioContext)
+    const input = new FakeMIDIInput()
+    stubMidiAccess(input)
+    const exercise = makeExercise([
+      { id: createId(), bar: 1, beat: 1, subdivisionIndex: 0, instrument: 'snare', velocity: 100 },
+    ])
+    const { result } = renderHook(() => useVisualTrainer(exercise, noHighwayRef))
+
+    act(() => result.current.toggleMidiControl())
+    await waitFor(() => expect(result.current.midiStatus).toBe('connected'))
+    await act(() => result.current.start())
+    await waitFor(() => expect(result.current.phase).toBe('running'), { timeout: 3000 })
+
+    act(() => input.simulateMessage([0x99, 36, 100]))
+    // Longer than DOUBLE_KICK_RESTART_WINDOW_MS (350ms in useVisualTrainer.ts).
+    await new Promise((resolve) => setTimeout(resolve, 500))
+    act(() => input.simulateMessage([0x99, 36, 100]))
+
+    expect(result.current.phase).not.toBe('count-in')
+  })
+
+  it('two rapid extra hits on a non-kick pad do not restart the exercise', async () => {
+    vi.stubGlobal('AudioContext', FakeAudioContext)
+    const input = new FakeMIDIInput()
+    stubMidiAccess(input)
+    const exercise = makeExercise([
+      { id: createId(), bar: 1, beat: 1, subdivisionIndex: 0, instrument: 'kick', velocity: 100 },
+    ])
+    const { result } = renderHook(() => useVisualTrainer(exercise, noHighwayRef))
+
+    act(() => result.current.toggleMidiControl())
+    await waitFor(() => expect(result.current.midiStatus).toBe('connected'))
+    await act(() => result.current.start())
+    await waitFor(() => expect(result.current.phase).toBe('running'), { timeout: 3000 })
+
+    // Note 49 = crash (midi-drum-map.ts) — never matches this kick-only
+    // exercise, so both hits grade 'extra', but only kick drives the gesture.
+    act(() => input.simulateMessage([0x99, 49, 100]))
+    act(() => input.simulateMessage([0x99, 49, 100]))
+
+    expect(result.current.phase).not.toBe('count-in')
+  })
+
   // notation-mirroring to the phone (ADR 0007's host->controller direction)
   // — gated purely on the isMidiControlEnabled *toggle*, not on an actual
   // MIDI device being present, so these tests don't need the FakeMIDIInput
@@ -794,7 +865,11 @@ describe('useVisualTrainer', () => {
     )
   })
 
-  it('starting a note_highway run (even with MIDI enabled) calls sendNotationState(null)', async () => {
+  it('starting a note_highway run with MIDI enabled also mirrors notation to the phone', async () => {
+    // Explicit user request: the phone's own rows-of-notation view (and its
+    // "coming up" hint) is a generic display for any exercise, not just
+    // staff_cursor ones — only the *desktop's* own on-screen choice between
+    // NoteHighway and ExerciseNotationSheet stays displayMode-gated.
     vi.stubGlobal('AudioContext', FakeAudioContext)
     const exercise = makeExercise([{ id: createId(), bar: 1, beat: 1, subdivisionIndex: 0, instrument: 'kick', velocity: 100 }])
     const { result } = renderHook(() => useVisualTrainer(exercise, noHighwayRef))
@@ -803,7 +878,9 @@ describe('useVisualTrainer', () => {
     await act(() => result.current.start())
     await waitFor(() => expect(result.current.phase).toBe('count-in'))
 
-    expect(latestNotationCall()).toBeNull()
+    const payload = latestNotationCall()
+    expect(payload).not.toBeNull()
+    expect((payload as NotationStatePayload).exercise.id).toBe(exercise.id)
   })
 
   it('starting a staff_cursor run WITHOUT MIDI enabled (keyboard only) calls sendNotationState(null)', async () => {
