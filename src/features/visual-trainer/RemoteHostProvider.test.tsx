@@ -9,13 +9,18 @@ import { createId } from '../../domain'
 import type { InteractiveExercise, PracticeRoutine } from '../../domain'
 
 // RemoteHostProvider calls useNavigate() (select_exercise -> navigate to
-// the chosen exercise) — mocked here rather than dragging in a real router
-// tree, same reasoning ExerciseBuilderPage.test.tsx-style tests already
-// apply elsewhere in this codebase for router-adjacent hooks.
+// the chosen exercise) and useLocation() (to detect a "re-select the
+// current route" no-op — see handleSelectExercise's own comment) — both
+// mocked here rather than dragging in a real router tree, same reasoning
+// ExerciseBuilderPage.test.tsx-style tests already apply elsewhere in this
+// codebase for router-adjacent hooks. mockPathname is mutable per test
+// (default '/dashboard', never a real target path) so a test can simulate
+// "already on this route" by setting it to match.
 const navigateSpy = vi.fn()
+let mockPathname = '/dashboard'
 vi.mock('react-router', async (importOriginal) => {
   const actual = await importOriginal<typeof import('react-router')>()
-  return { ...actual, useNavigate: () => navigateSpy }
+  return { ...actual, useNavigate: () => navigateSpy, useLocation: () => ({ pathname: mockPathname }) }
 })
 
 // Same hand-rolled test-double technique as useRemoteDrumInput.test.ts —
@@ -89,6 +94,7 @@ describe('RemoteHostProvider / useRemoteHost', () => {
   afterEach(async () => {
     vi.unstubAllGlobals()
     navigateSpy.mockClear()
+    mockPathname = '/dashboard'
     FakeWebSocket.instances = []
     // isEnabled reads from real (jsdom) localStorage on mount — without
     // clearing it, an earlier test's toggleEnabled() leaves it 'true', so a
@@ -179,6 +185,30 @@ describe('RemoteHostProvider / useRemoteHost', () => {
     const sent = JSON.parse(latestSocket().sentMessages.at(-1)!)
     expect(sent).toEqual({ type: 'playback_status', exerciseId: null, title: null, bpm: null, phase: 'none' })
     expect(navigateSpy).toHaveBeenCalledWith('/practice/visual/routines/routine-1/play')
+  })
+
+  it("re-selecting the exercise already at the current route is a no-op — doesn't clear or navigate, since navigate() to an unchanged location never remounts anything to correct that clear", () => {
+    vi.stubGlobal('WebSocket', FakeWebSocket)
+    mockPathname = '/practice/visual/ex-1'
+    const { result } = renderHook(() => useRemoteHost(), { wrapper })
+
+    act(() => result.current.toggleEnabled())
+    act(() => latestSocket().simulateMessage({ type: 'select_exercise', exerciseId: 'ex-1' }))
+
+    expect(navigateSpy).not.toHaveBeenCalled()
+    expect(latestSocket().sentMessages).toHaveLength(0)
+  })
+
+  it('re-selecting the routine already at the current route is a no-op', () => {
+    vi.stubGlobal('WebSocket', FakeWebSocket)
+    mockPathname = '/practice/visual/routines/routine-1/play'
+    const { result } = renderHook(() => useRemoteHost(), { wrapper })
+
+    act(() => result.current.toggleEnabled())
+    act(() => latestSocket().simulateMessage({ type: 'select_routine', routineId: 'routine-1' }))
+
+    expect(navigateSpy).not.toHaveBeenCalled()
+    expect(latestSocket().sentMessages).toHaveLength(0)
   })
 
   it('transport_command dispatches to the matching registered session method', () => {

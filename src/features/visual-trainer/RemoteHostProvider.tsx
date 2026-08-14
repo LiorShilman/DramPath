@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { useNavigate } from 'react-router'
+import { useLocation, useNavigate } from 'react-router'
 import { useRemoteDrumInput } from '../../hooks/useRemoteDrumInput'
 import type { PlaybackStatusPayload } from '../../hooks/useRemoteDrumInput'
 import type { ExerciseListItem, RoutineListItem, TransportCommandAction } from '../../lib/visual-trainer/remote-drum-protocol'
@@ -27,6 +27,7 @@ function loadIsEnabled(): boolean {
  * the currently-active session via registerSession. */
 export function RemoteHostProvider({ children }: { children: ReactNode }) {
   const navigate = useNavigate()
+  const location = useLocation()
   const [isEnabled, setIsEnabled] = useState(loadIsEnabled)
   const registeredSessionRef = useRef<RemoteSession | undefined>(undefined)
   // sendExerciseList/sendPlaybackStatus are returned FROM the
@@ -77,26 +78,40 @@ export function RemoteHostProvider({ children }: { children: ReactNode }) {
 
   const handleSelectExercise = useCallback(
     (exerciseId: string) => {
+      const targetPath = `/practice/visual/${exerciseId}`
+      // Re-selecting whatever's ALREADY the current route is a real, common
+      // case (reported directly: picking the same lesson again "cancels"
+      // it) — react-router treats navigate() to an unchanged location as a
+      // no-op, so nothing remounts and the "cleared" status below would
+      // never get corrected by a fresh one, leaving the phone stuck on
+      // "nothing selected" even though the exercise is still right there,
+      // fully loaded, on the desktop. Skip both the clear and the
+      // navigation entirely — there's nothing to change.
+      if (location.pathname === targetPath) return
       // Tell the phone nothing is active BEFORE navigating — VisualTrainerPage's
       // own exercise resolution is genuinely async (a Dexie lookup for a
       // persisted exercise), so without this the phone could keep showing the
       // previous exercise's stale controls for a beat after the desktop already
       // moved on.
       sendPlaybackStatusRef.current({ exerciseId: null, title: null, bpm: null, phase: 'none' })
-      void navigate(`/practice/visual/${exerciseId}`)
+      void navigate(targetPath)
     },
-    [navigate],
+    [navigate, location.pathname],
   )
 
   const handleSelectRoutine = useCallback(
     (routineId: string) => {
+      const targetPath = `/practice/visual/routines/${routineId}/play`
+      // Same "re-selecting the current route is a no-op navigation" fix as
+      // handleSelectExercise above.
+      if (location.pathname === targetPath) return
       // Same "clear before navigate" reasoning as handleSelectExercise —
       // RoutinePlayerPage's own resolution is async too (a whole routine's
       // worth of exercises, resolved up front).
       sendPlaybackStatusRef.current({ exerciseId: null, title: null, bpm: null, phase: 'none' })
-      void navigate(`/practice/visual/routines/${routineId}/play`)
+      void navigate(targetPath)
     },
-    [navigate],
+    [navigate, location.pathname],
   )
 
   const handleTransportCommand = useCallback((action: TransportCommandAction) => {
