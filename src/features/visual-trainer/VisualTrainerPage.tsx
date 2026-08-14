@@ -326,6 +326,16 @@ export function VisualTrainerRunner({
   // that same earlier request) keeps the kit a sane, constant size
   // regardless of how tall the notation gets.
   const useSideBySideLayout = trainer.isDemo || effectiveDisplayMode === 'staff_cursor'
+  // Explicit user request: the sticky left column had a lot of unused
+  // width relative to the notation beside it (confirmed via screenshot —
+  // the notation itself was nowhere near using all its own available
+  // room), and once a real MIDI kit is actually connected, the keyboard-key
+  // legend (J/K/L-style computer-keyboard mappings) is pure dead weight —
+  // nobody's reading it with a real kit already answering every hit. That
+  // freed space goes straight to DrumKit itself (fills 100% of whatever
+  // width this column gets, see its own aspect-[4/3] w-full), not just
+  // left blank.
+  const isMidiActive = trainer.isMidiControlEnabled && trainer.midiStatus === 'connected'
   const sideBySideKit = (
     <DrumKit
       activeHits={trainer.activeHits}
@@ -413,11 +423,13 @@ export function VisualTrainerRunner({
       // keys always stay visible together, and the keys sit beside the
       // notation instead of trailing below every row of it.
       <div className="flex flex-1 flex-col gap-4 lg:flex-row-reverse lg:items-start">
-        <div className="flex w-full shrink-0 flex-col gap-3 lg:sticky lg:top-14 lg:w-[32rem]">
+        <div
+          className={`flex w-full shrink-0 flex-col gap-3 lg:sticky lg:top-14 ${isMidiActive ? 'lg:w-[44rem]' : 'lg:w-[36rem]'}`}
+        >
           {transportControls}
           <HitFeedback lastGrade={trainer.lastGrade} lastDynamicsGrade={trainer.lastDynamicsGrade} scoring={trainer.scoring} />
           {sideBySideKit}
-          {keyboardGuide}
+          {!isMidiActive && keyboardGuide}
           {phoneControlAndDemoButton}
         </div>
         <div className="w-full min-w-0 flex-1">{highway}</div>
