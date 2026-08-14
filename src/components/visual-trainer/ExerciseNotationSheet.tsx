@@ -444,7 +444,16 @@ export function ExerciseNotationSheet({
   })
 
   return (
-    <div>
+    // w-full is load-bearing, not decorative: the <svg> below sizes itself
+    // to `width: 100%` of ITS containing block — before this wrapper <div>
+    // existed, that containing block was this flex-item's own place inside
+    // the caller's flex row, which resolves percentage widths against the
+    // flex container's content box regardless of alignment. A bare <div>
+    // with no width class instead sizes to its own content on the main
+    // axis, so the svg's 100% resolved against an already content-sized
+    // (i.e. tiny/collapsed) box — reported directly: notation rendered tiny
+    // in a corner with most of the container left empty.
+    <div className="w-full">
       {/* Live "coming up" line (see showNextUpHint's own doc comment) — a
           plain HTML element above the staff, not SVG: it needs to stay in
           one fixed on-screen spot regardless of scroll position, which an
