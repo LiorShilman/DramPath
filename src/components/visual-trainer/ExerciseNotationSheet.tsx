@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { SUBDIVISIONS_PER_BEAT, calculateBarDurationMs, calculateEventTimeMs } from '../../domain/calculations/event-timing'
 import { STAFF_POSITION, staffPositionToOffsetPx } from '../../lib/visual-trainer/staff-notation-layout'
 import { INSTRUMENT_LABELS } from '../../lib/visual-trainer/instrument-labels'
@@ -98,20 +98,24 @@ export interface ExerciseNotationSheetProps {
    * implicit row start whether or not it's included. Omit/empty to keep
    * the existing uniform-barsPerRow behavior. */
   rowBreakBars?: number[]
-  /** Off by default. When on, shows a small "coming up" hint in the gap
-   * between each row and the next — the instrument(s) the next row's own
-   * first beat needs, and (only when the WHOLE exercise never uses a foot
-   * instrument at all, i.e. voiceOf() is 'hands' for every single event —
-   * see isHandsOnlyExercise below) which hand plays it, assuming strict
-   * R/L alternation across the whole piece. Explicit user request/idea:
-   * a row transition is exactly where the notation is hardest to read
-   * ahead in (the next row's own first note isn't visible until you've
-   * already scrolled/looked down), so this is where the hint earns its
-   * keep the most. DrumPath has no real "which hand" data at all — this
-   * is a plain alternating-parity guess, deliberately only shown when
-   * that guess can't be wrong (no foot instrument anywhere in the piece
-   * to desync it from reality); a real groove with kick/cymbals/toms
-   * doesn't get a hand hint, only the instrument. */
+  /** Off by default. When on, shows a small live "coming up" line above the
+   * staff — the instrument(s) of whichever event(s) come next after the
+   * CURRENT playback position (not a fixed "next row" label — explicit user
+   * correction after an earlier per-row version: it needs to track the
+   * actual next note in the performance, updating continuously as playback
+   * moves, including mid-row). Needs `playbackProgress` to mean anything —
+   * without a real run in progress there's no live position to measure
+   * "next" against, so this renders nothing regardless of this flag.
+   * Ignores hand for any multi-instrument tie (explicit user request: a
+   * chord already means both hands are busy, and DrumPath doesn't actually
+   * know which hand plays which of the two — better to show nothing than
+   * guess). For a single upcoming note, only when the WHOLE exercise never
+   * uses a foot instrument at all (i.e. voiceOf() is 'hands' for every
+   * single event — see isHandsOnlyExercise below) also shows which hand
+   * plays it, assuming strict R/L alternation across the whole piece —
+   * DrumPath has no real "which hand" data at all, so this alternating-
+   * parity guess is deliberately only shown when it can't be wrong (no foot
+   * instrument anywhere in the piece to desync it from reality). */
   showNextUpHint?: boolean
 }
 
@@ -166,10 +170,9 @@ const STEM_LENGTH_PX = 12
 const FLAG_GAP_PX = 4
 const BASE_BOTTOM_PADDING_PX = 6
 const ROW_GAP_PX = 12
-// Wider gap when showNextUpHint is on — the plain 12px gap has no room for
-// a text line in it at all.
-const NEXT_UP_HINT_ROW_GAP_PX = 28
-const NEXT_UP_HINT_FONT_SIZE = 10
+// How often the live "coming up" clock re-checks its position — a text
+// label doesn't need per-frame (60fps) precision like the cursor does.
+const NEXT_UP_HINT_POLL_MS = 200
 const BEAT_LABEL_ROW_HEIGHT_PX = 10
 const BEAT_LABEL_FONT_SIZE = 7
 // Drum-count-out syllables for each off-beat subdivision slot (index 0, the
@@ -247,6 +250,61 @@ export function ExerciseNotationSheet({
   const rowRefs = useRef(new Map<number, SVGGElement>())
   const lastScrolledRowIndexRef = useRef(-1)
   const scrollSessionIdRef = useRef<number | undefined>(undefined)
+
+  // Live "coming up" clock (see showNextUpHint's own doc comment) — a
+  // self-contained wall-clock projection from playbackProgress, independent
+  // of the cursor's own CSS-only animation timing, since a text hint needs
+  // its value read back out in JS, which animation-delay alone can't give.
+  // Depends only on playbackProgress's own primitive fields (sessionId,
+  // startOffsetMs), never the object itself, so a fresh object reference
+  // from the caller every render can't spuriously reset the clock.
+  const sessionId = playbackProgress?.sessionId
+  const startOffsetMs = playbackProgress?.startOffsetMs ?? 0
+  const hasPlayback = playbackProgress !== undefined
+  const [liveElapsedMs, setLiveElapsedMs] = useState<number | null>(null)
+  const clockAnchorRef = useRef<{ sessionId: number; startOffsetMs: number; startedAt: number } | null>(null)
+  const pausedAtElapsedMsRef = useRef<number | null>(null)
+
+  // Live-projects elapsed ms from playbackProgress via a wall-clock anchor
+  // (ref only — setLiveElapsedMs is called exclusively from inside the
+  // interval callback below, never synchronously in this effect's own body,
+  // per react-hooks/set-state-in-effect: an effect should update external
+  // systems or subscribe to them, not setState directly), so a fresh
+  // session can take up to one NEXT_UP_HINT_POLL_MS tick to show its first
+  // hint — acceptable, there's always a count-in bar before it'd matter.
+  // Freezes across a pause the same way the cursor's own
+  // animation-play-state does, so resuming continues from where it actually
+  // left off instead of jumping ahead by however long the pause lasted.
+  useEffect(() => {
+    if (!showNextUpHint || !hasPlayback || sessionId === undefined) {
+      clockAnchorRef.current = null
+      pausedAtElapsedMsRef.current = null
+      return
+    }
+    const isNewSession = clockAnchorRef.current?.sessionId !== sessionId
+    if (isNewSession) pausedAtElapsedMsRef.current = null
+
+    if (paused) {
+      if (isNewSession) {
+        pausedAtElapsedMsRef.current = startOffsetMs
+        clockAnchorRef.current = { sessionId, startOffsetMs, startedAt: performance.now() }
+      } else if (clockAnchorRef.current && pausedAtElapsedMsRef.current === null) {
+        const anchor = clockAnchorRef.current
+        pausedAtElapsedMsRef.current = anchor.startOffsetMs + (performance.now() - anchor.startedAt)
+      }
+      return
+    }
+
+    const resumeFromMs = isNewSession ? startOffsetMs : (pausedAtElapsedMsRef.current ?? startOffsetMs)
+    clockAnchorRef.current = { sessionId, startOffsetMs: resumeFromMs, startedAt: performance.now() }
+    pausedAtElapsedMsRef.current = null
+    const intervalId = setInterval(() => {
+      const anchor = clockAnchorRef.current
+      if (anchor) setLiveElapsedMs(anchor.startOffsetMs + (performance.now() - anchor.startedAt))
+    }, NEXT_UP_HINT_POLL_MS)
+    return () => clearInterval(intervalId)
+  }, [showNextUpHint, hasPlayback, sessionId, startOffsetMs, paused])
+
   const rowStartBars = computeRowStartBars(exercise.bars, barsPerRow, rowBreakBars)
   const rowCount = rowStartBars.length
   // Row index for a given 1-indexed bar — rowStartBars is sorted ascending,
@@ -287,8 +345,7 @@ export function ExerciseNotationSheet({
     (hasDownStemNote ? BASE_BOTTOM_PADDING_PX + TOP_PADDING_PX : BASE_BOTTOM_PADDING_PX) +
     (showBeatLabels ? BEAT_LABEL_ROW_HEIGHT_PX : 0)
   const rowHeight = TOP_PADDING_PX + staffPositionToOffsetPx(highestPosition, LINE_SPACING_PX) + bottomPadding
-  const effectiveRowGapPx = showNextUpHint ? NEXT_UP_HINT_ROW_GAP_PX : ROW_GAP_PX
-  const totalHeight = rowCount * rowHeight + (rowCount - 1) * effectiveRowGapPx
+  const totalHeight = rowCount * rowHeight + (rowCount - 1) * ROW_GAP_PX
   const barMs = barDurationMs(exercise)
 
   // No foot instrument (kick) anywhere in the whole piece — see
@@ -340,22 +397,30 @@ export function ExerciseNotationSheet({
     })
   }
 
-  // The note(s) at a row's own earliest (barIndexInRow, beat,
-  // subdivisionIndex) — several can tie (two instruments on the same first
-  // beat of the row's first bar), in which case all of them are "next up"
-  // together. Must include barIndexInRow, not just (beat, subdivisionIndex)
-  // — a multi-bar row (barsPerRow > 1) has the same beat/subdivisionIndex
-  // recurring once per bar (e.g. every bar's own beat 1), so without it
-  // every bar in the row would tie for "first" instead of just the row's
-  // actual first bar (this is what produced a bogus "הבא: סנר + סנר + …"
-  // hint, one repeat per bar, for a plain single-instrument pattern).
-  // barIndexInRow/beat/subdivisionIndex are all always small non-negative
-  // integers, so a single combined sort key is safe.
-  function firstEventsOfRow(rowEvents: (typeof eventsByRow)[number]) {
-    if (rowEvents.length === 0) return []
-    const sortKey = (event: (typeof rowEvents)[number]) => event.barIndexInRow * 100000 + event.beat * 100 + event.subdivisionIndex
-    const minKey = Math.min(...rowEvents.map(sortKey))
-    return rowEvents.filter((event) => sortKey(event) === minKey)
+  // The next event(s) after the CURRENT live playback position (liveElapsedMs,
+  // plain state — only the anchor bookkeeping above lives in refs, and only
+  // ever touched from inside the two effects, never read during render, to
+  // stay clear of the same react-hooks/refs pitfall this file has hit
+  // before). Several can tie (two instruments landing at the exact same
+  // instant), in which case all of them are "next up" together — no hand
+  // guess for a tie (see showNextUpHint's own doc comment for why).
+  let nextUpEvents: { id: string; instrument: DrumInstrument }[] = []
+  if (showNextUpHint && playbackProgress && liveElapsedMs !== null) {
+    let nextUpTimeMs: number | undefined
+    for (const event of exercise.events) {
+      const eventTimeMs = calculateEventTimeMs(event, {
+        bpm: playbackProgress.bpm,
+        timeSignature: exercise.timeSignature,
+        subdivision: exercise.subdivision,
+      })
+      if (eventTimeMs <= liveElapsedMs) continue
+      if (nextUpTimeMs === undefined || eventTimeMs < nextUpTimeMs) {
+        nextUpTimeMs = eventTimeMs
+        nextUpEvents = [{ id: event.id, instrument: event.instrument }]
+      } else if (eventTimeMs === nextUpTimeMs) {
+        nextUpEvents.push({ id: event.id, instrument: event.instrument })
+      }
+    }
   }
 
   // The viewBox must match the widest row actually drawn — rows can now
@@ -379,23 +444,37 @@ export function ExerciseNotationSheet({
   })
 
   return (
-    <svg
-      viewBox={`-${COUNT_IN_RUNWAY_PX + VIEWPORT_LEFT_PADDING_PX} 0 ${viewBoxWidth + COUNT_IN_RUNWAY_PX + VIEWPORT_LEFT_PADDING_PX} ${totalHeight}`}
-      // Plain `w-full` stretched a short exercise's small viewBox (e.g. one
-      // bar = 200 units) to fill the whole, often much wider, container —
-      // scaling every line/note/gap up with it. Capping at 2x native scale
-      // instead of the unbounded 100% keeps it from stretching that far,
-      // without also shrinking it down to a literal 200px postage stamp
-      // (native 1x, which read as too small): it fills the container up to
-      // that cap, and only shrinks below it for a genuinely narrow container.
-      className="h-auto text-[var(--color-text)]"
-      style={{ width: '100%', maxWidth: viewBoxWidth * 2 }}
-      role="img"
-      aria-label="תווי התרגיל"
-    >
-      {eventsByRow.map((rowEvents, rowIndex) => {
+    <div>
+      {/* Live "coming up" line (see showNextUpHint's own doc comment) — a
+          plain HTML element above the staff, not SVG: it needs to stay in
+          one fixed on-screen spot regardless of scroll position, which an
+          SVG element positioned in row-gap viewBox coordinates can't do once
+          the sheet scrolls past that row. */}
+      {showNextUpHint && nextUpEvents.length > 0 && (
+        <div className="mb-1 text-sm text-[var(--color-primary-text)] opacity-85" aria-live="polite">
+          הבא: {nextUpEvents.map((event) => INSTRUMENT_LABELS[event.instrument]).join(' + ')}
+          {nextUpEvents.length === 1 && handByEventId?.get(nextUpEvents[0]!.id)
+            ? ` (${handByEventId.get(nextUpEvents[0]!.id)})`
+            : ''}
+        </div>
+      )}
+      <svg
+        viewBox={`-${COUNT_IN_RUNWAY_PX + VIEWPORT_LEFT_PADDING_PX} 0 ${viewBoxWidth + COUNT_IN_RUNWAY_PX + VIEWPORT_LEFT_PADDING_PX} ${totalHeight}`}
+        // Plain `w-full` stretched a short exercise's small viewBox (e.g. one
+        // bar = 200 units) to fill the whole, often much wider, container —
+        // scaling every line/note/gap up with it. Capping at 2x native scale
+        // instead of the unbounded 100% keeps it from stretching that far,
+        // without also shrinking it down to a literal 200px postage stamp
+        // (native 1x, which read as too small): it fills the container up to
+        // that cap, and only shrinks below it for a genuinely narrow container.
+        className="h-auto text-[var(--color-text)]"
+        style={{ width: '100%', maxWidth: viewBoxWidth * 2 }}
+        role="img"
+        aria-label="תווי התרגיל"
+      >
+        {eventsByRow.map((rowEvents, rowIndex) => {
         const rowBars = rowBarsCount(rowIndex)
-        const rowTopY = rowIndex * (rowHeight + effectiveRowGapPx)
+        const rowTopY = rowIndex * (rowHeight + ROW_GAP_PX)
         const baselineY = rowTopY + rowHeight - bottomPadding
         const toY = (position: number) => baselineY - staffPositionToOffsetPx(position, LINE_SPACING_PX)
         const rowTiming = rowRealTimings[rowIndex]!
@@ -819,40 +898,10 @@ export function ExerciseNotationSheet({
                 })}
               </g>
             ))}
-            {/* "Coming up" hint, in the gap after THIS row — a row
-                transition is exactly where reading ahead is hardest (the
-                next row's own first note isn't visible until you've
-                already looked down past this one). Absent on the last row
-                (nothing left to come up), and on any row whose next one
-                happens to be empty (nothing scheduled there). */}
-            {showNextUpHint &&
-              rowIndex < rowCount - 1 &&
-              (() => {
-                const nextFirstEvents = firstEventsOfRow(eventsByRow[rowIndex + 1] ?? [])
-                if (nextFirstEvents.length === 0) return null
-                const instrumentLabel = nextFirstEvents.map((event) => INSTRUMENT_LABELS[event.instrument]).join(' + ')
-                // A hand hint only makes sense for a single note — two
-                // instruments landing together means both hands are
-                // already busy at once, nothing left to "point to".
-                const handLabel =
-                  nextFirstEvents.length === 1 ? handByEventId?.get(nextFirstEvents[0]!.id) : undefined
-                return (
-                  <text
-                    x={0}
-                    y={rowTopY + rowHeight + effectiveRowGapPx / 2 + NEXT_UP_HINT_FONT_SIZE / 3}
-                    textAnchor="start"
-                    fontSize={NEXT_UP_HINT_FONT_SIZE}
-                    fill="var(--color-primary-text)"
-                    opacity={0.85}
-                  >
-                    הבא: {instrumentLabel}
-                    {handLabel ? ` (${handLabel})` : ''}
-                  </text>
-                )
-              })()}
           </g>
         )
-      })}
-    </svg>
+        })}
+      </svg>
+    </div>
   )
 }

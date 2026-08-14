@@ -1,7 +1,19 @@
-import { describe, expect, it } from 'vitest'
-import { render } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, render } from '@testing-library/react'
 import { ExerciseNotationSheet } from './ExerciseNotationSheet'
 import type { DrumNoteEvent } from '../../domain'
+
+// The live "coming up" hint polls a wall-clock (performance.now()) on a
+// setInterval (see NEXT_UP_HINT_POLL_MS in ExerciseNotationSheet.tsx) —
+// fake timers make both the interval and performance.now() itself
+// deterministic, so a test can advance past a specific event's own real
+// time without a real 200ms+ wait.
+beforeEach(() => {
+  vi.useFakeTimers()
+})
+afterEach(() => {
+  vi.useRealTimers()
+})
 
 function makeEvent(overrides: Partial<DrumNoteEvent>): DrumNoteEvent {
   return {
@@ -111,59 +123,120 @@ describe('ExerciseNotationSheet', () => {
   })
 
   it('shows no "coming up" hint by default (showNextUpHint off)', () => {
-    const twoRowExercise = { ...EXERCISE, bars: 8 }
-    const { container } = render(<ExerciseNotationSheet exercise={twoRowExercise} barsPerRow={4} />)
+    const { container } = render(<ExerciseNotationSheet exercise={EXERCISE} />)
     expect(container.textContent).not.toContain('הבא:')
   })
 
-  it('shows the next row\'s own first instrument as a "coming up" hint, with no hand hint for a groove that uses a foot instrument anywhere', () => {
-    const twoRowExercise = {
+  it('shows no hint without playbackProgress, even with showNextUpHint on — no live position to measure "next" against', () => {
+    const { container } = render(<ExerciseNotationSheet exercise={EXERCISE} showNextUpHint />)
+    expect(container.textContent).not.toContain('הבא:')
+  })
+
+  it('shows the live next instrument, updating as playback advances past earlier notes', () => {
+    // Explicit user correction after an earlier per-row version: the hint
+    // must track the actual next note in the performance as it plays, not a
+    // static "next row's first note" computed once. bpm 60 in 4/4 quarters
+    // = exactly 1000ms/beat, so event times are easy round numbers.
+    const exercise = {
       ...EXERCISE,
-      bars: 8,
-      // Row 1 (bars 5-8) starts with a snare on bar 5 beat 1 — that's the hint text expected.
-      events: [makeEvent({ instrument: 'kick', bar: 1, beat: 1 }), makeEvent({ instrument: 'snare', bar: 5, beat: 1 })],
+      bars: 1,
+      events: [
+        makeEvent({ instrument: 'kick', beat: 1 }),
+        makeEvent({ instrument: 'snare', beat: 2 }),
+        makeEvent({ instrument: 'crash', beat: 3 }),
+      ],
     }
-    const { container } = render(<ExerciseNotationSheet exercise={twoRowExercise} barsPerRow={4} showNextUpHint />)
+    const { container } = render(
+      <ExerciseNotationSheet exercise={exercise} showNextUpHint playbackProgress={{ bpm: 60, sessionId: 1, startOffsetMs: 0 }} />,
+    )
+    // First poll tick (200ms) — beat 1 (t=0) is already behind the live
+    // clock by then, so "next" is the beat-2 snare (t=1000ms).
+    act(() => vi.advanceTimersByTime(200))
     expect(container.textContent).toContain('הבא: סנר')
-    // kick appears somewhere in this exercise -> no hand guess at all, anywhere.
+    // Advance past beat 2's own time — "next" becomes the beat-3 crash.
+    act(() => vi.advanceTimersByTime(1000))
+    expect(container.textContent).toContain('הבא: קראש')
+  })
+
+  it('adds an alternating hand hint for a single upcoming note, but never for a live chord (tie)', () => {
+    const handsOnlyExercise = {
+      ...EXERCISE,
+      bars: 1,
+      events: [
+        makeEvent({ instrument: 'snare', beat: 1 }), // chronological index 0 -> right (already behind by the first poll tick)
+        makeEvent({ instrument: 'snare', beat: 2 }), // index 1 -> left
+        makeEvent({ instrument: 'snare', beat: 3 }),
+        makeEvent({ instrument: 'hihat_closed', beat: 3 }), // simultaneous with the beat-3 snare -> tie, no hand guess
+      ],
+    }
+    const { container } = render(
+      <ExerciseNotationSheet
+        exercise={handsOnlyExercise}
+        showNextUpHint
+        playbackProgress={{ bpm: 60, sessionId: 1, startOffsetMs: 0 }}
+      />,
+    )
+    act(() => vi.advanceTimersByTime(200))
+    expect(container.textContent).toContain('הבא: סנר (שמאל)')
+
+    act(() => vi.advanceTimersByTime(1000)) // past beat 2 (t=1000ms) -> the beat-3 tie
+    expect(container.textContent).toContain('הבא: סנר + היי-הט סגור')
     expect(container.textContent).not.toMatch(/\(ימין\)|\(שמאל\)/)
   })
 
-  it('adds an alternating right/left hand hint only when the whole exercise never uses a foot instrument', () => {
-    const twoRowExercise = {
-      ...EXERCISE,
-      bars: 2,
-      events: [
-        makeEvent({ instrument: 'snare', bar: 1, beat: 1 }), // chronological index 0 -> right
-        makeEvent({ instrument: 'snare', bar: 1, beat: 3 }), // index 1 -> left
-        makeEvent({ instrument: 'snare', bar: 2, beat: 1 }), // index 2 -> right (row 1's own first note)
-        makeEvent({ instrument: 'snare', bar: 2, beat: 3 }), // index 3 -> left
-      ],
-    }
-    const { container } = render(<ExerciseNotationSheet exercise={twoRowExercise} barsPerRow={1} showNextUpHint />)
-    expect(container.textContent).toContain('הבא: סנר (ימין)')
+  it('never adds a hand hint when the exercise uses a foot instrument anywhere, even for a live single-note "next"', () => {
+    const exercise = { ...EXERCISE, bars: 1, events: [makeEvent({ instrument: 'kick', beat: 1 }), makeEvent({ instrument: 'snare', beat: 2 })] }
+    const { container } = render(
+      <ExerciseNotationSheet exercise={exercise} showNextUpHint playbackProgress={{ bpm: 60, sessionId: 1, startOffsetMs: 0 }} />,
+    )
+    act(() => vi.advanceTimersByTime(200))
+    expect(container.textContent).toContain('הבא: סנר')
+    expect(container.textContent).not.toMatch(/\(ימין\)|\(שמאל\)/)
   })
 
-  it('shows the hint once, not once per bar, when a multi-bar row repeats the same beat in every bar', () => {
-    // Regression: firstEventsOfRow used to key purely on (beat,
-    // subdivisionIndex), so with a 4-bar row where every bar has its own
-    // beat-1 note, all 4 tied for "row's first event" instead of just bar
-    // 1's — producing a bogus "הבא: סנר + סנר + סנר + סנר" hint for a plain
-    // one-note-per-beat pattern (exactly what stage 1's curriculum lessons
-    // do). Row 1 (bars 5-8) should surface only bar 5's own beat-1 note.
-    const fourBarRowExercise = {
+  it('freezes the live hint while paused, instead of continuing to advance', () => {
+    const exercise = {
+      ...EXERCISE,
+      bars: 1,
+      events: [
+        makeEvent({ instrument: 'kick', beat: 1 }),
+        makeEvent({ instrument: 'snare', beat: 2 }),
+        makeEvent({ instrument: 'crash', beat: 3 }),
+      ],
+    }
+    const { container, rerender } = render(
+      <ExerciseNotationSheet exercise={exercise} showNextUpHint playbackProgress={{ bpm: 60, sessionId: 1, startOffsetMs: 0 }} />,
+    )
+    act(() => vi.advanceTimersByTime(200))
+    expect(container.textContent).toContain('הבא: סנר')
+
+    rerender(
+      <ExerciseNotationSheet exercise={exercise} showNextUpHint playbackProgress={{ bpm: 60, sessionId: 1, startOffsetMs: 0 }} paused />,
+    )
+    act(() => vi.advanceTimersByTime(2000)) // well past the crash's own time (t=2000ms), if it were still running
+    expect(container.textContent).toContain('הבא: סנר')
+  })
+
+  it('shows one instrument at a time, not concatenated, even for a pattern that repeats the same beat every bar', () => {
+    const eightBarExercise = {
       ...EXERCISE,
       bars: 8,
       events: [1, 2, 3, 4, 5, 6, 7, 8].map((bar) => makeEvent({ instrument: 'snare', bar, beat: 1 })),
     }
-    const { container } = render(<ExerciseNotationSheet exercise={fourBarRowExercise} barsPerRow={4} showNextUpHint />)
+    const { container } = render(
+      <ExerciseNotationSheet exercise={eightBarExercise} showNextUpHint playbackProgress={{ bpm: 60, sessionId: 1, startOffsetMs: 0 }} />,
+    )
+    act(() => vi.advanceTimersByTime(200))
     expect(container.textContent).toContain('הבא: סנר')
     expect(container.textContent).not.toContain('הבא: סנר + סנר')
   })
 
-  it('shows no hint at all after the last row (nothing left to come up)', () => {
-    const oneRowExercise = { ...EXERCISE, bars: 1 }
-    const { container } = render(<ExerciseNotationSheet exercise={oneRowExercise} showNextUpHint />)
+  it('shows no hint once every event has passed (nothing left to come up)', () => {
+    const exercise = { ...EXERCISE, bars: 1, events: [makeEvent({ instrument: 'kick', beat: 1 })] }
+    const { container } = render(
+      <ExerciseNotationSheet exercise={exercise} showNextUpHint playbackProgress={{ bpm: 60, sessionId: 1, startOffsetMs: 0 }} />,
+    )
+    act(() => vi.advanceTimersByTime(200))
     expect(container.textContent).not.toContain('הבא:')
   })
 
