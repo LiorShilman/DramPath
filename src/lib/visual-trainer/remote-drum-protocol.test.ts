@@ -68,14 +68,16 @@ describe('parseRemoteRelayMessage', () => {
       exercise,
       playbackProgress: { bpm: 100, sessionId: 1, startOffsetMs: -50 },
       paused: false,
-      gradedEventIds: { 'event-1': 'hit', 'event-2': 'miss' },
+      gradedEventIds: { 'event-1': 'perfect', 'event-2': 'miss' },
+      hitTimingByEventId: { 'event-1': 1234 },
     })
     expect(parseRemoteRelayMessage(raw)).toEqual({
       type: 'notation_state',
       exercise,
       playbackProgress: { bpm: 100, sessionId: 1, startOffsetMs: -50 },
       paused: false,
-      gradedEventIds: { 'event-1': 'hit', 'event-2': 'miss' },
+      gradedEventIds: { 'event-1': 'perfect', 'event-2': 'miss' },
+      hitTimingByEventId: { 'event-1': 1234 },
     })
   })
 
@@ -128,8 +130,8 @@ describe('parseRemoteRelayMessage', () => {
     expect(parseRemoteRelayMessage('{"type":"select_routine"}')).toBeUndefined()
   })
 
-  it('parses a valid transport_command message for each action, including skip', () => {
-    for (const action of ['start', 'pause', 'resume', 'stop', 'skip']) {
+  it('parses a valid transport_command message for each action, including skip and previous', () => {
+    for (const action of ['start', 'pause', 'resume', 'stop', 'skip', 'previous']) {
       expect(parseRemoteRelayMessage(`{"type":"transport_command","action":"${action}"}`)).toEqual({
         type: 'transport_command',
         action,
@@ -216,6 +218,25 @@ describe('parseRemoteRelayMessage', () => {
       bpm: 90,
       phase: 'running',
       routineProgress: { stepIndex: 1, stepCount: 3 },
+    })
+  })
+
+  it('parses a valid playback_status message with resultsSummary', () => {
+    const raw = JSON.stringify({
+      type: 'playback_status',
+      exerciseId: 'ex-1',
+      title: 'x',
+      bpm: 90,
+      phase: 'finished',
+      resultsSummary: { accuracyPercent: 87.5, gradeCounts: { perfect: 3, early: 1, late: 0, miss: 2, extra: 0 } },
+    })
+    expect(parseRemoteRelayMessage(raw)).toEqual({
+      type: 'playback_status',
+      exerciseId: 'ex-1',
+      title: 'x',
+      bpm: 90,
+      phase: 'finished',
+      resultsSummary: { accuracyPercent: 87.5, gradeCounts: { perfect: 3, early: 1, late: 0, miss: 2, extra: 0 } },
     })
   })
 

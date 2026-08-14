@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { buildProductionRelayWsUrl, parseRemoteRelayMessage } from '../lib/visual-trainer/remote-drum-protocol'
 import type { ExerciseListItem, RoutineListItem, TransportCommandAction } from '../lib/visual-trainer/remote-drum-protocol'
-import type { DrumInstrument, InteractiveExercise } from '../domain'
+import type { DrumInstrument, HitGrade, InteractiveExercise } from '../domain'
 
 export type RemoteDrumSenderStatus = 'disconnected' | 'connecting' | 'connected' | 'error'
 
@@ -14,7 +14,10 @@ export interface RemoteNotationState {
   exercise: InteractiveExercise
   playbackProgress: { bpm: number; sessionId: number; startOffsetMs?: number }
   paused: boolean
-  gradedEventIds: Record<string, 'hit' | 'miss'>
+  gradedEventIds: Record<string, HitGrade>
+  /** Per-note actual strike time (ms), keyed by DrumNoteEvent id — see
+   * remote-drum-protocol.ts's own doc comment on the wire field. */
+  hitTimingByEventId: Record<string, number>
 }
 
 /** Mirrors the desktop's unconditional session status (unlike
@@ -33,6 +36,14 @@ export interface RemotePlaybackStatus {
   /** Present only while the desktop is running a practice routine — drives
    * the phone's "skip" button and step indicator. */
   routineProgress?: { stepIndex: number; stepCount: number }
+  /** Present only when phase is 'finished' — mirrors SessionResults' core
+   * numbers (explicit user request: with no access to the computer, the
+   * phone needs to show what the run actually looked like, not just that it
+   * ended). */
+  resultsSummary?: {
+    accuracyPercent: number
+    gradeCounts: { perfect: number; early: number; late: number; miss: number; extra: number }
+  }
 }
 
 export interface UseRemoteDrumSenderResult {
@@ -130,6 +141,7 @@ export function useRemoteDrumSender(): UseRemoteDrumSenderResult {
           playbackProgress: message.playbackProgress,
           paused: message.paused,
           gradedEventIds: message.gradedEventIds,
+          hitTimingByEventId: message.hitTimingByEventId,
         })
       } else if (message?.type === 'notation_clear') {
         setNotationState(undefined)
@@ -143,6 +155,7 @@ export function useRemoteDrumSender(): UseRemoteDrumSenderResult {
           bpm: message.bpm,
           phase: message.phase,
           routineProgress: message.routineProgress,
+          resultsSummary: message.resultsSummary,
         })
       }
     }

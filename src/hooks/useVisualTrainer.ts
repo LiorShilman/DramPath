@@ -69,7 +69,16 @@ export interface UseVisualTrainerResult {
    * ref. Updated alongside (not instead of) the NoteHighway ref calls below
    * — both are cheap to keep current regardless of which display is
    * actually mounted. */
-  gradedEventIds: ReadonlyMap<string, 'hit' | 'miss'>
+  gradedEventIds: ReadonlyMap<string, HitGrade>
+  /** Per-event actual strike time (ms elapsed since the exercise's own bar 1,
+   * same clock expectedTimeMs is measured against) — explicit user request:
+   * seeing WHERE a hit actually landed relative to its note, not just
+   * hit/miss, is what lets a player calibrate their own timing instead of
+   * guessing. Only ever set for a genuinely matched event (never a miss, and
+   * never in demo mode, where every "hit" is synthetic-by-definition
+   * on-time) — ExerciseNotationSheet draws a small marker at this time's own
+   * x position, right beside the note's. */
+  hitTimingByEventId: ReadonlyMap<string, number>
   /** Bumped on every beginPlayback — feeds ExerciseNotationSheet's own
    * playbackProgress.sessionId so its CSS fill/cursor animations restart
    * on a new run instead of no-oping on an unchanged style, same idea as
@@ -138,36 +147,33 @@ const METRONOME_MUTED_STORAGE_KEY = 'drumpath.isMetronomeMuted'
 const COUNT_IN_BARS = 1
 const BAR_UPDATE_INTERVAL_MS = 200
 
-// staff_cursor-only grading correction (explicit user request/investigation,
-// retuned after live testing). Two layers, both making the *grading* target
-// earlier than the raw audio-schedule time — the visuals themselves are
-// untouched, only which moment counts as "on time":
-// - BASE applies to every instrument: reported directly, a hit needs to land
-//   a little before the cursor visually reaches the note or it reads as a
-//   miss, for every instrument, not just kick — most likely the CSS
-//   animation's own paint lagging a step behind the AudioContext clock it's
-//   timed against, not any one note's geometry.
-// - An extra FEET_EXTRA on top for kick specifically: kick's own notehead is
-//   drawn to the *right* of its stem (real drum-notation convention — feet
-//   voice stems down-and-left of the circle; see ExerciseNotationSheet's
-//   voiceOf/stemDirection), so the cursor's left-to-right sweep reaches a
-//   kick note's stem before its true rhythmic x — confirmed against the
-//   app's own early/late feedback (kick read "early" more than other
-//   instruments). Kick is currently the only 'feet'-voice instrument
-//   (DrumInstrument's other members are all 'hands'), so a direct instrument
-//   check is equivalent to a voice check without importing
-//   ExerciseNotationSheet's own classification into a hook.
+// staff_cursor-only grading correction (explicit user request/investigation).
+// Used to also carry a per-instrument "kick reads early" extra (removed) —
+// that turned out to be a misdiagnosis of a real ExerciseNotationSheet
+// rendering bug (fixed there, see noteX's own comment there for the full
+// history): notes used to be inset per bar (barline breathing room) while
+// the cursor swept uniformly with no such inset, so the cursor reached each
+// note's on-screen x strictly LATER than its true instant, worse the
+// earlier a note fell in its bar — and kick disproportionately lands on
+// downbeats (worst case) while snare tends to land on backbeats (roughly
+// half that), which is what actually made kick read "worse". Fixed at the
+// root (ExerciseNotationSheet's notes are no longer inset — pure
+// proportional positioning, exactly matching the cursor's own uniform
+// sweep), not by tuning this number further — that whole per-instrument
+// correction is gone. This BASE remainder is a small, genuinely
+// instrument-independent residual — reported directly, a hit still needs to
+// land a hair before the cursor visually reaches the note, most likely the
+// CSS animation's own paint lag behind the AudioContext clock it's timed
+// against, unrelated to any note's geometry. Starting magnitude, not
+// derived from exact frame-timing measurement — expect further retuning
+// from live feedback.
 // NoteHighway has no equivalent visual (falling rectangles, no cursor/stem),
-// so none of this applies outside staff_cursor. Starting magnitudes, not
-// derived from exact pixel/frame-timing measurement — expect further
-// retuning from live feedback.
+// so none of this applies outside staff_cursor.
 const STAFF_CURSOR_BASE_TIMING_BIAS_MS = 25
-const STAFF_CURSOR_FEET_EXTRA_TIMING_BIAS_MS = 15
 
-function applyStaffCursorTimingBias(instrument: DrumInstrument, expectedTimeMs: number, displayMode: DisplayMode): number {
+function applyStaffCursorTimingBias(expectedTimeMs: number, displayMode: DisplayMode): number {
   if (displayMode !== 'staff_cursor') return expectedTimeMs
-  const bias = STAFF_CURSOR_BASE_TIMING_BIAS_MS + (instrument === 'kick' ? STAFF_CURSOR_FEET_EXTRA_TIMING_BIAS_MS : 0)
-  return expectedTimeMs - bias
+  return expectedTimeMs - STAFF_CURSOR_BASE_TIMING_BIAS_MS
 }
 const EMPTY_SCORING: ScoringSummary = {
   accuracyPercent: 0,
@@ -200,6 +206,11 @@ export interface UseVisualTrainerOptions {
    * `skip`, so a remote 'skip' transport_command reaches it too. Absent for
    * a plain single-exercise run. */
   onSkip?: () => void
+  /** Only ever supplied by RoutinePlayerPage (and only once a step back
+   * exists) — wired into the registered RemoteSession's own `previous`, so
+   * a remote 'previous' transport_command reaches it too. Absent for a
+   * plain single-exercise run, or for a routine's own first step. */
+  onPrevious?: () => void
   /** Only ever supplied by RoutinePlayerPage — rides along on every
    * sendPlaybackStatus call (see routineProgressRef below) so the phone's
    * "skip" button/step indicator stays in sync with every phase transition
@@ -238,7 +249,8 @@ export function useVisualTrainer(
   // only one drum piece would ever visually react.
   const [activeHits, setActiveHits] = useState<Partial<Record<DrumInstrument, string>>>({})
   const [stickClickToken, setStickClickToken] = useState<string | undefined>(undefined)
-  const [gradedEventIds, setGradedEventIds] = useState<ReadonlyMap<string, 'hit' | 'miss'>>(new Map())
+  const [gradedEventIds, setGradedEventIds] = useState<ReadonlyMap<string, HitGrade>>(new Map())
+  const [hitTimingByEventId, setHitTimingByEventId] = useState<ReadonlyMap<string, number>>(new Map())
   const [isMetronomeMuted, setIsMetronomeMuted] = useState(
     () => localStorage.getItem(METRONOME_MUTED_STORAGE_KEY) === 'true',
   )
@@ -360,6 +372,16 @@ export function useVisualTrainer(
     setGradeCounts(countGrades(hitResultsRef.current, extraHitsRef.current))
   }, [])
 
+  // Grading/lifecycle logic (count-in->running, miss detection, finished) is
+  // invoked through this ref from BOTH the rAF-driven tick() below AND
+  // startBarInterval's own setInterval right below — see runGradingTick's
+  // own doc comment (declared later, after autoHit) for why a second,
+  // interval-driven cadence is needed at all. A ref (not a direct call),
+  // same "declared later in this hook, referenced before that point"
+  // situation tickRef already solves — this closure runs long after the
+  // real function is assigned, never before.
+  const runGradingTickRef = useRef<(elapsedMs: number) => void>(() => {})
+
   const startBarInterval = useCallback(() => {
     barIntervalIdRef.current = setInterval(() => {
       const audioContext = audioContextRef.current
@@ -383,6 +405,7 @@ export function useVisualTrainer(
 
       const elapsedMs = rawElapsedMs - countInDurationMsRef.current + startOffsetMsRef.current
       setElapsedMs(Math.max(0, elapsedMs))
+      runGradingTickRef.current(elapsedMs)
       if (elapsedMs < 0) return
       setCurrentBar(Math.max(1, Math.floor(elapsedMs / barDurationMsRef.current) + 1))
     }, BAR_UPDATE_INTERVAL_MS)
@@ -410,12 +433,112 @@ export function useVisualTrainer(
         grade: 'perfect',
       })
       noteHighwayRef.current?.markResult(event.eventId, 'hit')
-      setGradedEventIds((prev) => new Map(prev).set(event.eventId, 'hit'))
+      setGradedEventIds((prev) => new Map(prev).set(event.eventId, 'perfect'))
       setLastGrade('perfect')
       recomputeScoring()
     },
     [noteHighwayRef, recomputeScoring],
   )
+
+  // Grading + lifecycle transitions (count-in -> running, miss detection,
+  // finished) — split out from the rAF-driven tick() below so startBarInterval
+  // can invoke it too, on its own independent ~200ms setInterval cadence, not
+  // just from rAF. Browsers suspend/heavily throttle requestAnimationFrame
+  // once a tab is hidden or the whole window loses focus (screen locked/off,
+  // another app in front) — exactly the state the desktop is expected to be
+  // in during phone-only practice (explicit user scenario: kit + phone, "no
+  // access to the computer"). A real MIDI hit still gets graded instantly
+  // either way (a direct hardware-event callback, not tied to rAF), but a
+  // MISSED note relies on this function actually running to get flagged —
+  // rAF alone left it stuck "ungraded" (never colored red, on the desktop OR
+  // the phone's mirrored view) for the rest of the run whenever the desktop
+  // tab wasn't visible. setInterval is throttled far less aggressively
+  // (clamped, not suspended) in a background tab, so this closes that gap.
+  // Every branch below re-checks its own guard against the current
+  // phaseRef/pendingRef state, so an overlapping call from the second loop
+  // is always a safe no-op, never double-grades a hit or a miss.
+  const runGradingTick = useCallback(
+    (elapsedMs: number) => {
+      if (phaseRef.current === 'count-in' && elapsedMs >= 0) {
+        setPhaseBoth('running')
+        sendPlaybackStatusRef.current({
+          exerciseId: exercise.id,
+          title: exercise.title,
+          bpm: exercise.bpm,
+          phase: 'running',
+          routineProgress: routineProgressRef.current,
+        })
+      }
+
+      if (isDemoRef.current) {
+        const due = pendingRef.current.filter((event) => event.expectedTimeMs <= elapsedMs)
+        for (const event of due) autoHit(event)
+      } else {
+        const missed = detectMissedEvents(pendingRef.current, elapsedMs, thresholds)
+        if (missed.length > 0) {
+          const missedIds = new Set(missed.map((event) => event.eventId))
+          pendingRef.current = pendingRef.current.filter((event) => !missedIds.has(event.eventId))
+          for (const event of missed) {
+            hitResultsRef.current.push({
+              id: createId(),
+              expectedEventId: event.eventId,
+              instrument: event.instrument,
+              expectedTimeMs: event.expectedTimeMs,
+              grade: 'miss',
+            })
+            noteHighwayRef.current?.markResult(event.eventId, 'miss')
+          }
+          setGradedEventIds((prev) => {
+            const next = new Map(prev)
+            for (const event of missed) next.set(event.eventId, 'miss')
+            return next
+          })
+          if (lastNotationPayloadRef.current) {
+            for (const event of missed) lastNotationPayloadRef.current.gradedEventIds[event.eventId] = 'miss'
+            sendNotationStateRef.current(lastNotationPayloadRef.current)
+          }
+          setLastGrade('miss')
+          recomputeScoring()
+        }
+      }
+
+      if (pendingRef.current.length === 0 && phaseRef.current !== 'finished' && phaseRef.current !== 'idle') {
+        setPhaseBoth('finished')
+        setDynamicsSummary(summarizeDynamics(hitResultsRef.current))
+        // Deliberately NOT cleared here (unlike exit()/beginPlayback's own
+        // 'not staff_cursor+MIDI' branch below) — explicit user request: the
+        // fully-graded notation (every note's color, every hit-position X)
+        // should stay visible, on the phone and the desktop alike, for as
+        // long as this same run's results are still on screen. The next
+        // beginPlayback (restart, or a routine's next/previous step)
+        // naturally overwrites it with a fresh payload; nothing here needs
+        // its own separate "now clear it" path.
+        sendPlaybackStatusRef.current({
+          exerciseId: exercise.id,
+          title: exercise.title,
+          bpm: exercise.bpm,
+          phase: 'finished',
+          routineProgress: routineProgressRef.current,
+          resultsSummary: {
+            accuracyPercent: summarizeScoring(hitResultsRef.current, extraHitsRef.current, totalExpectedEventsRef.current)
+              .accuracyPercent,
+            gradeCounts: countGrades(hitResultsRef.current, extraHitsRef.current),
+          },
+        })
+        stopLoops()
+        // All notes are resolved, but the playback engine's own click schedule
+        // covers the whole declared exercise length independent of the notes
+        // — without this, the metronome keeps ticking through the rest of its
+        // queue (up to a bar or two) after the last note has already resolved.
+        engineRef.current?.stop()
+      }
+    },
+    [autoHit, exercise.bpm, exercise.id, exercise.title, noteHighwayRef, recomputeScoring, setPhaseBoth, stopLoops, thresholds],
+  )
+
+  useEffect(() => {
+    runGradingTickRef.current = runGradingTick
+  }, [runGradingTick])
 
   const tick = useCallback(() => {
     const audioContext = audioContextRef.current
@@ -437,72 +560,12 @@ export function useVisualTrainer(
     // below isNoteVisible's threshold regardless of the real elapsedMs.
     noteHighwayRef.current?.render(phaseRef.current === 'count-in' ? -Infinity : elapsedMs)
 
-    if (phaseRef.current === 'count-in' && elapsedMs >= 0) {
-      setPhaseBoth('running')
-      sendPlaybackStatusRef.current({
-        exerciseId: exercise.id,
-        title: exercise.title,
-        bpm: exercise.bpm,
-        phase: 'running',
-        routineProgress: routineProgressRef.current,
-      })
-    }
+    runGradingTick(elapsedMs)
 
-    if (isDemoRef.current) {
-      const due = pendingRef.current.filter((event) => event.expectedTimeMs <= elapsedMs)
-      for (const event of due) autoHit(event)
-    } else {
-      const missed = detectMissedEvents(pendingRef.current, elapsedMs, thresholds)
-      if (missed.length > 0) {
-        const missedIds = new Set(missed.map((event) => event.eventId))
-        pendingRef.current = pendingRef.current.filter((event) => !missedIds.has(event.eventId))
-        for (const event of missed) {
-          hitResultsRef.current.push({
-            id: createId(),
-            expectedEventId: event.eventId,
-            instrument: event.instrument,
-            expectedTimeMs: event.expectedTimeMs,
-            grade: 'miss',
-          })
-          noteHighwayRef.current?.markResult(event.eventId, 'miss')
-        }
-        setGradedEventIds((prev) => {
-          const next = new Map(prev)
-          for (const event of missed) next.set(event.eventId, 'miss')
-          return next
-        })
-        if (lastNotationPayloadRef.current) {
-          for (const event of missed) lastNotationPayloadRef.current.gradedEventIds[event.eventId] = 'miss'
-          sendNotationStateRef.current(lastNotationPayloadRef.current)
-        }
-        setLastGrade('miss')
-        recomputeScoring()
-      }
-    }
-
-    if (pendingRef.current.length === 0 && phaseRef.current !== 'finished' && phaseRef.current !== 'idle') {
-      setPhaseBoth('finished')
-      setDynamicsSummary(summarizeDynamics(hitResultsRef.current))
-      lastNotationPayloadRef.current = null
-      sendNotationStateRef.current(null)
-      sendPlaybackStatusRef.current({
-        exerciseId: exercise.id,
-        title: exercise.title,
-        bpm: exercise.bpm,
-        phase: 'finished',
-        routineProgress: routineProgressRef.current,
-      })
-      stopLoops()
-      // All notes are resolved, but the playback engine's own click schedule
-      // covers the whole declared exercise length independent of the notes
-      // — without this, the metronome keeps ticking through the rest of its
-      // queue (up to a bar or two) after the last note has already resolved.
-      engineRef.current?.stop()
-      return
-    }
+    if (phaseRef.current === 'finished') return
 
     rafIdRef.current = requestAnimationFrame(() => tickRef.current())
-  }, [autoHit, exercise.bpm, exercise.id, exercise.title, noteHighwayRef, recomputeScoring, setPhaseBoth, stopLoops, thresholds])
+  }, [noteHighwayRef, runGradingTick])
 
   useEffect(() => {
     tickRef.current = tick
@@ -556,9 +619,11 @@ export function useVisualTrainer(
           dynamicsGrade,
         })
         noteHighwayRef.current?.markResult(match.eventId, 'hit')
-        setGradedEventIds((prev) => new Map(prev).set(match.eventId, 'hit'))
+        setGradedEventIds((prev) => new Map(prev).set(match.eventId, grade))
+        setHitTimingByEventId((prev) => new Map(prev).set(match.eventId, elapsedMs))
         if (lastNotationPayloadRef.current) {
-          lastNotationPayloadRef.current.gradedEventIds[match.eventId] = 'hit'
+          lastNotationPayloadRef.current.gradedEventIds[match.eventId] = grade
+          lastNotationPayloadRef.current.hitTimingByEventId[match.eventId] = elapsedMs
           sendNotationStateRef.current(lastNotationPayloadRef.current)
         }
         setLastGrade(grade)
@@ -700,7 +765,7 @@ export function useVisualTrainer(
         .map(({ event, timeMs }) => ({
           eventId: event.id,
           instrument: event.instrument,
-          expectedTimeMs: applyStaffCursorTimingBias(event.instrument, timeMs, displayMode),
+          expectedTimeMs: applyStaffCursorTimingBias(timeMs, displayMode),
           velocity: event.velocity,
           accent: event.accent ?? false,
         }))
@@ -762,6 +827,7 @@ export function useVisualTrainer(
           playbackProgress: { bpm: exercise.bpm, sessionId: Date.now(), startOffsetMs: startOffsetMs - countInDurationMsRef.current },
           paused: false,
           gradedEventIds: {},
+          hitTimingByEventId: {},
         }
         lastNotationPayloadRef.current = notationPayload
         sendNotationState(notationPayload)
@@ -773,6 +839,7 @@ export function useVisualTrainer(
       setActiveHits({})
       setStickClickToken(undefined)
       setGradedEventIds(new Map())
+      setHitTimingByEventId(new Map())
       setPlaySessionId((current) => current + 1)
       setCurrentBar(Math.max(1, Math.floor(startOffsetMs / barDurationMsRef.current) + 1))
       setCurrentBeat(1)
@@ -882,12 +949,31 @@ export function useVisualTrainer(
       phase: 'idle',
       routineProgress: routineProgressRef.current,
     })
-    const unregister = registerSession({ handleHit: handleRemoteHit, start, pause, resume, stop: exit, skip: options?.onSkip })
+    const unregister = registerSession({
+      handleHit: handleRemoteHit,
+      start,
+      pause,
+      resume,
+      stop: exit,
+      skip: options?.onSkip,
+      previous: options?.onPrevious,
+    })
     return () => {
       unregister()
       sendPlaybackStatus({ exerciseId: null, title: null, bpm: null, phase: 'none' })
     }
-  }, [exercise, handleRemoteHit, options?.onSkip, pause, registerSession, resume, sendPlaybackStatus, start, exit])
+  }, [
+    exercise,
+    handleRemoteHit,
+    options?.onSkip,
+    options?.onPrevious,
+    pause,
+    registerSession,
+    resume,
+    sendPlaybackStatus,
+    start,
+    exit,
+  ])
 
   return {
     phase,
@@ -900,6 +986,7 @@ export function useVisualTrainer(
     activeHits,
     stickClickToken,
     gradedEventIds,
+    hitTimingByEventId,
     playSessionId,
     countInDurationMs,
     seekOffsetMs,

@@ -218,6 +218,10 @@ describe('useVisualTrainer', () => {
     expect(result.current.lastGrade).not.toBe('miss')
     expect(result.current.lastGrade).not.toBe('extra')
     expect(result.current.scoring.accuracyPercent).toBe(100)
+    // hitTimingByEventId is set the instant this hit is graded (same render
+    // as lastGrade above), not deferred until the run finishes — explicit
+    // user request: the hit-position marker needs to appear live, mid-run.
+    expect(result.current.hitTimingByEventId.get(exercise.events[0]!.id)).toBeGreaterThanOrEqual(0)
   })
 
   it('records a miss and finishes when no key is pressed', async () => {
@@ -371,16 +375,18 @@ describe('useVisualTrainer', () => {
     })
   })
 
-  it('practice-routine options: onSkip is exposed as the registered session\'s skip, and routineProgress rides on every sendPlaybackStatus call', () => {
+  it('practice-routine options: onSkip/onPrevious are exposed as the registered session\'s skip/previous, and routineProgress rides on every sendPlaybackStatus call', () => {
     vi.stubGlobal('AudioContext', FakeAudioContext)
     const exercise = makeExercise([
       { id: createId(), bar: 1, beat: 1, subdivisionIndex: 0, instrument: 'kick', velocity: 100 },
     ])
     const onSkip = vi.fn()
+    const onPrevious = vi.fn()
     const routineProgress = { stepIndex: 1, stepCount: 3 }
-    renderHook(() => useVisualTrainer(exercise, noHighwayRef, undefined, { onSkip, routineProgress }))
+    renderHook(() => useVisualTrainer(exercise, noHighwayRef, undefined, { onSkip, onPrevious, routineProgress }))
 
     expect(remoteHostMocks.capturedSessionHolder.current?.skip).toBe(onSkip)
+    expect(remoteHostMocks.capturedSessionHolder.current?.previous).toBe(onPrevious)
     expect(remoteHostMocks.sendPlaybackStatus).toHaveBeenCalledWith({
       exerciseId: exercise.id,
       title: exercise.title,
@@ -390,7 +396,7 @@ describe('useVisualTrainer', () => {
     })
   })
 
-  it('a plain (non-routine) hook exposes no skip on the registered session', () => {
+  it('a plain (non-routine) hook exposes no skip/previous on the registered session', () => {
     vi.stubGlobal('AudioContext', FakeAudioContext)
     const exercise = makeExercise([
       { id: createId(), bar: 1, beat: 1, subdivisionIndex: 0, instrument: 'kick', velocity: 100 },
@@ -398,6 +404,26 @@ describe('useVisualTrainer', () => {
     renderHook(() => useVisualTrainer(exercise, noHighwayRef))
 
     expect(remoteHostMocks.capturedSessionHolder.current?.skip).toBeUndefined()
+    expect(remoteHostMocks.capturedSessionHolder.current?.previous).toBeUndefined()
+  })
+
+  it('sends a resultsSummary (accuracy + grade counts) alongside the finished playback_status', async () => {
+    vi.stubGlobal('AudioContext', FakeAudioContext)
+    const exercise = makeExercise([
+      { id: createId(), bar: 1, beat: 1, subdivisionIndex: 0, instrument: 'kick', velocity: 100 },
+    ])
+    const { result } = renderHook(() => useVisualTrainer(exercise, noHighwayRef))
+
+    // No key ever pressed -> the single event misses and the run finishes.
+    await act(() => result.current.start())
+    await waitFor(() => expect(result.current.phase).toBe('finished'), { timeout: 3000 })
+
+    expect(remoteHostMocks.sendPlaybackStatus).toHaveBeenCalledWith(
+      expect.objectContaining({
+        phase: 'finished',
+        resultsSummary: { accuracyPercent: 0, gradeCounts: { perfect: 0, early: 0, late: 0, miss: 1, extra: 0 } },
+      }),
+    )
   })
 
   it('a hit forwarded from the registered session during running scores identically to a keyboard hit', async () => {
@@ -658,7 +684,33 @@ describe('useVisualTrainer', () => {
 
     const payload = latestNotationCall()
     expect(payload).not.toBeNull()
-    expect((payload as NotationStatePayload).gradedEventIds[eventId]).toBe('hit')
+    expect((payload as NotationStatePayload).gradedEventIds[eventId]).not.toBe('miss')
+    expect((payload as NotationStatePayload).gradedEventIds[eventId]).toBeDefined()
+  })
+
+  it('a missed event during a mirrored staff_cursor+MIDI run pushes an updated gradedEventIds', async () => {
+    vi.stubGlobal('AudioContext', FakeAudioContext)
+    const eventId = createId()
+    // A 2nd event (late in the bar) keeps the run alive after the 1st is
+    // missed, same reasoning as the hit-mirror test above.
+    const exercise = {
+      ...makeExercise([
+        { id: eventId, bar: 1, beat: 1, subdivisionIndex: 0, instrument: 'kick', velocity: 100 },
+        { id: createId(), bar: 1, beat: 4, subdivisionIndex: 0, instrument: 'snare', velocity: 100 },
+      ]),
+      displayMode: 'staff_cursor' as const,
+    }
+    const { result } = renderHook(() => useVisualTrainer(exercise, noHighwayRef))
+
+    act(() => result.current.toggleMidiControl())
+    await act(() => result.current.start())
+    await waitFor(() => expect(result.current.phase).toBe('running'), { timeout: 3000 })
+
+    // No key ever pressed for the 1st event — let its hit window elapse.
+    await waitFor(
+      () => expect((latestNotationCall() as NotationStatePayload | null)?.gradedEventIds[eventId]).toBe('miss'),
+      { timeout: 3000 },
+    )
   })
 
   it('starting a note_highway run (even with MIDI enabled) calls sendNotationState(null)', async () => {
@@ -706,7 +758,30 @@ describe('useVisualTrainer', () => {
     expect(latestNotationCall()).toMatchObject({ paused: false })
   })
 
-  it('finishing a staff_cursor+MIDI run calls sendNotationState(null)', async () => {
+  it('finishing a staff_cursor+MIDI run keeps the last graded notation visible (not cleared)', async () => {
+    vi.stubGlobal('AudioContext', FakeAudioContext)
+    const eventId = createId()
+    const exercise = {
+      ...makeExercise([{ id: eventId, bar: 1, beat: 1, subdivisionIndex: 0, instrument: 'kick', velocity: 100 }]),
+      displayMode: 'staff_cursor' as const,
+    }
+    const { result } = renderHook(() => useVisualTrainer(exercise, noHighwayRef))
+
+    act(() => result.current.toggleMidiControl())
+    await act(() => result.current.start())
+    // No key ever pressed -> the single event misses and the run finishes.
+    await waitFor(() => expect(result.current.phase).toBe('finished'), { timeout: 3000 })
+
+    // Explicit user request: results (including the graded notation itself)
+    // stay visible on the phone as long as the run hasn't been superseded
+    // by a new one — the last real payload is still what's mirrored, not
+    // a clearing null.
+    const payload = latestNotationCall()
+    expect(payload).not.toBeNull()
+    expect((payload as NotationStatePayload).gradedEventIds[eventId]).toBe('miss')
+  })
+
+  it('starting a fresh run after finishing supersedes the previous run\'s notation with a clean one', async () => {
     vi.stubGlobal('AudioContext', FakeAudioContext)
     const exercise = {
       ...makeExercise([{ id: createId(), bar: 1, beat: 1, subdivisionIndex: 0, instrument: 'kick', velocity: 100 }]),
@@ -718,7 +793,11 @@ describe('useVisualTrainer', () => {
     await act(() => result.current.start())
     await waitFor(() => expect(result.current.phase).toBe('finished'), { timeout: 3000 })
 
-    expect(latestNotationCall()).toBeNull()
+    await act(() => result.current.restart())
+
+    const payload = latestNotationCall()
+    expect(payload).not.toBeNull()
+    expect((payload as NotationStatePayload).gradedEventIds).toEqual({})
   })
 
   it('exiting a staff_cursor+MIDI run calls sendNotationState(null)', async () => {

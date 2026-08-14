@@ -107,6 +107,7 @@ export function RemoteHostProvider({ children }: { children: ReactNode }) {
     else if (action === 'resume') session.resume()
     else if (action === 'stop') session.stop()
     else if (action === 'skip') session.skip?.()
+    else if (action === 'previous') session.previous?.()
   }, [])
 
   const { status, sendNotationState, sendExerciseList, sendPlaybackStatus } = useRemoteDrumInput({

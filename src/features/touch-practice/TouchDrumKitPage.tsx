@@ -6,6 +6,7 @@ import {
   Minimize2,
   Pause,
   Play,
+  SkipBack,
   SkipForward,
   Square,
   Volume2,
@@ -97,7 +98,8 @@ function RemoteControlBar({
   const canStart =
     playbackStatus?.phase === 'idle' || playbackStatus?.phase === 'finished'
   return (
-    <div className="z-20 flex shrink-0 items-center gap-2 rounded-[var(--radius-card)] border border-[var(--color-primary)] bg-[var(--color-surface)] px-3 py-2 [box-shadow:var(--shadow-card)]">
+    <div className="flex flex-col gap-2">
+      <div className="z-20 flex shrink-0 items-center gap-2 rounded-[var(--radius-card)] border border-[var(--color-primary)] bg-[var(--color-surface)] px-3 py-2 [box-shadow:var(--shadow-card)]">
       <button
         type="button"
         onClick={onBrowse}
@@ -154,6 +156,20 @@ function RemoteControlBar({
           >
             <Square className="h-4 w-4" aria-hidden="true" />
           </button>
+          {/* Only meaningful while running a practice routine, and only once
+              a step back exists — explicit user request: redo/revisit an
+              earlier step without needing the (possibly unreachable)
+              desktop. Absent on the routine's own first step. */}
+          {playbackStatus?.routineProgress && playbackStatus.routineProgress.stepIndex > 0 && (
+            <button
+              type="button"
+              onClick={() => onAction('previous')}
+              aria-label="חזרה לתרגיל הקודם ברצף"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--color-text-muted)] text-white"
+            >
+              <SkipBack className="h-4 w-4" aria-hidden="true" />
+            </button>
+          )}
           {/* Only meaningful while running a practice routine — advances
               to the next step. Absent from a plain single-exercise run. */}
           {playbackStatus?.routineProgress && (
@@ -167,6 +183,28 @@ function RemoteControlBar({
             </button>
           )}
         </>
+      )}
+      </div>
+      {/* Explicit user request: practice can be driven entirely from the
+          phone, with no access to the computer — the results dialog
+          (VisualTrainerRunner's own SessionResults) is desktop-only, so the
+          phone needs its own view of the same numbers once a step finishes,
+          not just a bare "finished" status with nothing to read. */}
+      {playbackStatus?.phase === 'finished' && playbackStatus.resultsSummary && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm [box-shadow:var(--shadow-card)]">
+          <span className="font-semibold">
+            דיוק: {Math.round(playbackStatus.resultsSummary.accuracyPercent)}%
+          </span>
+          <span className="text-[var(--color-success-text)]">
+            מושלם {playbackStatus.resultsSummary.gradeCounts.perfect}
+          </span>
+          <span className="text-[var(--color-warning-text)]">
+            מוקדם/מאוחר {playbackStatus.resultsSummary.gradeCounts.early + playbackStatus.resultsSummary.gradeCounts.late}
+          </span>
+          <span className="text-[var(--color-danger-text)]">
+            פספוסים {playbackStatus.resultsSummary.gradeCounts.miss}
+          </span>
+        </div>
       )}
     </div>
   )
@@ -319,6 +357,11 @@ export function TouchDrumKitPage() {
       new Map(Object.entries(remoteSender.notationState?.gradedEventIds ?? {})),
     [remoteSender.notationState?.gradedEventIds],
   )
+  const remoteHitTimingByEventId = useMemo(
+    () =>
+      new Map(Object.entries(remoteSender.notationState?.hitTimingByEventId ?? {})),
+    [remoteSender.notationState?.hitTimingByEventId],
+  )
 
   function adjustBpm(delta: number) {
     const next = Math.min(MAX_BPM, Math.max(MIN_BPM, bpm + delta))
@@ -405,7 +448,18 @@ export function TouchDrumKitPage() {
     notationState.playbackProgress.sessionId !== dismissedSessionId
   ) {
     return (
-      <div className="relative flex h-svh w-full flex-col overflow-hidden bg-[var(--color-bg)] p-2 landscape:p-3">
+      <div
+        className="relative flex h-svh w-full flex-col overflow-hidden bg-[var(--color-bg)] p-2 landscape:p-3"
+        // Explicit user request + confirmed via a real-device screenshot:
+        // even with ExerciseNotationSheet's own small internal edge padding,
+        // a phone's front-camera cutout (landscape, left edge) still sat
+        // over the notation. env(safe-area-inset-left) is this exact
+        // device's own reported unsafe-area width (0 on a device without
+        // one) — a plain inline style, not a Tailwind class, so it can't
+        // lose a cascade-order fight against the p-2/landscape:p-3 padding
+        // shorthand already on this element (both would set padding-left).
+        style={{ paddingLeft: `calc(env(safe-area-inset-left) + 0.5rem)` }}
+      >
         <button
           type="button"
           onClick={() =>
@@ -439,6 +493,7 @@ export function TouchDrumKitPage() {
             playbackProgress={notationState.playbackProgress}
             paused={notationState.paused}
             gradedEventIds={remoteGradedEventIds}
+            hitTimingByEventId={remoteHitTimingByEventId}
             showFill={false}
             showBeatLabels
             rowBreakBars={notationState.exercise.rowBreakBars}
@@ -458,7 +513,13 @@ export function TouchDrumKitPage() {
   }
 
   return (
-    <div className="relative flex h-svh flex-col items-center gap-2 overflow-hidden bg-[var(--color-bg)] px-3 pb-3 pt-14">
+    <div
+      className="relative flex h-svh flex-col items-center gap-2 overflow-hidden bg-[var(--color-bg)] px-3 pb-3 pt-14"
+      // Same safe-area accommodation as the notation view's own root above —
+      // a plain inline style so it can't lose a cascade-order fight against
+      // the px-3 padding shorthand already on this element.
+      style={{ paddingLeft: `calc(env(safe-area-inset-left) + 0.75rem)` }}
+    >
       <a
         href={withBaseUrl('')}
         aria-label="חזרה ל-DrumPath"

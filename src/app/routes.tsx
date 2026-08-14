@@ -12,6 +12,7 @@ import {
   TodayPage,
   PracticeSessionPage,
   SettingsPage,
+  ModuleKitsPage,
   JournalPage,
   AnalyticsPage,
   LibraryPage,
@@ -58,6 +59,10 @@ export const routes: RouteObject[] = [
       { path: 'analytics', element: <AnalyticsPage /> },
       { path: 'library', element: <LibraryPage /> },
       { path: 'settings', element: <SettingsPage /> },
+      // Reference-only, link-only (not in NAV_ITEMS) — reached via a link
+      // on SettingsPage, same "standalone reference page" scoping as
+      // practice/visual/curriculum.
+      { path: 'settings/module-kits', element: <ModuleKitsPage /> },
       { path: 'setup', element: <SetupWizard /> },
       // Visual Drum Trainer (VISUAL_DRUM_TRAINER_SPEC.md) — list+detail,
       // same convention as lessons/exercises/songs: the list is in

@@ -1,7 +1,7 @@
 import { useRef } from 'react'
 import { SUBDIVISIONS_PER_BEAT, calculateBarDurationMs, calculateEventTimeMs } from '../../domain/calculations/event-timing'
 import { STAFF_POSITION, staffPositionToOffsetPx } from '../../lib/visual-trainer/staff-notation-layout'
-import type { DrumInstrument, InteractiveExercise, Subdivision } from '../../domain'
+import type { DrumInstrument, HitGrade, InteractiveExercise, Subdivision } from '../../domain'
 
 // Standard drum-notation convention: the "foot" voice (kick) stems down,
 // every "hand" voice (snare/toms/cymbals) stems up — this is what makes it
@@ -46,12 +46,27 @@ export interface ExerciseNotationSheetProps {
    * mid-playthrough, so nothing here ever needed to freeze independent of
    * the audio clock before. Ignored without playbackProgress. */
   paused?: boolean
-  /** Per-event grading result — colors that note's own head green (hit) or
-   * red (miss) as it's graded, the staff-notation equivalent of
-   * NoteHighway's own markResult flash. Separate from highlightedEventIds
-   * (that one's a transient "now playing" flash; this one persists until
-   * reset/replaced, same lifetime as a real grade). */
-  gradedEventIds?: ReadonlyMap<string, 'hit' | 'miss'>
+  /** Per-event grading result — colors that note's own head green (perfect/
+   * early/late — all "counted as a hit") or red (miss) as it's graded, the
+   * staff-notation equivalent of NoteHighway's own markResult flash.
+   * Separate from highlightedEventIds (that one's a transient "now playing"
+   * flash; this one persists until reset/replaced, same lifetime as a real
+   * grade). */
+  gradedEventIds?: ReadonlyMap<string, HitGrade>
+  /** Per-event actual strike time (ms elapsed since bar 1, same clock the
+   * note's own timing is measured against) — explicit user request: a small
+   * red X drawn at the hit's own x, right beside the note it matched, so a
+   * player can see exactly how far off (and which direction) a hit landed
+   * instead of only its pass/fail grade. Only ever drawn for an 'early' or
+   * 'late' grade (see the render below) — a 'perfect' hit is, by definition,
+   * already close enough that a marker would just sit on top of the note
+   * itself, and green-with-a-red-X-on-it read as "did I actually hit this
+   * right?" on a small phone screen (explicit user feedback). Only
+   * meaningful alongside playbackProgress (needs the run's real bpm to
+   * convert ms into an x position) — a plain preview with no
+   * playbackProgress simply never draws any marker, same as gradedEventIds
+   * already assumes a real run. */
+  hitTimingByEventId?: ReadonlyMap<string, number>
   /** Off by default (cymbals draw as a plain X, no stem). When on, cymbal
    * (X notehead) instruments also get a stem and join the same beam
    * grouping as normal noteheads — an isolated cymbal note still gets its
@@ -100,7 +115,25 @@ function computeRowStartBars(totalBars: number, barsPerRow: number, rowBreakBars
 
 const BARS_PER_ROW = 4
 const BAR_WIDTH_PX = 200
-const NOTE_INSET_PX = 20
+// A one-time viewport-level margin, NOT a per-bar note inset (that was the
+// earlier NOTE_INSET_PX approach, removed — see noteX's own comment for why
+// it broke cursor sync). This just shifts the whole SVG's visible window a
+// little left of x=0 via the viewBox origin — every note/line/cursor stays
+// at its own unmodified x, so nothing about timing sync changes; only what
+// portion of that coordinate space is actually in view does. Explicit user
+// request: bar 1's own first note used to render flush against x=0, the
+// literal edge of the screen — on a phone, that's exactly where a
+// front-camera cutout can sit, physically covering it (confirmed via
+// screenshot: the note was visibly clipped in half).
+const VIEWPORT_LEFT_PADDING_PX = 16
+// Reserved space for the count-in "runway" the cursor sweeps through before
+// reaching bar 1 (see the cursor's own render code below) — one full bar's
+// width, matching COUNT_IN_BARS=1 exactly, so the runway reads at the same
+// visual speed as the rest of the piece rather than looking stretched or
+// compressed. Always reserved (not just while a run with a count-in is
+// actually active) so the viewBox — and everything's on-screen scale — never
+// visibly jumps the instant a preview's own "play" starts one.
+const COUNT_IN_RUNWAY_PX = BAR_WIDTH_PX
 const LINE_SPACING_PX = 8
 const NOTE_RADIUS_PX = 3
 const STEM_LENGTH_PX = 12
@@ -160,6 +193,7 @@ export function ExerciseNotationSheet({
   showFill = true,
   paused = false,
   gradedEventIds,
+  hitTimingByEventId,
   beamCymbals = false,
   showBeatLabels = false,
   barsPerRow = BARS_PER_ROW,
@@ -278,7 +312,7 @@ export function ExerciseNotationSheet({
 
   return (
     <svg
-      viewBox={`0 0 ${viewBoxWidth} ${totalHeight}`}
+      viewBox={`-${COUNT_IN_RUNWAY_PX + VIEWPORT_LEFT_PADDING_PX} 0 ${viewBoxWidth + COUNT_IN_RUNWAY_PX + VIEWPORT_LEFT_PADDING_PX} ${totalHeight}`}
       // Plain `w-full` stretched a short exercise's small viewBox (e.g. one
       // bar = 200 units) to fill the whole, often much wider, container —
       // scaling every line/note/gap up with it. Capping at 2x native scale
@@ -297,14 +331,47 @@ export function ExerciseNotationSheet({
         const baselineY = rowTopY + rowHeight - bottomPadding
         const toY = (position: number) => baselineY - staffPositionToOffsetPx(position, LINE_SPACING_PX)
         const rowTiming = rowRealTimings[rowIndex]!
+        // Count-in "runway" — only row 0 ever has one (a fresh count-in
+        // only ever precedes the very start of a run; later rows flow
+        // straight out of whichever row came before them). rowTiming.
+        // startMs > 0 here specifically means "there's a real wait before
+        // this row's bar 1 begins" — true for an ordinary count-in, false
+        // (0 or negative, clamped away below) for a mid-exercise seek,
+        // which skips the count-in entirely (see beginPlayback's own
+        // countInBars-from-startOffsetMs logic) — a seek must NOT get a
+        // runway, there's no count-in click to justify one. Used by the
+        // cursor's own render below.
+        const barRealDurationMs = rowTiming.durationMs / rowBars
+        const preRollMs = rowIndex === 0 ? Math.max(0, rowTiming.startMs) : 0
+        // Same px-per-ms rate as the rest of this row's own bars, so the
+        // runway reads at one consistent visual speed, not stretched or
+        // compressed relative to bar 1 right after it.
+        const preRollPx = preRollMs > 0 ? (preRollMs * BAR_WIDTH_PX) / barRealDurationMs : 0
 
         // x per note, needed by both the beam grouping below and the note
-        // rendering loop further down.
+        // rendering loop further down. Pure proportional (barIndexInRow*
+        // BAR_WIDTH_PX + fraction*BAR_WIDTH_PX) — NOT inset/compressed
+        // per-bar (a previous version reserved NOTE_INSET_PX of breathing
+        // room after each barline before a bar's own content started,
+        // compressing the rest of that bar's notes into what was left).
+        // That inset broke the cursor below: matching it required either an
+        // inaccurate cursor (the original bug — reported directly: a
+        // well-timed kick hit needed to land visibly before its note, a
+        // roughly constant on-screen distance regardless of tempo, meaning
+        // the cursor reached each note strictly LATER than its true instant)
+        // or a per-bar cursor that jumps FORWARD by that same inset at every
+        // barline (a later attempt) — which gives a downbeat note zero
+        // visual lead-in, the cursor simply appears on top of it the instant
+        // the bar starts (reported directly, and a real functional
+        // regression, not just cosmetic — a downbeat-heavy pattern like
+        // kick+snare on every beat becomes unplayable). A note landing
+        // exactly on a barline's x (a beat-1 note, NOTE_RADIUS_PX=3, barely
+        // overlapping the thin barline) is a small, purely cosmetic price
+        // for a cursor that moves continuously across the whole row (like
+        // real notation reads) AND stays exactly synced with every note at
+        // every tempo — no bias hack needed on the grading side either.
         const noteX = new Map(
-          rowEvents.map((event) => [
-            event.id,
-            event.barIndexInRow * BAR_WIDTH_PX + NOTE_INSET_PX + event.fraction * (BAR_WIDTH_PX - NOTE_INSET_PX),
-          ]),
+          rowEvents.map((event) => [event.id, event.barIndexInRow * BAR_WIDTH_PX + event.fraction * BAR_WIDTH_PX]),
         )
 
         // Real notation connects consecutive notes within a beam group with a
@@ -410,7 +477,19 @@ export function ExerciseNotationSheet({
                 (same CSS-transform technique, not per-frame JS/React state,
                 per §18's rule), just a thin moving line instead of a
                 widening block. Drawn a little past the staff on both ends
-                so it reads as a distinct cursor, not another staff line. */}
+                so it reads as a distinct cursor, not another staff line.
+                One continuous <rect> for the WHOLE row (not one per bar) —
+                a per-bar version was tried and reverted (reported directly):
+                it kept the cursor exactly synced with each note, but jumped
+                FORWARD at every barline to reach the next bar's own inset
+                start, meaning a downbeat note got zero visual lead-in — the
+                cursor simply appeared on top of it, unplayable for any
+                downbeat-heavy pattern. noteX above no longer insets/
+                compresses per bar (see its own comment) specifically so
+                THIS single linear sweep across the whole row — smooth,
+                continuous, exactly what real notation reading feels like —
+                stays exactly synced with every note at every tempo, with no
+                jumps and no bias hack needed on the grading side. */}
             {playbackProgress && rowTiming.durationMs > 0 && (
               <rect
                 key={playbackProgress.sessionId}
@@ -421,8 +500,9 @@ export function ExerciseNotationSheet({
                 height={toY(STAFF_BOTTOM_LINE_POSITION) - toY(STAFF_TOP_LINE_POSITION) + 12}
                 fill="var(--color-primary-text)"
                 style={{
+                  ...(preRollPx > 0 ? { ['--notation-cursor-start-x' as string]: `${-preRollPx}px` } : {}),
                   ['--notation-cursor-target-x' as string]: `${rowBars * BAR_WIDTH_PX}px`,
-                  animation: `notation-row-cursor ${rowTiming.durationMs}ms linear ${rowTiming.startMs}ms both`,
+                  animation: `notation-row-cursor ${preRollMs + rowTiming.durationMs}ms linear ${rowTiming.startMs - preRollMs}ms both`,
                   animationPlayState: paused ? 'paused' : 'running',
                 }}
                 onAnimationStart={() => {
@@ -479,16 +559,13 @@ export function ExerciseNotationSheet({
                     <text
                       key={`${barIndexInRow}-${beatIndex}-${subdivisionIndex}`}
                       data-testid="notation-beat-label"
-                      // Same x formula real notes use (noteX above): beat 1
-                      // isn't at the bar's literal left edge, it's inset by
-                      // NOTE_INSET_PX — matching that here is what keeps a
-                      // label lined up under its actual note.
+                      // Same x formula real notes use (noteX above) — keeps
+                      // a label lined up directly under its actual note.
                       x={
                         barIndexInRow * BAR_WIDTH_PX +
-                        NOTE_INSET_PX +
                         (beatIndex / exercise.timeSignature.numerator +
                           subdivisionIndex / (exercise.timeSignature.numerator * SUBDIVISIONS_PER_BEAT[exercise.subdivision])) *
-                          (BAR_WIDTH_PX - NOTE_INSET_PX)
+                          BAR_WIDTH_PX
                       }
                       y={rowTopY + rowHeight - 2}
                       textAnchor="middle"
@@ -509,6 +586,30 @@ export function ExerciseNotationSheet({
               const direction = stemDirection(event.instrument)
               const stemX = direction === 'down' ? x - NOTE_RADIUS_PX : x + NOTE_RADIUS_PX
               const isBeamed = beamedEventIds.has(event.id)
+              // Where the ACTUAL hit landed, in the same x-space as the note
+              // itself — mirrors noteX's own formula exactly (see that
+              // constant's own comment), just fed the hit's real elapsed
+              // time (at the run's real bpm) instead of the note's authored
+              // fraction. Not clamped to [0, BAR_WIDTH_PX] — a hit landing
+              // outside its own note's bar box is exactly the (rare, worth
+              // seeing) case of a hit graded against this note despite
+              // falling in a neighboring bar. Only ever drawn for an 'early'
+              // or 'late' grade (see showHitMarker below) — explicit user
+              // feedback: a red X sitting on an already-green 'perfect' note
+              // read as "did I actually hit this right?" on a small phone
+              // screen, not as useful calibration info.
+              const grade = gradedEventIds?.get(event.id)
+              const hitTimeMs = hitTimingByEventId?.get(event.id)
+              const hitX =
+                hitTimeMs !== undefined && playbackProgress
+                  ? (() => {
+                      const realBarDurationMs = calculateBarDurationMs(playbackProgress.bpm, exercise.timeSignature)
+                      const barGlobalIndex = rowStartBars[rowIndex]! - 1 + event.barIndexInRow
+                      const hitFractionInBar = (hitTimeMs - barGlobalIndex * realBarDurationMs) / realBarDurationMs
+                      return event.barIndexInRow * BAR_WIDTH_PX + hitFractionInBar * BAR_WIDTH_PX
+                    })()
+                  : undefined
+              const showHitMarker = hitX !== undefined && (grade === 'early' || grade === 'late')
               // A beamed note's stem reaches the voice's shared beam height
               // (variable length) instead of the fixed individual-flag
               // length — that's what visually connects e.g. a low snare note
@@ -517,11 +618,14 @@ export function ExerciseNotationSheet({
                 noteBeamY.get(event.id) ??
                 (direction === 'down' ? y + NOTE_RADIUS_PX + STEM_LENGTH_PX : y - NOTE_RADIUS_PX - STEM_LENGTH_PX)
               const isHighlighted = highlightedEventIds?.has(event.id) ?? false
-              const gradeResult = gradedEventIds?.get(event.id)
-              const noteColor = gradeResult
-                ? gradeResult === 'hit'
-                  ? 'var(--color-success-text)'
-                  : 'var(--color-danger-text)'
+              // perfect/early/late all "counted as a hit" — same green,
+              // matching gradeCounts/HitFeedback's own perfect+early+late
+              // grouping; the finer distinction is what showHitMarker above
+              // uses instead, not the note's own color.
+              const noteColor = grade
+                ? grade === 'miss'
+                  ? 'var(--color-danger-text)'
+                  : 'var(--color-success-text)'
                 : isHighlighted
                   ? 'var(--color-warning-text)'
                   : undefined
@@ -532,7 +636,7 @@ export function ExerciseNotationSheet({
                   data-testid="notation-note"
                   data-instrument={event.instrument}
                   data-highlighted={isHighlighted}
-                  data-grade={gradeResult}
+                  data-grade={grade}
                   style={noteColor ? { color: noteColor } : undefined}
                 >
                   {staff.ledger && (
@@ -608,6 +712,12 @@ export function ExerciseNotationSheet({
                     >
                       &gt;
                     </text>
+                  )}
+                  {showHitMarker && (
+                    <g data-testid="notation-hit-marker" style={{ color: 'var(--color-danger-text)' }}>
+                      <line x1={hitX! - 3} y1={y - 3} x2={hitX! + 3} y2={y + 3} stroke="currentColor" strokeWidth={1.3} strokeLinecap="round" />
+                      <line x1={hitX! - 3} y1={y + 3} x2={hitX! + 3} y2={y - 3} stroke="currentColor" strokeWidth={1.3} strokeLinecap="round" />
+                    </g>
                   )}
                 </g>
               )

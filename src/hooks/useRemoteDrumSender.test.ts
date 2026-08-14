@@ -215,7 +215,8 @@ describe('useRemoteDrumSender', () => {
         exercise,
         playbackProgress: { bpm: 100, sessionId: 1 },
         paused: false,
-        gradedEventIds: { 'event-1': 'hit' },
+        gradedEventIds: { 'event-1': 'perfect' },
+        hitTimingByEventId: { 'event-1': 1234 },
       }),
     )
 
@@ -223,7 +224,8 @@ describe('useRemoteDrumSender', () => {
       exercise,
       playbackProgress: { bpm: 100, sessionId: 1 },
       paused: false,
-      gradedEventIds: { 'event-1': 'hit' },
+      gradedEventIds: { 'event-1': 'perfect' },
+      hitTimingByEventId: { 'event-1': 1234 },
     })
   })
 
@@ -240,6 +242,7 @@ describe('useRemoteDrumSender', () => {
         playbackProgress: { bpm: 100, sessionId: 1 },
         paused: false,
         gradedEventIds: {},
+        hitTimingByEventId: {},
       }),
     )
     expect(result.current.notationState).toBeDefined()
@@ -262,6 +265,7 @@ describe('useRemoteDrumSender', () => {
         playbackProgress: { bpm: 100, sessionId: 1 },
         paused: false,
         gradedEventIds: {},
+        hitTimingByEventId: {},
       }),
     )
     expect(result.current.notationState).toBeDefined()

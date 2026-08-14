@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor, fireEvent } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent, act } from '@testing-library/react'
 import { MemoryRouter, Routes, Route } from 'react-router'
 import { RoutinePlayerPage } from './RoutinePlayerPage'
 import { practiceRoutineRepository, interactiveExerciseRepository } from '../../data/repositories'
@@ -55,7 +55,10 @@ class FakeAudioContext {
 // This file cares about routine mechanics (bulk resolution, not-found
 // handling, no-remount-across-steps), not phone-relay behavior — mocked
 // with plain stubs rather than the fuller stateful mock useVisualTrainer.test.ts
-// uses for its own phone-specific assertions.
+// uses for its own phone-specific assertions. registerSession DOES capture
+// the session (unlike a no-op stub) so the remote 'previous' step-back test
+// below can invoke it directly, exactly as RemoteHostProvider would.
+const capturedSessionHolder: { current: { previous?: () => void } | undefined } = { current: undefined }
 vi.mock('./remote-host-context', () => ({
   useRemoteHost: () => ({
     status: 'disabled',
@@ -63,7 +66,10 @@ vi.mock('./remote-host-context', () => ({
     toggleEnabled: vi.fn(),
     sendNotationState: vi.fn(),
     sendPlaybackStatus: vi.fn(),
-    registerSession: vi.fn(() => () => {}),
+    registerSession: vi.fn((session: { previous?: () => void }) => {
+      capturedSessionHolder.current = session
+      return () => {}
+    }),
   }),
 }))
 
@@ -173,6 +179,36 @@ describe('RoutinePlayerPage', () => {
     // AudioContext/engine reused, not recreated, per this page's whole
     // reason for existing without a per-step key.
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Step B' })).toBeInTheDocument())
+    expect(audioContextInstanceCount).toBe(1)
+  })
+
+  it('a remote "previous" command steps back to the prior step, and is absent on the routine\'s own first step', async () => {
+    const exerciseA = await interactiveExerciseRepository.create(
+      makeExerciseInput('Step A', [{ id: createId(), bar: 1, beat: 1, subdivisionIndex: 0, instrument: 'kick', velocity: 100 }]),
+    )
+    const exerciseB = await interactiveExerciseRepository.create(
+      makeExerciseInput('Step B', [{ id: createId(), bar: 1, beat: 1, subdivisionIndex: 0, instrument: 'snare', velocity: 100 }]),
+    )
+    const routine = await practiceRoutineRepository.create({ title: 'Routine', exerciseIds: [exerciseA.id, exerciseB.id] })
+
+    renderPage(routine.id)
+
+    // On step 1, nothing is registered to step back to.
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Step A' })).toBeInTheDocument())
+    expect(capturedSessionHolder.current?.previous).toBeUndefined()
+
+    const startButton = await screen.findByRole('button', { name: 'התחל' })
+    fireEvent.click(startButton)
+    await waitFor(() => expect(screen.getByRole('button', { name: 'לתרגיל הבא' })).toBeInTheDocument(), { timeout: 3000 })
+    fireEvent.click(screen.getByRole('button', { name: 'לתרגיל הבא' }))
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Step B' })).toBeInTheDocument())
+
+    // Now on step 2, a registered `previous` steps back to step 1 — the
+    // same mechanism a remote 'previous' transport_command reaches.
+    expect(capturedSessionHolder.current?.previous).toBeDefined()
+    act(() => capturedSessionHolder.current!.previous!())
+
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Step A' })).toBeInTheDocument())
     expect(audioContextInstanceCount).toBe(1)
   })
 })

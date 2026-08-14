@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { Link } from 'react-router'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -140,6 +141,14 @@ export function SettingsPage() {
       <Card>
         <h3 className="font-semibold">ערכת נושא</h3>
         <p className="text-sm text-[var(--color-text-muted)]">בקרוב.</p>
+      </Card>
+
+      <Card>
+        <h3 className="font-semibold">מודול תופים</h3>
+        <p className="mb-2 text-sm text-[var(--color-text-muted)]">רשימת ה-Kit-ים של מודול ה-Z11D.</p>
+        <Link to="/settings/module-kits" className="text-sm text-[var(--color-primary-text)] hover:underline">
+          מודול תופים — קיטים ←
+        </Link>
       </Card>
     </div>
   )

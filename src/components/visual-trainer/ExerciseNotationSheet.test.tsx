@@ -40,6 +40,88 @@ describe('ExerciseNotationSheet', () => {
     expect(lines).toHaveLength(5 + 2) // 5 staff lines + start/end bar-lines
   })
 
+  it('renders one continuous cursor for the whole row (not one per bar), and a beat-1 note sits exactly at its own bar\'s left edge', () => {
+    const twoBarExercise = {
+      ...EXERCISE,
+      bars: 2,
+      events: [makeEvent({ instrument: 'kick', bar: 1, beat: 1 }), makeEvent({ instrument: 'kick', bar: 2, beat: 1 })],
+    }
+    const { container } = render(
+      <ExerciseNotationSheet exercise={twoBarExercise} playbackProgress={{ bpm: 120, sessionId: 1 }} />,
+    )
+    // One continuous cursor for the row — a per-bar-jump version was tried
+    // and reverted (gave downbeat notes zero visual lead-in, see
+    // useVisualTrainer.ts's applyStaffCursorTimingBias comment history).
+    expect(container.querySelectorAll('[data-testid="notation-row-0-cursor"]')).toHaveLength(1)
+    // BAR_WIDTH_PX=200 (module-private layout constant) — bar 2's beat-1
+    // note sits exactly at its own bar's left edge (1*200), matching where
+    // a continuously-sweeping cursor reaches at that same real instant.
+    const kickInBar2 = container.querySelectorAll('[data-testid="notation-row-0"] [data-instrument="kick"] circle')[1]!
+    expect(Number(kickInBar2.getAttribute('cx'))).toBe(1 * 200)
+  })
+
+  it('gives row 0\'s cursor a count-in "runway" (starts left of x=0, arrives at x=0 exactly when the count-in ends) — explicit user request: bar 1\'s own first note used to have zero visual lead-in', () => {
+    const { container } = render(
+      // startOffsetMs mirrors VisualTrainerPage's own seekOffsetMs-minus-
+      // countInDurationMs convention — a negative value here means "this
+      // much count-in time before bar 1 truly begins" (500ms, at 120bpm/
+      // 4-4 == a quarter of one 2000ms bar).
+      <ExerciseNotationSheet exercise={EXERCISE} playbackProgress={{ bpm: 120, sessionId: 1, startOffsetMs: -500 }} />,
+    )
+    const cursor = container.querySelector('[data-testid="notation-row-0-cursor"]')! as SVGElement
+    // 500ms of a 2000ms bar (120bpm/4-4) is a quarter of BAR_WIDTH_PX=200 —
+    // the runway distance the cursor starts left of x=0.
+    expect(cursor.style.getPropertyValue('--notation-cursor-start-x')).toBe('-50px')
+    // Delay is fully absorbed into the runway's own motion (starts moving
+    // immediately) rather than sitting motionless at x=0 for 500ms first.
+    expect(cursor.style.animation).toContain('linear 0ms both')
+  })
+
+  it('does not give a mid-exercise seek (no count-in) a runway', () => {
+    const { container } = render(
+      // A seek's startOffsetMs is positive (how far INTO the piece it
+      // starts), never the negative count-in convention above.
+      <ExerciseNotationSheet exercise={EXERCISE} playbackProgress={{ bpm: 120, sessionId: 1, startOffsetMs: 300 }} />,
+    )
+    const cursor = container.querySelector('[data-testid="notation-row-0-cursor"]')! as SVGElement
+    expect(cursor.style.getPropertyValue('--notation-cursor-start-x')).toBe('')
+  })
+
+  it('draws a hit-position marker (X) for a hit graded early or late', () => {
+    const exercise = { ...EXERCISE, bars: 1 }
+    const kickEventId = exercise.events[0]!.id // beat 1 kick
+    const { container } = render(
+      <ExerciseNotationSheet
+        exercise={exercise}
+        playbackProgress={{ bpm: 120, sessionId: 1 }}
+        gradedEventIds={new Map([[kickEventId, 'late']])}
+        hitTimingByEventId={new Map([[kickEventId, 100]])}
+      />,
+    )
+    expect(container.querySelectorAll('[data-testid="notation-hit-marker"]')).toHaveLength(1)
+  })
+
+  it('draws no hit-position marker for a hit graded perfect (already-green noise, per direct user feedback)', () => {
+    const exercise = { ...EXERCISE, bars: 1 }
+    const kickEventId = exercise.events[0]!.id
+    const { container } = render(
+      <ExerciseNotationSheet
+        exercise={exercise}
+        playbackProgress={{ bpm: 120, sessionId: 1 }}
+        gradedEventIds={new Map([[kickEventId, 'perfect']])}
+        hitTimingByEventId={new Map([[kickEventId, 2]])}
+      />,
+    )
+    expect(container.querySelectorAll('[data-testid="notation-hit-marker"]')).toHaveLength(0)
+  })
+
+  it('draws no hit-position marker for an event without one', () => {
+    const { container } = render(
+      <ExerciseNotationSheet exercise={EXERCISE} playbackProgress={{ bpm: 120, sessionId: 1 }} />,
+    )
+    expect(container.querySelectorAll('[data-testid="notation-hit-marker"]')).toHaveLength(0)
+  })
+
   it('positions kick with a filled circle notehead, low on the staff', () => {
     const { container } = render(<ExerciseNotationSheet exercise={EXERCISE} />)
     const kick = container.querySelector('[data-instrument="kick"]')!

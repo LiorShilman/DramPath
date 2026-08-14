@@ -50,11 +50,6 @@ export const CURRICULUM_PATTERNS: Record<number, CurriculumPattern[]> = {
           { beat: 3, subdivisionIndex: 0, instrument: 'kick' },
           { beat: 4, subdivisionIndex: 0, instrument: 'snare' },
         ],
-        // B adds a kick under the closing snare (a unison hit) instead of
-        // just swapping instruments on the same single note — a one-note
-        // substitution between two similar-looking noteheads read as
-        // "the same bar" at a glance (confirmed against a real screenshot);
-        // an extra notehead stacked on the beat is unambiguous.
         [
           { beat: 1, subdivisionIndex: 0, instrument: 'kick' },
           { beat: 2, subdivisionIndex: 0, instrument: 'snare' },
@@ -81,7 +76,6 @@ export const CURRICULUM_PATTERNS: Record<number, CurriculumPattern[]> = {
           { beat: 1, subdivisionIndex: 0, instrument: 'kick' },
           { beat: 3, subdivisionIndex: 0, instrument: 'snare' },
         ],
-        // B adds a syncopated kick pickup on the "and" of beat 2.
         [
           { beat: 1, subdivisionIndex: 0, instrument: 'hihat_closed' },
           { beat: 1, subdivisionIndex: 1, instrument: 'hihat_closed' },
@@ -114,7 +108,6 @@ export const CURRICULUM_PATTERNS: Record<number, CurriculumPattern[]> = {
           { beat: 3, subdivisionIndex: 0, instrument: 'kick' },
           { beat: 4, subdivisionIndex: 0, instrument: 'snare' },
         ],
-        // B adds a pickup kick right after the closing snare, leading into the loop.
         [
           { beat: 1, subdivisionIndex: 0, instrument: 'hihat_closed' },
           { beat: 1, subdivisionIndex: 1, instrument: 'hihat_closed' },
@@ -133,7 +126,151 @@ export const CURRICULUM_PATTERNS: Record<number, CurriculumPattern[]> = {
       ],
     },
   ],
+  // NEW — hand technique/independence: the instrument set stays identical
+  // to stage 2 (rudiment work doesn't need new kit pieces), the focus shift
+  // is purely rhythmic. Each pattern's 2nd bar variant is a full-bar single-
+  // or double-stroke roll on the snare alone, alternating with a normal
+  // groove bar — the generator's A/B/A/B cycling turns that into "groove,
+  // roll, groove, roll…" across the 8 generated bars.
   3: [
+    {
+      title: 'רול יחיד לאורך התיבה',
+      bars: [
+        [
+          { beat: 1, subdivisionIndex: 0, instrument: 'hihat_closed' },
+          { beat: 1, subdivisionIndex: 1, instrument: 'hihat_closed' },
+          { beat: 2, subdivisionIndex: 0, instrument: 'hihat_closed' },
+          { beat: 2, subdivisionIndex: 1, instrument: 'hihat_closed' },
+          { beat: 3, subdivisionIndex: 0, instrument: 'hihat_closed' },
+          { beat: 3, subdivisionIndex: 1, instrument: 'hihat_closed' },
+          { beat: 4, subdivisionIndex: 0, instrument: 'hihat_closed' },
+          { beat: 4, subdivisionIndex: 1, instrument: 'hihat_closed' },
+          { beat: 1, subdivisionIndex: 0, instrument: 'kick' },
+          { beat: 3, subdivisionIndex: 0, instrument: 'snare' },
+        ],
+        // A full bar of single strokes on the snare alone — no kick/hihat,
+        // hands carry it entirely.
+        [
+          { beat: 1, subdivisionIndex: 0, instrument: 'snare' },
+          { beat: 1, subdivisionIndex: 1, instrument: 'snare' },
+          { beat: 2, subdivisionIndex: 0, instrument: 'snare' },
+          { beat: 2, subdivisionIndex: 1, instrument: 'snare' },
+          { beat: 3, subdivisionIndex: 0, instrument: 'snare' },
+          { beat: 3, subdivisionIndex: 1, instrument: 'snare' },
+          { beat: 4, subdivisionIndex: 0, instrument: 'snare' },
+          { beat: 4, subdivisionIndex: 1, instrument: 'snare' },
+        ],
+      ],
+    },
+    {
+      title: 'רול כפול עם דגש',
+      bars: [
+        [
+          { beat: 1, subdivisionIndex: 0, instrument: 'hihat_closed' },
+          { beat: 1, subdivisionIndex: 1, instrument: 'hihat_closed' },
+          { beat: 2, subdivisionIndex: 0, instrument: 'hihat_closed' },
+          { beat: 2, subdivisionIndex: 1, instrument: 'hihat_closed' },
+          { beat: 3, subdivisionIndex: 0, instrument: 'hihat_closed' },
+          { beat: 3, subdivisionIndex: 1, instrument: 'hihat_closed' },
+          { beat: 4, subdivisionIndex: 0, instrument: 'hihat_closed' },
+          { beat: 4, subdivisionIndex: 1, instrument: 'hihat_closed' },
+          { beat: 1, subdivisionIndex: 0, instrument: 'kick' },
+          { beat: 2, subdivisionIndex: 0, instrument: 'snare' },
+          { beat: 3, subdivisionIndex: 0, instrument: 'kick' },
+          { beat: 4, subdivisionIndex: 0, instrument: 'snare' },
+        ],
+        // A full bar of double-stroke-style snare, accented on the downbeat
+        // — teaches accent control inside a rudiment, not just raw speed.
+        [
+          { beat: 1, subdivisionIndex: 0, instrument: 'snare', accent: true },
+          { beat: 1, subdivisionIndex: 1, instrument: 'snare' },
+          { beat: 2, subdivisionIndex: 0, instrument: 'snare' },
+          { beat: 2, subdivisionIndex: 1, instrument: 'snare' },
+          { beat: 3, subdivisionIndex: 0, instrument: 'snare' },
+          { beat: 3, subdivisionIndex: 1, instrument: 'snare' },
+          { beat: 4, subdivisionIndex: 0, instrument: 'snare' },
+          { beat: 4, subdivisionIndex: 1, instrument: 'snare' },
+        ],
+      ],
+    },
+  ],
+  // NEW — kick variations under a held backbeat: same instrument set as
+  // stage 3, focus moves from the hands to the feet.
+  4: [
+    {
+      title: 'קיק סינקופטי בסיסי',
+      bars: [
+        [
+          { beat: 1, subdivisionIndex: 0, instrument: 'hihat_closed' },
+          { beat: 1, subdivisionIndex: 1, instrument: 'hihat_closed' },
+          { beat: 2, subdivisionIndex: 0, instrument: 'hihat_closed' },
+          { beat: 2, subdivisionIndex: 1, instrument: 'hihat_closed' },
+          { beat: 3, subdivisionIndex: 0, instrument: 'hihat_closed' },
+          { beat: 3, subdivisionIndex: 1, instrument: 'hihat_closed' },
+          { beat: 4, subdivisionIndex: 0, instrument: 'hihat_closed' },
+          { beat: 4, subdivisionIndex: 1, instrument: 'hihat_closed' },
+          { beat: 1, subdivisionIndex: 0, instrument: 'kick' },
+          { beat: 2, subdivisionIndex: 0, instrument: 'snare' },
+          { beat: 3, subdivisionIndex: 0, instrument: 'kick' },
+          { beat: 4, subdivisionIndex: 0, instrument: 'snare' },
+        ],
+        // B pushes a syncopated kick onto the "and" of beat 2.
+        [
+          { beat: 1, subdivisionIndex: 0, instrument: 'hihat_closed' },
+          { beat: 1, subdivisionIndex: 1, instrument: 'hihat_closed' },
+          { beat: 2, subdivisionIndex: 0, instrument: 'hihat_closed' },
+          { beat: 2, subdivisionIndex: 1, instrument: 'hihat_closed' },
+          { beat: 3, subdivisionIndex: 0, instrument: 'hihat_closed' },
+          { beat: 3, subdivisionIndex: 1, instrument: 'hihat_closed' },
+          { beat: 4, subdivisionIndex: 0, instrument: 'hihat_closed' },
+          { beat: 4, subdivisionIndex: 1, instrument: 'hihat_closed' },
+          { beat: 1, subdivisionIndex: 0, instrument: 'kick' },
+          { beat: 2, subdivisionIndex: 0, instrument: 'snare' },
+          { beat: 2, subdivisionIndex: 1, instrument: 'kick' },
+          { beat: 3, subdivisionIndex: 0, instrument: 'kick' },
+          { beat: 4, subdivisionIndex: 0, instrument: 'snare' },
+        ],
+      ],
+    },
+    {
+      title: 'דחיפת קיק מתקדמת',
+      bars: [
+        [
+          { beat: 1, subdivisionIndex: 0, instrument: 'hihat_closed' },
+          { beat: 1, subdivisionIndex: 1, instrument: 'hihat_closed' },
+          { beat: 2, subdivisionIndex: 0, instrument: 'hihat_closed' },
+          { beat: 2, subdivisionIndex: 1, instrument: 'hihat_closed' },
+          { beat: 3, subdivisionIndex: 0, instrument: 'hihat_closed' },
+          { beat: 3, subdivisionIndex: 1, instrument: 'hihat_closed' },
+          { beat: 4, subdivisionIndex: 0, instrument: 'hihat_closed' },
+          { beat: 4, subdivisionIndex: 1, instrument: 'hihat_closed' },
+          { beat: 1, subdivisionIndex: 0, instrument: 'kick' },
+          { beat: 2, subdivisionIndex: 0, instrument: 'snare' },
+          { beat: 3, subdivisionIndex: 0, instrument: 'kick' },
+          { beat: 3, subdivisionIndex: 1, instrument: 'kick' },
+          { beat: 4, subdivisionIndex: 0, instrument: 'snare' },
+        ],
+        // B adds kick pickups both before beat 1 and after the closing snare.
+        [
+          { beat: 1, subdivisionIndex: 0, instrument: 'hihat_closed' },
+          { beat: 1, subdivisionIndex: 1, instrument: 'hihat_closed' },
+          { beat: 2, subdivisionIndex: 0, instrument: 'hihat_closed' },
+          { beat: 2, subdivisionIndex: 1, instrument: 'hihat_closed' },
+          { beat: 3, subdivisionIndex: 0, instrument: 'hihat_closed' },
+          { beat: 3, subdivisionIndex: 1, instrument: 'hihat_closed' },
+          { beat: 4, subdivisionIndex: 0, instrument: 'hihat_closed' },
+          { beat: 4, subdivisionIndex: 1, instrument: 'hihat_closed' },
+          { beat: 1, subdivisionIndex: 0, instrument: 'kick' },
+          { beat: 1, subdivisionIndex: 1, instrument: 'kick' },
+          { beat: 2, subdivisionIndex: 0, instrument: 'snare' },
+          { beat: 3, subdivisionIndex: 0, instrument: 'kick' },
+          { beat: 4, subdivisionIndex: 0, instrument: 'snare' },
+          { beat: 4, subdivisionIndex: 1, instrument: 'kick' },
+        ],
+      ],
+    },
+  ],
+  5: [
     {
       title: 'פתיחת קראש',
       bars: [
@@ -199,7 +336,7 @@ export const CURRICULUM_PATTERNS: Record<number, CurriculumPattern[]> = {
       ],
     },
   ],
-  4: [
+  6: [
     {
       title: 'מילוי טומים בסיסי',
       bars: [
@@ -263,7 +400,96 @@ export const CURRICULUM_PATTERNS: Record<number, CurriculumPattern[]> = {
       ],
     },
   ],
-  5: [
+  // NEW — dynamics/ghost notes: same instrument set as stage 6. The
+  // backbeat is marked accent:true (graded for real against the player's
+  // own MIDI strike velocity — see hit-matcher.ts's gradeDynamics), and
+  // extra unaccented snare notes fall between backbeats as ghost notes —
+  // the app doesn't grade "softness" specifically, but hitting the
+  // notated accent noticeably harder than its neighbors is the whole skill
+  // this stage teaches.
+  7: [
+    {
+      title: 'אקסנט על הבק-ביט',
+      bars: [
+        [
+          { beat: 1, subdivisionIndex: 0, instrument: 'hihat_closed' },
+          { beat: 1, subdivisionIndex: 1, instrument: 'hihat_closed' },
+          { beat: 2, subdivisionIndex: 0, instrument: 'hihat_closed' },
+          { beat: 2, subdivisionIndex: 0, instrument: 'snare', accent: true },
+          { beat: 2, subdivisionIndex: 1, instrument: 'hihat_closed' },
+          { beat: 2, subdivisionIndex: 1, instrument: 'snare' },
+          { beat: 3, subdivisionIndex: 0, instrument: 'hihat_closed' },
+          { beat: 3, subdivisionIndex: 1, instrument: 'hihat_closed' },
+          { beat: 4, subdivisionIndex: 0, instrument: 'hihat_closed' },
+          { beat: 4, subdivisionIndex: 0, instrument: 'snare', accent: true },
+          { beat: 4, subdivisionIndex: 1, instrument: 'hihat_closed' },
+          { beat: 4, subdivisionIndex: 1, instrument: 'snare' },
+          { beat: 1, subdivisionIndex: 0, instrument: 'kick' },
+          { beat: 3, subdivisionIndex: 0, instrument: 'kick' },
+        ],
+        // B moves the ghost notes to just BEFORE each accent instead of
+        // just after — a genuinely different placement, not a crash-drop.
+        [
+          { beat: 1, subdivisionIndex: 0, instrument: 'hihat_closed' },
+          { beat: 1, subdivisionIndex: 1, instrument: 'hihat_closed' },
+          { beat: 1, subdivisionIndex: 1, instrument: 'snare' },
+          { beat: 2, subdivisionIndex: 0, instrument: 'hihat_closed' },
+          { beat: 2, subdivisionIndex: 0, instrument: 'snare', accent: true },
+          { beat: 2, subdivisionIndex: 1, instrument: 'hihat_closed' },
+          { beat: 3, subdivisionIndex: 0, instrument: 'hihat_closed' },
+          { beat: 3, subdivisionIndex: 1, instrument: 'hihat_closed' },
+          { beat: 3, subdivisionIndex: 1, instrument: 'snare' },
+          { beat: 4, subdivisionIndex: 0, instrument: 'hihat_closed' },
+          { beat: 4, subdivisionIndex: 0, instrument: 'snare', accent: true },
+          { beat: 4, subdivisionIndex: 1, instrument: 'hihat_closed' },
+          { beat: 1, subdivisionIndex: 0, instrument: 'kick' },
+          { beat: 3, subdivisionIndex: 0, instrument: 'kick' },
+        ],
+      ],
+    },
+    {
+      title: 'גרוב עם גוסט כפול',
+      bars: [
+        [
+          { beat: 1, subdivisionIndex: 0, instrument: 'crash', accent: true },
+          { beat: 1, subdivisionIndex: 0, instrument: 'hihat_closed' },
+          { beat: 1, subdivisionIndex: 1, instrument: 'hihat_closed' },
+          { beat: 2, subdivisionIndex: 0, instrument: 'hihat_closed' },
+          { beat: 2, subdivisionIndex: 0, instrument: 'snare', accent: true },
+          { beat: 2, subdivisionIndex: 1, instrument: 'hihat_closed' },
+          { beat: 2, subdivisionIndex: 1, instrument: 'snare' },
+          { beat: 3, subdivisionIndex: 0, instrument: 'hihat_closed' },
+          { beat: 3, subdivisionIndex: 1, instrument: 'hihat_closed' },
+          { beat: 3, subdivisionIndex: 1, instrument: 'snare' },
+          { beat: 4, subdivisionIndex: 0, instrument: 'hihat_closed' },
+          { beat: 4, subdivisionIndex: 0, instrument: 'snare', accent: true },
+          { beat: 4, subdivisionIndex: 1, instrument: 'hihat_closed' },
+          { beat: 1, subdivisionIndex: 0, instrument: 'kick' },
+          { beat: 3, subdivisionIndex: 0, instrument: 'kick' },
+        ],
+        // B drops the opening crash, and adds one more ghost note (beat 1's
+        // "and") — a real content change, not just a crash removal.
+        [
+          { beat: 1, subdivisionIndex: 0, instrument: 'hihat_closed' },
+          { beat: 1, subdivisionIndex: 1, instrument: 'hihat_closed' },
+          { beat: 1, subdivisionIndex: 1, instrument: 'snare' },
+          { beat: 2, subdivisionIndex: 0, instrument: 'hihat_closed' },
+          { beat: 2, subdivisionIndex: 0, instrument: 'snare', accent: true },
+          { beat: 2, subdivisionIndex: 1, instrument: 'hihat_closed' },
+          { beat: 2, subdivisionIndex: 1, instrument: 'snare' },
+          { beat: 3, subdivisionIndex: 0, instrument: 'hihat_closed' },
+          { beat: 3, subdivisionIndex: 1, instrument: 'hihat_closed' },
+          { beat: 3, subdivisionIndex: 1, instrument: 'snare' },
+          { beat: 4, subdivisionIndex: 0, instrument: 'hihat_closed' },
+          { beat: 4, subdivisionIndex: 0, instrument: 'snare', accent: true },
+          { beat: 4, subdivisionIndex: 1, instrument: 'hihat_closed' },
+          { beat: 1, subdivisionIndex: 0, instrument: 'kick' },
+          { beat: 3, subdivisionIndex: 0, instrument: 'kick' },
+        ],
+      ],
+    },
+  ],
+  8: [
     {
       title: '16 בסיסי',
       bars: [
@@ -333,7 +559,7 @@ export const CURRICULUM_PATTERNS: Record<number, CurriculumPattern[]> = {
       ],
     },
   ],
-  6: [
+  9: [
     {
       title: 'סינקופציה עם קיק',
       bars: [
@@ -408,7 +634,7 @@ export const CURRICULUM_PATTERNS: Record<number, CurriculumPattern[]> = {
       ],
     },
   ],
-  7: [
+  10: [
     {
       title: 'מילוי טומים מלא',
       bars: [
@@ -483,7 +709,7 @@ export const CURRICULUM_PATTERNS: Record<number, CurriculumPattern[]> = {
       ],
     },
   ],
-  8: [
+  11: [
     {
       title: 'וואלס בסיסי',
       bars: [

@@ -54,7 +54,15 @@ function wrapper({ children }: { children: ReactNode }) {
 }
 
 function makeFakeSession() {
-  return { handleHit: vi.fn(), start: vi.fn(), pause: vi.fn(), resume: vi.fn(), stop: vi.fn(), skip: vi.fn() }
+  return {
+    handleHit: vi.fn(),
+    start: vi.fn(),
+    pause: vi.fn(),
+    resume: vi.fn(),
+    stop: vi.fn(),
+    skip: vi.fn(),
+    previous: vi.fn(),
+  }
 }
 
 async function seedExercise(): Promise<InteractiveExercise> {
@@ -197,9 +205,12 @@ describe('RemoteHostProvider / useRemoteHost', () => {
 
     act(() => latestSocket().simulateMessage({ type: 'transport_command', action: 'skip' }))
     expect(session.skip).toHaveBeenCalledTimes(1)
+
+    act(() => latestSocket().simulateMessage({ type: 'transport_command', action: 'previous' }))
+    expect(session.previous).toHaveBeenCalledTimes(1)
   })
 
-  it("transport_command 'skip' no-ops when the registered session has no skip (a plain, non-routine run)", () => {
+  it("transport_command 'skip'/'previous' no-op when the registered session has neither (a plain, non-routine run)", () => {
     vi.stubGlobal('WebSocket', FakeWebSocket)
     const { result } = renderHook(() => useRemoteHost(), { wrapper })
     const sessionWithoutSkip = { handleHit: vi.fn(), start: vi.fn(), pause: vi.fn(), resume: vi.fn(), stop: vi.fn() }
@@ -210,6 +221,7 @@ describe('RemoteHostProvider / useRemoteHost', () => {
     })
 
     expect(() => act(() => latestSocket().simulateMessage({ type: 'transport_command', action: 'skip' }))).not.toThrow()
+    expect(() => act(() => latestSocket().simulateMessage({ type: 'transport_command', action: 'previous' }))).not.toThrow()
   })
 
   it('transport_command no-ops silently when no session is registered', () => {

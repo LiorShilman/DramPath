@@ -6,7 +6,7 @@ import {
   parseRemoteRelayMessage,
 } from '../lib/visual-trainer/remote-drum-protocol'
 import type { ExerciseListItem, RoutineListItem, TransportCommandAction } from '../lib/visual-trainer/remote-drum-protocol'
-import type { DrumInstrument, InteractiveExercise } from '../domain'
+import type { DrumInstrument, HitGrade, InteractiveExercise } from '../domain'
 
 function hostRelayWsUrl(): string {
   // The deployed IIS site is https — connect to the always-on production
@@ -38,10 +38,14 @@ export interface NotationStatePayload {
   exercise: InteractiveExercise
   playbackProgress: { bpm: number; sessionId: number; startOffsetMs?: number }
   paused: boolean
-  /** Per-note hit/miss, keyed by DrumNoteEvent id — mirrors
+  /** Per-note grading result, keyed by DrumNoteEvent id — mirrors
    * ExerciseNotationSheet's own gradedEventIds prop, plain-object form
    * (see remote-drum-protocol.ts's own doc comment on why not a Map). */
-  gradedEventIds: Record<string, 'hit' | 'miss'>
+  gradedEventIds: Record<string, HitGrade>
+  /** Per-note actual strike time (ms), keyed by DrumNoteEvent id — mirrors
+   * ExerciseNotationSheet's own hitTimingByEventId prop, same plain-object
+   * shape/reasoning as gradedEventIds above. */
+  hitTimingByEventId: Record<string, number>
 }
 
 /** Unconditional session status (unlike NotationStatePayload, which only
@@ -56,6 +60,14 @@ export interface PlaybackStatusPayload {
   /** Present only while running a practice routine (RoutinePlayerPage) —
    * drives the phone's "skip" button and step indicator. */
   routineProgress?: { stepIndex: number; stepCount: number }
+  /** Present only when phase is 'finished' — mirrors SessionResults' core
+   * numbers to the phone (explicit user request: practice can be driven
+   * entirely from the phone, with no access to the computer to see the
+   * desktop-only results dialog). */
+  resultsSummary?: {
+    accuracyPercent: number
+    gradeCounts: { perfect: number; early: number; late: number; miss: number; extra: number }
+  }
 }
 
 export interface UseRemoteDrumInputResult {

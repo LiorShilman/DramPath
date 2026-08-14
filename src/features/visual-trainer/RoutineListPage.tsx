@@ -3,6 +3,7 @@ import { Link } from 'react-router'
 import { Badge, Button, PageHeader, buttonClassName } from '../../components/ui'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { practiceRoutineRepository } from '../../data/repositories'
+import { resolveExercise } from './resolve-exercise'
 import type { PracticeRoutine } from '../../domain'
 
 /** Practice routines (setlists) — chains of existing InteractiveExercise
@@ -11,10 +12,25 @@ import type { PracticeRoutine } from '../../domain'
 export function RoutineListPage() {
   const [routines, setRoutines] = useState<PracticeRoutine[]>([])
   const [pendingDeletion, setPendingDeletion] = useState<PracticeRoutine | undefined>(undefined)
+  // Which routines have at least one step whose exercise was since deleted
+  // (no cascade cleanup exists — see RoutinePlayerPage's own not-found
+  // handling) — resolved once per routine list load so a stale routine is
+  // visibly flagged before the user even tries to open/select it, not just
+  // discovered as a dead end mid-run on the phone.
+  const [routinesMissingSteps, setRoutinesMissingSteps] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     void practiceRoutineRepository.getAll().then((all) => {
-      setRoutines(all.sort((a, b) => b.createdAt.localeCompare(a.createdAt)))
+      const sorted = all.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      setRoutines(sorted)
+      void Promise.all(
+        sorted.map(async (routine) => {
+          const resolved = await Promise.all(routine.exerciseIds.map((id) => resolveExercise(id)))
+          return resolved.some((step) => step === 'not-found') ? routine.id : undefined
+        }),
+      ).then((flagged) => {
+        setRoutinesMissingSteps(new Set(flagged.filter((id): id is string => id !== undefined)))
+      })
     })
   }, [])
 
@@ -57,9 +73,12 @@ export function RoutineListPage() {
                 className="group flex flex-1 items-center justify-between gap-2"
               >
                 <span className="font-semibold group-hover:underline">{routine.title}</span>
-                <Badge variant="neutral" className="shrink-0">
-                  {routine.exerciseIds.length} תרגילים
-                </Badge>
+                <span className="flex shrink-0 items-center gap-1.5">
+                  {routinesMissingSteps.has(routine.id) && (
+                    <Badge variant="danger">שיעורים חסרים</Badge>
+                  )}
+                  <Badge variant="neutral">{routine.exerciseIds.length} תרגילים</Badge>
+                </span>
               </Link>
               <Link
                 to={`/practice/visual/routines/build/${routine.id}`}

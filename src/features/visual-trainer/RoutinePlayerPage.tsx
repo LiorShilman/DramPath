@@ -51,6 +51,17 @@ export function RoutinePlayerPage() {
     setCurrentStepIndex((current) => Math.min(current + 1, (steps?.length ?? 1) - 1))
   }
 
+  // Explicit user request — repeating the current step is already covered
+  // by the ordinary Start/Play action once a step reaches 'idle'/'finished'
+  // (beginPlayback resets fully regardless of whether it's called via
+  // start() or restart()), but going back to redo an EARLIER step wasn't
+  // possible at all. Symmetric to handleNext; onPrevious is only ever
+  // passed down once a step back genuinely exists (see the render below),
+  // so this is never reachable at index 0.
+  function handlePrevious() {
+    setCurrentStepIndex((current) => Math.max(current - 1, 0))
+  }
+
   if (routine === undefined || (routine !== 'not-found' && steps === undefined)) {
     return <p className="text-[var(--color-text-muted)]">טוען…</p>
   }
@@ -104,6 +115,7 @@ export function RoutinePlayerPage() {
       routineStep={{ index: currentStepIndex, total: resolvedSteps.length, onNext: handleNext }}
       autoStartOnMount={currentStepIndex > 0}
       onSkip={handleNext}
+      onPrevious={currentStepIndex > 0 ? handlePrevious : undefined}
     />
   )
 }

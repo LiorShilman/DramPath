@@ -17,6 +17,12 @@ export interface RemoteSession {
    * the next step. Absent for a plain single-exercise session, in which
    * case a remote 'skip' transport_command is a correct no-op. */
   skip?: () => void
+  /** Only set for a practice-routine run, and only once at least one step
+   * back exists — jumps to the previous step (explicit user request:
+   * practice driven entirely from the phone needs a way to redo/revisit a
+   * step, not just move forward). Absent otherwise, in which case a remote
+   * 'previous' transport_command is a correct no-op. */
+  previous?: () => void
 }
 
 export interface RemoteHostContextValue {

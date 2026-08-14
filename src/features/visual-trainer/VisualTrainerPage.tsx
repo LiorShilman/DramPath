@@ -38,6 +38,10 @@ export interface VisualTrainerRunnerProps {
   /** Practice-routine only — advances to the next step; forwarded into
    * useVisualTrainer so a remote 'skip' transport_command reaches it too. */
   onSkip?: () => void
+  /** Practice-routine only (and only once a step back exists) — jumps to
+   * the previous step; forwarded into useVisualTrainer so a remote
+   * 'previous' transport_command reaches it too. */
+  onPrevious?: () => void
 }
 
 // DrumKit's own artwork is intentionally laid out to draw a little past its
@@ -135,6 +139,7 @@ export function VisualTrainerRunner({
   routineStep,
   autoStartOnMount = false,
   onSkip,
+  onPrevious,
 }: VisualTrainerRunnerProps) {
   const navigate = useNavigate()
   // Runtime override of which visual to watch — explicit user request: let
@@ -151,6 +156,7 @@ export function VisualTrainerRunner({
   const effectiveDisplayMode = selectedDisplayMode
   const trainer = useVisualTrainer(exercise, highwayRef, effectiveDisplayMode, {
     onSkip,
+    onPrevious,
     routineProgress: routineStep ? { stepIndex: routineStep.index, stepCount: routineStep.total } : undefined,
   })
   const usedInstruments = useMemo(
@@ -180,6 +186,25 @@ export function VisualTrainerRunner({
   const exerciseJustChanged = previousExerciseId !== exercise.id
   if (exerciseJustChanged) {
     setPreviousExerciseId(exercise.id)
+  }
+
+  // Explicit user request: the results dialog blocks the notation
+  // underneath entirely (a full-screen modal) — closing it (not exiting,
+  // not restarting) should reveal the same graded notation trainer.
+  // gradedEventIds/hitTimingByEventId already keep showing (useVisualTrainer
+  // no longer clears them on finish either, see its own runGradingTick
+  // comment), so this is purely about getting the modal out of the way.
+  // Reset the instant a NEW run actually starts (not just re-rendered) —
+  // phase leaving 'finished' covers both a restart and a routine's
+  // next/previous step alike. Same conditional-setState-during-render
+  // pattern as previousExerciseId/exerciseJustChanged above (not a ref, not
+  // an effect — see that block's own comment for why), just tracking phase
+  // instead of exercise identity.
+  const [previousPhase, setPreviousPhase] = useState(trainer.phase)
+  const [resultsDismissed, setResultsDismissed] = useState(false)
+  if (trainer.phase !== previousPhase) {
+    setPreviousPhase(trainer.phase)
+    if (trainer.phase !== 'finished' && resultsDismissed) setResultsDismissed(false)
   }
 
   // Practice-routine auto-advance (RoutinePlayerPage) — this component is
@@ -270,6 +295,7 @@ export function VisualTrainerRunner({
         showFill={false}
         paused={trainer.phase === 'paused'}
         gradedEventIds={trainer.gradedEventIds}
+        hitTimingByEventId={trainer.hitTimingByEventId}
         showBeatLabels
         rowBreakBars={exercise.rowBreakBars}
       />
@@ -459,14 +485,26 @@ export function VisualTrainerRunner({
 
       {body}
 
-      {trainer.phase === 'finished' && !exerciseJustChanged && (
+      {trainer.phase === 'finished' && !exerciseJustChanged && !resultsDismissed && (
         <div
           role="dialog"
           aria-modal="true"
           aria-label={`סיום תרגול — ${exercise.title}`}
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
         >
-          <div className="w-full max-w-lg">
+          <div className="relative w-full max-w-lg">
+            {/* Closes the dialog WITHOUT restarting/exiting — reveals the
+                same graded notation still showing underneath (explicit user
+                request: review which notes were hit/missed/off after
+                finishing, not just the aggregate numbers here). */}
+            <button
+              type="button"
+              onClick={() => setResultsDismissed(true)}
+              aria-label="סגירת תוצאות (התרגול נשאר על המסך)"
+              className="absolute -top-3 end-2 flex h-9 w-9 items-center justify-center rounded-full bg-[var(--color-text-muted)] text-white shadow-[var(--shadow-card)]"
+            >
+              ✕
+            </button>
             <SessionResults
               exerciseTitle={exercise.title}
               scoring={trainer.scoring}
@@ -479,6 +517,15 @@ export function VisualTrainerRunner({
             />
           </div>
         </div>
+      )}
+      {trainer.phase === 'finished' && !exerciseJustChanged && resultsDismissed && (
+        <Button
+          variant="secondary"
+          onClick={() => setResultsDismissed(false)}
+          className="fixed bottom-4 end-4 z-50 shadow-[var(--shadow-card)]"
+        >
+          הצגת תוצאות
+        </Button>
       )}
     </div>
   )

@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { drumInstrumentSchema, interactiveExerciseDifficultySchema, interactiveExerciseSchema } from '../../domain'
+import { drumInstrumentSchema, hitGradeSchema, interactiveExerciseDifficultySchema, interactiveExerciseSchema } from '../../domain'
 
 // Wire format for server/remote-drum-relay's WebSocket endpoints — kept in
 // its own module (rather than inlined in the two hooks that use it) so
@@ -27,10 +27,21 @@ const notationStateMessageSchema = z.object({
     startOffsetMs: z.number().optional(),
   }),
   paused: z.boolean(),
-  // Per-note hit/miss result (ExerciseNotationSheet's own gradedEventIds
-  // prop, colors noteheads green/red) — a plain string-keyed object, not a
-  // Map, since Map isn't JSON-serializable. Keyed by DrumNoteEvent id.
-  gradedEventIds: z.record(z.string(), z.enum(['hit', 'miss'])),
+  // Per-note grading result (ExerciseNotationSheet's own gradedEventIds
+  // prop — perfect/early/late all color a notehead green-ish, miss red; see
+  // that component's own doc comment for exactly how) — a plain
+  // string-keyed object, not a Map, since Map isn't JSON-serializable.
+  // Keyed by DrumNoteEvent id. HitResult's own grade (hit-result.ts), not a
+  // narrower hit/miss — early/late vs. perfect is what decides whether the
+  // hit-position marker (hitTimingByEventId below) is worth drawing at all.
+  gradedEventIds: z.record(z.string(), hitGradeSchema),
+  // Per-note actual strike time (ms elapsed since bar 1, same clock the
+  // note's own expectedTimeMs is measured against) — explicit user request:
+  // seeing exactly where a hit landed relative to its note (not just
+  // hit/miss) is what lets a player calibrate their own timing.
+  // ExerciseNotationSheet's own hitTimingByEventId prop, same
+  // keyed-by-DrumNoteEvent-id/plain-object shape as gradedEventIds above.
+  hitTimingByEventId: z.record(z.string(), z.number()),
 })
 const notationClearMessageSchema = z.object({ type: z.literal('notation_clear') })
 
@@ -70,9 +81,10 @@ const selectExerciseMessageSchema = z.object({ type: z.literal('select_exercise'
 const selectRoutineMessageSchema = z.object({ type: z.literal('select_routine'), routineId: z.string() })
 const transportCommandMessageSchema = z.object({
   type: z.literal('transport_command'),
-  // 'skip': advance a running routine to its next step (see
-  // RoutinePlayerPage) — a no-op if the current session isn't a routine.
-  action: z.enum(['start', 'pause', 'resume', 'stop', 'skip']),
+  // 'skip'/'previous': move a running routine forward/back one step (see
+  // RoutinePlayerPage) — both a no-op if the current session isn't a
+  // routine, and 'previous' also a no-op already on the first step.
+  action: z.enum(['start', 'pause', 'resume', 'stop', 'skip', 'previous']),
 })
 // Unconditional session status (unlike notation_state, which only fires for
 // staff_cursor+MIDI runs) — this is what drives the phone's transport
@@ -93,6 +105,26 @@ const playbackStatusMessageSchema = z.object({
   // so every existing non-routine sendPlaybackStatus call site needs no
   // changes.
   routineProgress: z.object({ stepIndex: z.number().int().nonnegative(), stepCount: z.number().int().positive() }).optional(),
+  // Present only when phase is 'finished' — explicit user request: with
+  // practice driven entirely from the phone ("no access to the computer"),
+  // the results screen (today, desktop-only, VisualTrainerRunner's own
+  // SessionResults dialog) needs to be visible on the phone too. Rides the
+  // SAME message as the 'finished' transition itself (not a separate
+  // message type) for the same reason routineProgress does — a second
+  // channel could arrive out of order relative to the phase transition it
+  // describes.
+  resultsSummary: z
+    .object({
+      accuracyPercent: z.number(),
+      gradeCounts: z.object({
+        perfect: z.number().int().nonnegative(),
+        early: z.number().int().nonnegative(),
+        late: z.number().int().nonnegative(),
+        miss: z.number().int().nonnegative(),
+        extra: z.number().int().nonnegative(),
+      }),
+    })
+    .optional(),
 })
 
 export const remoteRelayMessageSchema = z.discriminatedUnion('type', [

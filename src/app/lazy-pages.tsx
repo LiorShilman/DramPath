@@ -38,6 +38,9 @@ export const PracticeSessionPage = lazy(() =>
 export const SettingsPage = lazy(() =>
   import('../features/settings').then((m) => ({ default: m.SettingsPage })),
 )
+export const ModuleKitsPage = lazy(() =>
+  import('../features/settings').then((m) => ({ default: m.ModuleKitsPage })),
+)
 export const JournalPage = lazy(() =>
   import('../features/journal').then((m) => ({ default: m.JournalPage })),
 )

@@ -350,10 +350,16 @@ input[type='radio'] {
 /* The moving "where am I" cursor line (ExerciseNotationSheet's own
    notation-row-N-cursor rect) — same timing/delay technique as the fill
    above, just a transform instead of a width so a thin line translates
-   across the row instead of a block widening into it. */
+   across the row instead of a block widening into it. --notation-cursor-
+   start-x defaults to 0 (every row after the first) — row 0 sets it to a
+   real negative value instead, so the cursor is already visibly moving
+   through a "runway" during the count-in and arrives at bar 1's own first
+   note with the same lead-in every later note gets from the bar before it,
+   rather than sitting motionless exactly on top of that note the whole
+   count-in and only starting to move the instant it needs to be hit. */
 @keyframes notation-row-cursor {
   from {
-    transform: translateX(0);
+    transform: translateX(var(--notation-cursor-start-x, 0px));
   }
   to {
     transform: translateX(var(--notation-cursor-target-x, 100%));
