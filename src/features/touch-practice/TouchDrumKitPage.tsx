@@ -499,6 +499,7 @@ export function TouchDrumKitPage() {
             hitTimingByEventId={remoteHitTimingByEventId}
             showFill={false}
             showBeatLabels
+            showNextUpHint
             rowBreakBars={notationState.exercise.rowBreakBars}
           />
         </div>

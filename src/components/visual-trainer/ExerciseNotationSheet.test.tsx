@@ -110,6 +110,46 @@ describe('ExerciseNotationSheet', () => {
     expect(row1Cursor.style.getPropertyValue('--notation-cursor-start-x')).toBe('-50px')
   })
 
+  it('shows no "coming up" hint by default (showNextUpHint off)', () => {
+    const twoRowExercise = { ...EXERCISE, bars: 8 }
+    const { container } = render(<ExerciseNotationSheet exercise={twoRowExercise} barsPerRow={4} />)
+    expect(container.textContent).not.toContain('הבא:')
+  })
+
+  it('shows the next row\'s own first instrument as a "coming up" hint, with no hand hint for a groove that uses a foot instrument anywhere', () => {
+    const twoRowExercise = {
+      ...EXERCISE,
+      bars: 8,
+      // Row 1 (bars 5-8) starts with a snare on bar 5 beat 1 — that's the hint text expected.
+      events: [makeEvent({ instrument: 'kick', bar: 1, beat: 1 }), makeEvent({ instrument: 'snare', bar: 5, beat: 1 })],
+    }
+    const { container } = render(<ExerciseNotationSheet exercise={twoRowExercise} barsPerRow={4} showNextUpHint />)
+    expect(container.textContent).toContain('הבא: סנר')
+    // kick appears somewhere in this exercise -> no hand guess at all, anywhere.
+    expect(container.textContent).not.toMatch(/\(ימין\)|\(שמאל\)/)
+  })
+
+  it('adds an alternating right/left hand hint only when the whole exercise never uses a foot instrument', () => {
+    const twoRowExercise = {
+      ...EXERCISE,
+      bars: 2,
+      events: [
+        makeEvent({ instrument: 'snare', bar: 1, beat: 1 }), // chronological index 0 -> right
+        makeEvent({ instrument: 'snare', bar: 1, beat: 3 }), // index 1 -> left
+        makeEvent({ instrument: 'snare', bar: 2, beat: 1 }), // index 2 -> right (row 1's own first note)
+        makeEvent({ instrument: 'snare', bar: 2, beat: 3 }), // index 3 -> left
+      ],
+    }
+    const { container } = render(<ExerciseNotationSheet exercise={twoRowExercise} barsPerRow={1} showNextUpHint />)
+    expect(container.textContent).toContain('הבא: סנר (ימין)')
+  })
+
+  it('shows no hint at all after the last row (nothing left to come up)', () => {
+    const oneRowExercise = { ...EXERCISE, bars: 1 }
+    const { container } = render(<ExerciseNotationSheet exercise={oneRowExercise} showNextUpHint />)
+    expect(container.textContent).not.toContain('הבא:')
+  })
+
   it('does not give a mid-exercise seek (no count-in) a runway', () => {
     const { container } = render(
       // A seek's startOffsetMs is positive (how far INTO the piece it

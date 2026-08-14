@@ -297,6 +297,7 @@ export function VisualTrainerRunner({
         gradedEventIds={trainer.gradedEventIds}
         hitTimingByEventId={trainer.hitTimingByEventId}
         showBeatLabels
+        showNextUpHint
         rowBreakBars={exercise.rowBreakBars}
       />
     ) : (

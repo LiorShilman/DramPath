@@ -1,6 +1,7 @@
 import { useRef } from 'react'
 import { SUBDIVISIONS_PER_BEAT, calculateBarDurationMs, calculateEventTimeMs } from '../../domain/calculations/event-timing'
 import { STAFF_POSITION, staffPositionToOffsetPx } from '../../lib/visual-trainer/staff-notation-layout'
+import { INSTRUMENT_LABELS } from '../../lib/visual-trainer/instrument-labels'
 import type { DrumInstrument, HitGrade, InteractiveExercise, Subdivision } from '../../domain'
 
 // Standard drum-notation convention: the "foot" voice (kick) stems down,
@@ -97,6 +98,21 @@ export interface ExerciseNotationSheetProps {
    * implicit row start whether or not it's included. Omit/empty to keep
    * the existing uniform-barsPerRow behavior. */
   rowBreakBars?: number[]
+  /** Off by default. When on, shows a small "coming up" hint in the gap
+   * between each row and the next — the instrument(s) the next row's own
+   * first beat needs, and (only when the WHOLE exercise never uses a foot
+   * instrument at all, i.e. voiceOf() is 'hands' for every single event —
+   * see isHandsOnlyExercise below) which hand plays it, assuming strict
+   * R/L alternation across the whole piece. Explicit user request/idea:
+   * a row transition is exactly where the notation is hardest to read
+   * ahead in (the next row's own first note isn't visible until you've
+   * already scrolled/looked down), so this is where the hint earns its
+   * keep the most. DrumPath has no real "which hand" data at all — this
+   * is a plain alternating-parity guess, deliberately only shown when
+   * that guess can't be wrong (no foot instrument anywhere in the piece
+   * to desync it from reality); a real groove with kick/cymbals/toms
+   * doesn't get a hand hint, only the instrument. */
+  showNextUpHint?: boolean
 }
 
 // 1-indexed bar numbers where each row starts — either the caller's own
@@ -150,6 +166,10 @@ const STEM_LENGTH_PX = 12
 const FLAG_GAP_PX = 4
 const BASE_BOTTOM_PADDING_PX = 6
 const ROW_GAP_PX = 12
+// Wider gap when showNextUpHint is on — the plain 12px gap has no room for
+// a text line in it at all.
+const NEXT_UP_HINT_ROW_GAP_PX = 28
+const NEXT_UP_HINT_FONT_SIZE = 10
 const BEAT_LABEL_ROW_HEIGHT_PX = 10
 const BEAT_LABEL_FONT_SIZE = 7
 // Drum-count-out syllables for each off-beat subdivision slot (index 0, the
@@ -208,6 +228,7 @@ export function ExerciseNotationSheet({
   showBeatLabels = false,
   barsPerRow = BARS_PER_ROW,
   rowBreakBars,
+  showNextUpHint = false,
 }: ExerciseNotationSheetProps) {
   const hasStem = (instrument: (typeof exercise.events)[number]['instrument']) => {
     const notehead = STAFF_POSITION[instrument].notehead
@@ -266,8 +287,27 @@ export function ExerciseNotationSheet({
     (hasDownStemNote ? BASE_BOTTOM_PADDING_PX + TOP_PADDING_PX : BASE_BOTTOM_PADDING_PX) +
     (showBeatLabels ? BEAT_LABEL_ROW_HEIGHT_PX : 0)
   const rowHeight = TOP_PADDING_PX + staffPositionToOffsetPx(highestPosition, LINE_SPACING_PX) + bottomPadding
-  const totalHeight = rowCount * rowHeight + (rowCount - 1) * ROW_GAP_PX
+  const effectiveRowGapPx = showNextUpHint ? NEXT_UP_HINT_ROW_GAP_PX : ROW_GAP_PX
+  const totalHeight = rowCount * rowHeight + (rowCount - 1) * effectiveRowGapPx
   const barMs = barDurationMs(exercise)
+
+  // No foot instrument (kick) anywhere in the whole piece — see
+  // showNextUpHint's own doc comment for why that's exactly the condition
+  // under which a plain alternating-parity hand guess can't be wrong.
+  // hasDownStemNote already answers "is there a feet-voice note anywhere",
+  // computed the same way voiceOf() would.
+  const isHandsOnlyExercise = showNextUpHint && !hasDownStemNote
+  // Global chronological order (not per-row, not exercise.events' own
+  // array order) — sticking alternates continuously across the whole
+  // piece, including across bar and row boundaries, not resetting at
+  // either.
+  const handByEventId = isHandsOnlyExercise
+    ? new Map(
+        [...exercise.events]
+          .sort((a, b) => a.bar - b.bar || a.beat - b.beat || a.subdivisionIndex - b.subdivisionIndex)
+          .map((event, index) => [event.id, index % 2 === 0 ? 'ימין' : 'שמאל'] as const),
+      )
+    : undefined
 
   const eventsByRow: {
     id: string
@@ -298,6 +338,16 @@ export function ExerciseNotationSheet({
       instrument: event.instrument,
       accent: event.accent,
     })
+  }
+
+  // The note(s) at a row's own earliest (beat, subdivisionIndex) — several
+  // can tie (two instruments on the same first beat), in which case all of
+  // them are "next up" together. beat/subdivisionIndex are always small
+  // non-negative integers, so a single combined sort key is safe.
+  function firstEventsOfRow(rowEvents: (typeof eventsByRow)[number]) {
+    if (rowEvents.length === 0) return []
+    const minKey = Math.min(...rowEvents.map((event) => event.beat * 100 + event.subdivisionIndex))
+    return rowEvents.filter((event) => event.beat * 100 + event.subdivisionIndex === minKey)
   }
 
   // The viewBox must match the widest row actually drawn — rows can now
@@ -337,7 +387,7 @@ export function ExerciseNotationSheet({
     >
       {eventsByRow.map((rowEvents, rowIndex) => {
         const rowBars = rowBarsCount(rowIndex)
-        const rowTopY = rowIndex * (rowHeight + ROW_GAP_PX)
+        const rowTopY = rowIndex * (rowHeight + effectiveRowGapPx)
         const baselineY = rowTopY + rowHeight - bottomPadding
         const toY = (position: number) => baselineY - staffPositionToOffsetPx(position, LINE_SPACING_PX)
         const rowTiming = rowRealTimings[rowIndex]!
@@ -761,6 +811,37 @@ export function ExerciseNotationSheet({
                 })}
               </g>
             ))}
+            {/* "Coming up" hint, in the gap after THIS row — a row
+                transition is exactly where reading ahead is hardest (the
+                next row's own first note isn't visible until you've
+                already looked down past this one). Absent on the last row
+                (nothing left to come up), and on any row whose next one
+                happens to be empty (nothing scheduled there). */}
+            {showNextUpHint &&
+              rowIndex < rowCount - 1 &&
+              (() => {
+                const nextFirstEvents = firstEventsOfRow(eventsByRow[rowIndex + 1] ?? [])
+                if (nextFirstEvents.length === 0) return null
+                const instrumentLabel = nextFirstEvents.map((event) => INSTRUMENT_LABELS[event.instrument]).join(' + ')
+                // A hand hint only makes sense for a single note — two
+                // instruments landing together means both hands are
+                // already busy at once, nothing left to "point to".
+                const handLabel =
+                  nextFirstEvents.length === 1 ? handByEventId?.get(nextFirstEvents[0]!.id) : undefined
+                return (
+                  <text
+                    x={0}
+                    y={rowTopY + rowHeight + effectiveRowGapPx / 2 + NEXT_UP_HINT_FONT_SIZE / 3}
+                    textAnchor="start"
+                    fontSize={NEXT_UP_HINT_FONT_SIZE}
+                    fill="var(--color-primary-text)"
+                    opacity={0.85}
+                  >
+                    הבא: {instrumentLabel}
+                    {handLabel ? ` (${handLabel})` : ''}
+                  </text>
+                )
+              })()}
           </g>
         )
       })}
