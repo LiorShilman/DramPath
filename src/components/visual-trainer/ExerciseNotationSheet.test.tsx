@@ -77,6 +77,24 @@ describe('ExerciseNotationSheet', () => {
     expect(cursor.style.animation).toContain('linear 0ms both')
   })
 
+  it('caps the runway distance for a longer count-in, sitting still for the excess instead of reserving a whole extra bar of screen space', () => {
+    const { container } = render(
+      // A full 2000ms count-in bar (120bpm/4-4) is 4x the runway's own
+      // 500ms time-equivalent (COUNT_IN_RUNWAY_PX = BAR_WIDTH_PX/4) —
+      // explicit user report: an earlier, uncapped version reserved a
+      // whole bar of runway regardless, reading as "a fifth of the screen"
+      // on a phone.
+      <ExerciseNotationSheet exercise={EXERCISE} playbackProgress={{ bpm: 120, sessionId: 1, startOffsetMs: -2000 }} />,
+    )
+    const cursor = container.querySelector('[data-testid="notation-row-0-cursor"]')! as SVGElement
+    // Still capped at the same -50px runway, not -200px (a whole bar).
+    expect(cursor.style.getPropertyValue('--notation-cursor-start-x')).toBe('-50px')
+    // The excess (2000ms - 500ms runway = 1500ms) is a real animation-delay
+    // — the cursor sits still at -50px for that long, THEN sweeps the
+    // final 500ms/50px into bar 1's own first note, arriving exactly on time.
+    expect(cursor.style.animation).toContain('linear 1500ms both')
+  })
+
   it('does not give a mid-exercise seek (no count-in) a runway', () => {
     const { container } = render(
       // A seek's startOffsetMs is positive (how far INTO the piece it

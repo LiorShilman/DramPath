@@ -127,13 +127,23 @@ const BAR_WIDTH_PX = 200
 // screenshot: the note was visibly clipped in half).
 const VIEWPORT_LEFT_PADDING_PX = 16
 // Reserved space for the count-in "runway" the cursor sweeps through before
-// reaching bar 1 (see the cursor's own render code below) — one full bar's
-// width, matching COUNT_IN_BARS=1 exactly, so the runway reads at the same
-// visual speed as the rest of the piece rather than looking stretched or
-// compressed. Always reserved (not just while a run with a count-in is
-// actually active) so the viewBox — and everything's on-screen scale — never
-// visibly jumps the instant a preview's own "play" starts one.
-const COUNT_IN_RUNWAY_PX = BAR_WIDTH_PX
+// reaching bar 1 (see the cursor's own render code below). Deliberately
+// much smaller than a full bar: the runway HAS to move at the exact same
+// px/ms rate as the rest of the piece (it's the same single linear
+// animation, just fed a further-left starting point — changing its rate
+// would desync the whole row, not just the runway, reintroducing the exact
+// note-vs-cursor bug documented on noteX below). At that fixed rate, a
+// full count-in bar's worth of *time* covers a full bar's worth of
+// *width* — reserving that much screen space read as a huge, mostly-empty
+// margin on a phone (reported directly: "a fifth of the screen"). Instead
+// the cursor sits still for most of the count-in (exactly as it did before
+// this feature existed) and only starts its visible sweep for this last
+// stretch of it — still real, correctly-paced motion arriving exactly on
+// bar 1's own first note, just over a short final approach instead of the
+// whole count-in bar. Always reserved (not just while a run with a
+// count-in is actually active) so the viewBox — and everything's on-screen
+// scale — never visibly jumps the instant a preview's own "play" starts one.
+const COUNT_IN_RUNWAY_PX = BAR_WIDTH_PX / 4
 const LINE_SPACING_PX = 8
 const NOTE_RADIUS_PX = 3
 const STEM_LENGTH_PX = 12
@@ -342,10 +352,16 @@ export function ExerciseNotationSheet({
         // runway, there's no count-in click to justify one. Used by the
         // cursor's own render below.
         const barRealDurationMs = rowTiming.durationMs / rowBars
-        const preRollMs = rowIndex === 0 ? Math.max(0, rowTiming.startMs) : 0
-        // Same px-per-ms rate as the rest of this row's own bars, so the
-        // runway reads at one consistent visual speed, not stretched or
-        // compressed relative to bar 1 right after it.
+        const availableWaitMs = rowIndex === 0 ? Math.max(0, rowTiming.startMs) : 0
+        // How long covering COUNT_IN_RUNWAY_PX takes at this row's own
+        // px/ms rate — same rate the rest of this row's own bars use, so
+        // the runway's motion is neither stretched nor compressed relative
+        // to bar 1 right after it. Capped by whatever wait is actually
+        // available (in principle a fast enough tempo's count-in bar could
+        // be shorter than the runway's own time-equivalent) — the cursor
+        // sits still for whatever's left of the count-in before this, same
+        // as it always did pre-runway.
+        const preRollMs = availableWaitMs > 0 ? Math.min(availableWaitMs, (COUNT_IN_RUNWAY_PX * barRealDurationMs) / BAR_WIDTH_PX) : 0
         const preRollPx = preRollMs > 0 ? (preRollMs * BAR_WIDTH_PX) / barRealDurationMs : 0
 
         // x per note, needed by both the beam grouping below and the note
