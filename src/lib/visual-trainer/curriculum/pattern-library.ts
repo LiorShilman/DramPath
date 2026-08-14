@@ -25,7 +25,100 @@ export interface CurriculumPattern {
 // every step's instrument must be one of that stage's CURRICULUM_STAGES
 // entry's `instruments` (enforced by pattern-library.test.ts).
 export const CURRICULUM_PATTERNS: Record<number, CurriculumPattern[]> = {
+  // NEW — pure hand-to-hand work, one instrument (snare) stands in for
+  // both hands (DrumPath has no separate "which hand" concept — the guide
+  // text on curriculum-stages.ts's own stage 1 instructs alternation).
+  // Variation comes from which quarter-beats are hit, not from a second
+  // instrument or a finer subdivision (both would violate the stage's own
+  // quarter-note-only, snare-only scope).
   1: [
+    {
+      title: 'פעימה אחידה',
+      bars: [
+        [
+          { beat: 1, subdivisionIndex: 0, instrument: 'snare' },
+          { beat: 2, subdivisionIndex: 0, instrument: 'snare' },
+          { beat: 3, subdivisionIndex: 0, instrument: 'snare' },
+          { beat: 4, subdivisionIndex: 0, instrument: 'snare' },
+        ],
+        // B halves the density — same hands, more room between hits.
+        [
+          { beat: 1, subdivisionIndex: 0, instrument: 'snare' },
+          { beat: 3, subdivisionIndex: 0, instrument: 'snare' },
+        ],
+      ],
+    },
+    {
+      title: 'מרווחים בין הידיים',
+      bars: [
+        [
+          { beat: 2, subdivisionIndex: 0, instrument: 'snare' },
+          { beat: 4, subdivisionIndex: 0, instrument: 'snare' },
+        ],
+        // B is a genuinely different 3-hit shape, not just A plus/minus one note.
+        [
+          { beat: 1, subdivisionIndex: 0, instrument: 'snare' },
+          { beat: 2, subdivisionIndex: 0, instrument: 'snare' },
+          { beat: 3, subdivisionIndex: 0, instrument: 'snare' },
+        ],
+      ],
+    },
+  ],
+  // NEW — right hand (hihat_closed) holds a constant quarter pulse every
+  // single bar/variant here (never rests) — that constancy IS the point:
+  // it's the "steady hand" the left hand's own varying snare rhythm plays
+  // against.
+  2: [
+    {
+      title: 'היי-הט קבוע, סנר על 2 ו-4',
+      bars: [
+        [
+          { beat: 1, subdivisionIndex: 0, instrument: 'hihat_closed' },
+          { beat: 2, subdivisionIndex: 0, instrument: 'hihat_closed' },
+          { beat: 2, subdivisionIndex: 0, instrument: 'snare' },
+          { beat: 3, subdivisionIndex: 0, instrument: 'hihat_closed' },
+          { beat: 4, subdivisionIndex: 0, instrument: 'hihat_closed' },
+          { beat: 4, subdivisionIndex: 0, instrument: 'snare' },
+        ],
+        // B moves the snare to 1 & 3 — same steady hihat pulse, a genuinely
+        // different left-hand rhythm against it.
+        [
+          { beat: 1, subdivisionIndex: 0, instrument: 'hihat_closed' },
+          { beat: 1, subdivisionIndex: 0, instrument: 'snare' },
+          { beat: 2, subdivisionIndex: 0, instrument: 'hihat_closed' },
+          { beat: 3, subdivisionIndex: 0, instrument: 'hihat_closed' },
+          { beat: 3, subdivisionIndex: 0, instrument: 'snare' },
+          { beat: 4, subdivisionIndex: 0, instrument: 'hihat_closed' },
+        ],
+      ],
+    },
+    {
+      title: 'היי-הט קבוע, סנר משתנה',
+      bars: [
+        // Both hands together on every beat — real coordination, not just alternation.
+        [
+          { beat: 1, subdivisionIndex: 0, instrument: 'hihat_closed' },
+          { beat: 1, subdivisionIndex: 0, instrument: 'snare' },
+          { beat: 2, subdivisionIndex: 0, instrument: 'hihat_closed' },
+          { beat: 2, subdivisionIndex: 0, instrument: 'snare' },
+          { beat: 3, subdivisionIndex: 0, instrument: 'hihat_closed' },
+          { beat: 3, subdivisionIndex: 0, instrument: 'snare' },
+          { beat: 4, subdivisionIndex: 0, instrument: 'hihat_closed' },
+          { beat: 4, subdivisionIndex: 0, instrument: 'snare' },
+        ],
+        // B sparsens the left hand to a single hit — the steady right hand
+        // has to keep going through the gap on its own.
+        [
+          { beat: 1, subdivisionIndex: 0, instrument: 'hihat_closed' },
+          { beat: 2, subdivisionIndex: 0, instrument: 'hihat_closed' },
+          { beat: 2, subdivisionIndex: 0, instrument: 'snare' },
+          { beat: 3, subdivisionIndex: 0, instrument: 'hihat_closed' },
+          { beat: 4, subdivisionIndex: 0, instrument: 'hihat_closed' },
+        ],
+      ],
+    },
+  ],
+  3: [
     {
       title: 'פעימה בסיסית',
       bars: [
@@ -60,7 +153,7 @@ export const CURRICULUM_PATTERNS: Record<number, CurriculumPattern[]> = {
       ],
     },
   ],
-  2: [
+  4: [
     {
       title: 'היי-הט על כל שמינית',
       bars: [
@@ -126,13 +219,13 @@ export const CURRICULUM_PATTERNS: Record<number, CurriculumPattern[]> = {
       ],
     },
   ],
-  // NEW — hand technique/independence: the instrument set stays identical
-  // to stage 2 (rudiment work doesn't need new kit pieces), the focus shift
-  // is purely rhythmic. Each pattern's 2nd bar variant is a full-bar single-
+  // Hand technique/independence: the instrument set stays identical to
+  // stage 4 (rudiment work doesn't need new kit pieces), the focus shift is
+  // purely rhythmic. Each pattern's 2nd bar variant is a full-bar single-
   // or double-stroke roll on the snare alone, alternating with a normal
   // groove bar — the generator's A/B/A/B cycling turns that into "groove,
   // roll, groove, roll…" across the 8 generated bars.
-  3: [
+  5: [
     {
       title: 'רול יחיד לאורך התיבה',
       bars: [
@@ -194,9 +287,9 @@ export const CURRICULUM_PATTERNS: Record<number, CurriculumPattern[]> = {
       ],
     },
   ],
-  // NEW — kick variations under a held backbeat: same instrument set as
-  // stage 3, focus moves from the hands to the feet.
-  4: [
+  // Kick variations under a held backbeat: same instrument set as stage 5,
+  // focus moves from the hands to the feet.
+  6: [
     {
       title: 'קיק סינקופטי בסיסי',
       bars: [
@@ -270,7 +363,7 @@ export const CURRICULUM_PATTERNS: Record<number, CurriculumPattern[]> = {
       ],
     },
   ],
-  5: [
+  7: [
     {
       title: 'פתיחת קראש',
       bars: [
@@ -336,7 +429,7 @@ export const CURRICULUM_PATTERNS: Record<number, CurriculumPattern[]> = {
       ],
     },
   ],
-  6: [
+  8: [
     {
       title: 'מילוי טומים בסיסי',
       bars: [
@@ -400,14 +493,14 @@ export const CURRICULUM_PATTERNS: Record<number, CurriculumPattern[]> = {
       ],
     },
   ],
-  // NEW — dynamics/ghost notes: same instrument set as stage 6. The
-  // backbeat is marked accent:true (graded for real against the player's
-  // own MIDI strike velocity — see hit-matcher.ts's gradeDynamics), and
-  // extra unaccented snare notes fall between backbeats as ghost notes —
-  // the app doesn't grade "softness" specifically, but hitting the
-  // notated accent noticeably harder than its neighbors is the whole skill
-  // this stage teaches.
-  7: [
+  // Dynamics/ghost notes: same instrument set as stage 8. The backbeat is
+  // marked accent:true (graded for real against the player's own MIDI
+  // strike velocity — see hit-matcher.ts's gradeDynamics), and extra
+  // unaccented snare notes fall between backbeats as ghost notes — the app
+  // doesn't grade "softness" specifically, but hitting the notated accent
+  // noticeably harder than its neighbors is the whole skill this stage
+  // teaches.
+  9: [
     {
       title: 'אקסנט על הבק-ביט',
       bars: [
@@ -489,7 +582,7 @@ export const CURRICULUM_PATTERNS: Record<number, CurriculumPattern[]> = {
       ],
     },
   ],
-  8: [
+  10: [
     {
       title: '16 בסיסי',
       bars: [
@@ -559,7 +652,7 @@ export const CURRICULUM_PATTERNS: Record<number, CurriculumPattern[]> = {
       ],
     },
   ],
-  9: [
+  11: [
     {
       title: 'סינקופציה עם קיק',
       bars: [
@@ -634,7 +727,7 @@ export const CURRICULUM_PATTERNS: Record<number, CurriculumPattern[]> = {
       ],
     },
   ],
-  10: [
+  12: [
     {
       title: 'מילוי טומים מלא',
       bars: [
@@ -709,7 +802,7 @@ export const CURRICULUM_PATTERNS: Record<number, CurriculumPattern[]> = {
       ],
     },
   ],
-  11: [
+  13: [
     {
       title: 'וואלס בסיסי',
       bars: [

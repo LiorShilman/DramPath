@@ -20,32 +20,77 @@ const THREE_FOUR: TimeSignature = { numerator: 3, denominator: 4 }
 // (enforced by curriculum-stages.test.ts), so working straight through in
 // order always gets harder, never easier.
 //
+// v3 of this track: two new stages (1-2) added in front of everything else
+// — explicit user request/professional point: real drum method books (Stick
+// Control, etc.) start with pure hand-to-hand coordination (right/left,
+// quarter notes, one surface) before ever bringing in the foot, and this
+// track used to skip straight to kick+snare. DrumPath has no "which hand"
+// concept in its data model (grading is per-instrument, from MIDI note
+// number, not per-limb) — stage 1 uses a single instrument (snare) for both
+// hands, relying on the guide text to instruct alternation; stage 2
+// introduces a second instrument (hihat_closed) specifically so "right hand
+// keeps a steady pulse, left hand plays its own rhythm" becomes visible/
+// gradable as two distinct instrument streams, still with no foot involved.
+// Both stay at 'quarter' subdivision (can't go higher — subdivision is
+// forced non-decreasing across the whole array, and the very next stage is
+// also 'quarter') and both stay comfortably under old stage 1's own
+// 50/60/70 BPM. Old stage 1 ("קיק וסנר") keeps hihat_closed in its own
+// instrument set even though its actual patterns don't use it — required by
+// the instrument-set-only-grows invariant once stage 2 has already
+// introduced it, same "declare the cumulative palette, not just what this
+// stage's patterns literally use" convention already established for
+// stages 3/4 reusing stage 2's own set below.
+//
 // v2 of this track (replacing the original 8-stage/16-lesson version):
 // the original jumped straight from "which kit piece joins next" to the
 // next, with no dedicated stage for hand technique (rudiments/independence)
 // or dynamics (ghost notes/accents) — both standard pillars of a real
-// private-lesson curriculum. Three new stages (3, 4, 7) close that gap
-// without breaking the instrument-growth invariant: stages 3-4 reuse stage
-// 2's exact instrument set (kick/snare/hihat_closed) since rudiment and
-// kick-variation work doesn't need new kit pieces, and stage 7 reuses
-// stage 6's set (dynamics work needs no new instruments either, just accent
-// placement). Stages 5/6/8/9/10/11 carry over stages 3-8 from the original
-// track unchanged in content (already tested, already sound), renumbered.
+// private-lesson curriculum. Three new stages (now 5, 6, 9) close that gap
+// without breaking the instrument-growth invariant: 5-6 reuse 4's exact
+// instrument set (kick/snare/hihat_closed) since rudiment and kick-variation
+// work doesn't need new kit pieces, and 9 reuses 8's set (dynamics work
+// needs no new instruments either, just accent placement). Stages 7/8/10/11/
+// 12/13 carry over the original track's stages 3-8 unchanged in content
+// (already tested, already sound), renumbered.
 export const CURRICULUM_STAGES: CurriculumStage[] = [
   {
     order: 1,
-    title: 'שלב 1 — קיק וסנר',
-    instruments: ['kick', 'snare'],
+    title: 'שלב 1 — עבודת ידיים: ימין ושמאל בסנר',
+    instruments: ['snare'],
     subdivision: 'quarter',
-    bpm: { min: 50, target: 60, max: 70 },
+    bpm: { min: 40, target: 48, max: 56 },
     difficulty: 'beginner',
-    explanation: 'השלב הראשון בונה את הבסיס: רק בס דראם (קיק) וסנר, ברבעים איטיים.',
-    guide: 'התמקדו בעקביות הזמן לפני מהירות — כל פעימה צריכה להישמע באותו מרחק זמן בדיוק.',
+    explanation:
+      'השלב הכי בסיסי מכולם: לפני שמוסיפים כלי נוסף, בונים תיאום טהור בין יד ימין ליד שמאל — הכל על הסנר בלבד, ברבעים איטיים.',
+    guide: 'נגנו לסירוגין יד ימין-שמאל-ימין-שמאל על כל הקשה, גם כשיש הפסקה קצרה — עקביות בין הידיים היא הבסיס לכל מה שיבוא אחר כך.',
     timeSignature: FOUR_FOUR,
   },
   {
     order: 2,
-    title: 'שלב 2 — הצטרפות ההיי-הט',
+    title: 'שלב 2 — עבודת ידיים: היי-הט קבוע מול סנר',
+    instruments: ['snare', 'hihat_closed'],
+    subdivision: 'quarter',
+    bpm: { min: 45, target: 54, max: 63 },
+    difficulty: 'beginner',
+    explanation:
+      'יד ימין שומרת פעימה קבועה על ההיי-הט הסגור, בזמן שיד שמאל מנגנת קצב משלה על הסנר — עצמאות אמיתית בין הידיים, עוד לפני שהרגל בכלל מצטרפת.',
+    guide: 'שמרו על יד ימין קבועה כמו שעון על ההיי-הט — היא לא זזה בגלל מה שיד שמאל עושה. יד שמאל היא זו שמשתנה בין החזרות.',
+    timeSignature: FOUR_FOUR,
+  },
+  {
+    order: 3,
+    title: 'שלב 3 — קיק וסנר',
+    instruments: ['kick', 'snare', 'hihat_closed'],
+    subdivision: 'quarter',
+    bpm: { min: 50, target: 60, max: 70 },
+    difficulty: 'beginner',
+    explanation: 'הרגל מצטרפת לראשונה: רק בס דראם (קיק) וסנר, ברבעים איטיים.',
+    guide: 'התמקדו בעקביות הזמן לפני מהירות — כל פעימה צריכה להישמע באותו מרחק זמן בדיוק.',
+    timeSignature: FOUR_FOUR,
+  },
+  {
+    order: 4,
+    title: 'שלב 4 — הצטרפות ההיי-הט',
     instruments: ['kick', 'snare', 'hihat_closed'],
     subdivision: 'eighth',
     bpm: { min: 60, target: 75, max: 90 },
@@ -55,8 +100,8 @@ export const CURRICULUM_STAGES: CurriculumStage[] = [
     timeSignature: FOUR_FOUR,
   },
   {
-    order: 3,
-    title: 'שלב 3 — רודימנטים ובניית עצמאות',
+    order: 5,
+    title: 'שלב 5 — רודימנטים ובניית עצמאות',
     instruments: ['kick', 'snare', 'hihat_closed'],
     subdivision: 'eighth',
     bpm: { min: 65, target: 80, max: 95 },
@@ -67,8 +112,8 @@ export const CURRICULUM_STAGES: CurriculumStage[] = [
     timeSignature: FOUR_FOUR,
   },
   {
-    order: 4,
-    title: 'שלב 4 — וריאציות קיק תחת בק-ביט',
+    order: 6,
+    title: 'שלב 6 — וריאציות קיק תחת בק-ביט',
     instruments: ['kick', 'snare', 'hihat_closed'],
     subdivision: 'eighth',
     bpm: { min: 75, target: 90, max: 105 },
@@ -78,8 +123,8 @@ export const CURRICULUM_STAGES: CurriculumStage[] = [
     timeSignature: FOUR_FOUR,
   },
   {
-    order: 5,
-    title: 'שלב 5 — קראש והיי-הט פתוח',
+    order: 7,
+    title: 'שלב 7 — קראש והיי-הט פתוח',
     instruments: ['kick', 'snare', 'hihat_closed', 'hihat_open', 'crash'],
     subdivision: 'eighth',
     bpm: { min: 90, target: 100, max: 115 },
@@ -89,8 +134,8 @@ export const CURRICULUM_STAGES: CurriculumStage[] = [
     timeSignature: FOUR_FOUR,
   },
   {
-    order: 6,
-    title: 'שלב 6 — הצטרפות הטומים',
+    order: 8,
+    title: 'שלב 8 — הצטרפות הטומים',
     instruments: ['kick', 'snare', 'hihat_closed', 'hihat_open', 'crash', 'tom_high', 'tom_mid', 'tom_floor'],
     subdivision: 'eighth',
     bpm: { min: 95, target: 105, max: 120 },
@@ -100,8 +145,8 @@ export const CURRICULUM_STAGES: CurriculumStage[] = [
     timeSignature: FOUR_FOUR,
   },
   {
-    order: 7,
-    title: 'שלב 7 — דינמיקה וגוסט נוטס',
+    order: 9,
+    title: 'שלב 9 — דינמיקה וגוסט נוטס',
     instruments: ['kick', 'snare', 'hihat_closed', 'hihat_open', 'crash', 'tom_high', 'tom_mid', 'tom_floor'],
     subdivision: 'eighth',
     bpm: { min: 100, target: 110, max: 125 },
@@ -112,8 +157,8 @@ export const CURRICULUM_STAGES: CurriculumStage[] = [
     timeSignature: FOUR_FOUR,
   },
   {
-    order: 8,
-    title: 'שלב 8 — הסט המלא בשש-עשריות',
+    order: 10,
+    title: 'שלב 10 — הסט המלא בשש-עשריות',
     instruments: ['kick', 'snare', 'hihat_closed', 'hihat_open', 'ride', 'crash', 'tom_high', 'tom_mid', 'tom_floor'],
     subdivision: 'sixteenth',
     bpm: { min: 105, target: 115, max: 130 },
@@ -123,8 +168,8 @@ export const CURRICULUM_STAGES: CurriculumStage[] = [
     timeSignature: FOUR_FOUR,
   },
   {
-    order: 9,
-    title: 'שלב 9 — סינקופציה',
+    order: 11,
+    title: 'שלב 11 — סינקופציה',
     instruments: ['kick', 'snare', 'hihat_closed', 'hihat_open', 'ride', 'crash', 'tom_high', 'tom_mid', 'tom_floor'],
     subdivision: 'sixteenth',
     bpm: { min: 110, target: 125, max: 140 },
@@ -134,8 +179,8 @@ export const CURRICULUM_STAGES: CurriculumStage[] = [
     timeSignature: FOUR_FOUR,
   },
   {
-    order: 10,
-    title: 'שלב 10 — אוצר מילויים',
+    order: 12,
+    title: 'שלב 12 — אוצר מילויים',
     instruments: ['kick', 'snare', 'hihat_closed', 'hihat_open', 'ride', 'crash', 'tom_high', 'tom_mid', 'tom_floor'],
     subdivision: 'sixteenth',
     bpm: { min: 115, target: 130, max: 145 },
@@ -145,8 +190,8 @@ export const CURRICULUM_STAGES: CurriculumStage[] = [
     timeSignature: FOUR_FOUR,
   },
   {
-    order: 11,
-    title: 'שלב 11 — משקל 3/4',
+    order: 13,
+    title: 'שלב 13 — משקל 3/4',
     instruments: ['kick', 'snare', 'hihat_closed', 'hihat_open', 'ride', 'crash', 'tom_high', 'tom_mid', 'tom_floor'],
     subdivision: 'sixteenth',
     bpm: { min: 120, target: 130, max: 150 },
