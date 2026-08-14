@@ -82,7 +82,7 @@ describe('SessionResults', () => {
       />,
     )
     expect(screen.queryByTestId('dynamics-chart')).not.toBeInTheDocument()
-    expect(screen.queryByText('עקביות דינמיקה (מהירות הקשה)')).not.toBeInTheDocument()
+    expect(screen.queryByText('עקביות דינמיקה (עוצמת הקשה)')).not.toBeInTheDocument()
   })
 
   it('shows the velocity-consistency chart when at least one hit carried real MIDI data', () => {
@@ -103,6 +103,6 @@ describe('SessionResults', () => {
       />,
     )
     expect(screen.getByTestId('dynamics-chart')).toBeInTheDocument()
-    expect(screen.getByText('עקביות דינמיקה (מהירות הקשה)')).toBeInTheDocument()
+    expect(screen.getByText('עקביות דינמיקה (עוצמת הקשה)')).toBeInTheDocument()
   })
 })
