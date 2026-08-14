@@ -199,7 +199,10 @@ function RemoteControlBar({
             מושלם {playbackStatus.resultsSummary.gradeCounts.perfect}
           </span>
           <span className="text-[var(--color-warning-text)]">
-            מוקדם/מאוחר {playbackStatus.resultsSummary.gradeCounts.early + playbackStatus.resultsSummary.gradeCounts.late}
+            מוקדם {playbackStatus.resultsSummary.gradeCounts.early}
+          </span>
+          <span className="text-[var(--color-warning-text)]">
+            מאוחר {playbackStatus.resultsSummary.gradeCounts.late}
           </span>
           <span className="text-[var(--color-danger-text)]">
             פספוסים {playbackStatus.resultsSummary.gradeCounts.miss}
