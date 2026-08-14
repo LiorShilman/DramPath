@@ -95,6 +95,21 @@ describe('ExerciseNotationSheet', () => {
     expect(cursor.style.animation).toContain('linear 1500ms both')
   })
 
+  it('also gives row 1+ a runway, borrowed from the tail of the row right before it — not just row 0\'s count-in', () => {
+    const twoRowExercise = { ...EXERCISE, bars: 8 }
+    const { container } = render(
+      <ExerciseNotationSheet exercise={twoRowExercise} playbackProgress={{ bpm: 120, sessionId: 1 }} barsPerRow={4} />,
+    )
+    // Row 0 has no count-in here (startOffsetMs omitted) — no runway.
+    const row0Cursor = container.querySelector('[data-testid="notation-row-0-cursor"]')! as SVGElement
+    expect(row0Cursor.style.getPropertyValue('--notation-cursor-start-x')).toBe('')
+    // Row 1 still gets one, borrowed from row 0's own tail end — the exact
+    // same -50px runway row 0 itself would get from a count-in, capped the
+    // same way, even though nothing here is "counting in".
+    const row1Cursor = container.querySelector('[data-testid="notation-row-1-cursor"]')! as SVGElement
+    expect(row1Cursor.style.getPropertyValue('--notation-cursor-start-x')).toBe('-50px')
+  })
+
   it('does not give a mid-exercise seek (no count-in) a runway', () => {
     const { container } = render(
       // A seek's startOffsetMs is positive (how far INTO the piece it
@@ -117,6 +132,39 @@ describe('ExerciseNotationSheet', () => {
       />,
     )
     expect(container.querySelectorAll('[data-testid="notation-hit-marker"]')).toHaveLength(1)
+  })
+
+  it('colors perfect green, early/late amber, and miss red — never green with an X on it', () => {
+    const exercise = {
+      ...EXERCISE,
+      bars: 1,
+      events: [
+        makeEvent({ instrument: 'kick', beat: 1 }),
+        makeEvent({ instrument: 'snare', beat: 2 }),
+        makeEvent({ instrument: 'crash', beat: 3 }),
+        makeEvent({ instrument: 'hihat_closed', beat: 4 }),
+      ],
+    }
+    const [perfectId, earlyId, lateId, missId] = exercise.events.map((event) => event.id) as [string, string, string, string]
+    const { container } = render(
+      <ExerciseNotationSheet
+        exercise={exercise}
+        gradedEventIds={
+          new Map([
+            [perfectId, 'perfect'],
+            [earlyId, 'early'],
+            [lateId, 'late'],
+            [missId, 'miss'],
+          ])
+        }
+      />,
+    )
+    const notes = container.querySelectorAll('[data-testid="notation-note"]')
+    const byGrade = (grade: string) => [...notes].find((note) => note.getAttribute('data-grade') === grade)! as HTMLElement
+    expect(byGrade('perfect').style.color).toBe('var(--color-success-text)')
+    expect(byGrade('early').style.color).toBe('var(--color-warning-text)')
+    expect(byGrade('late').style.color).toBe('var(--color-warning-text)')
+    expect(byGrade('miss').style.color).toBe('var(--color-danger-text)')
   })
 
   it('draws no hit-position marker for a hit graded perfect (already-green noise, per direct user feedback)', () => {

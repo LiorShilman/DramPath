@@ -341,26 +341,34 @@ export function ExerciseNotationSheet({
         const baselineY = rowTopY + rowHeight - bottomPadding
         const toY = (position: number) => baselineY - staffPositionToOffsetPx(position, LINE_SPACING_PX)
         const rowTiming = rowRealTimings[rowIndex]!
-        // Count-in "runway" — only row 0 ever has one (a fresh count-in
-        // only ever precedes the very start of a run; later rows flow
-        // straight out of whichever row came before them). rowTiming.
-        // startMs > 0 here specifically means "there's a real wait before
-        // this row's bar 1 begins" — true for an ordinary count-in, false
-        // (0 or negative, clamped away below) for a mid-exercise seek,
-        // which skips the count-in entirely (see beginPlayback's own
-        // countInBars-from-startOffsetMs logic) — a seek must NOT get a
-        // runway, there's no count-in click to justify one. Used by the
-        // cursor's own render below.
+        // Runway before THIS row's own bar 1 — every row gets one, not just
+        // row 0 (reported directly: a row-2+ first note had the exact same
+        // "cursor just appears on top of it" problem row 0's own count-in
+        // runway was built for, since wrapping to a new row resets the
+        // cursor to its own left edge with zero lead-in too). Where the
+        // runway's time comes FROM differs:
+        // - Row 0 borrows from the count-in wait before the piece's own bar
+        //   1 (rowTiming.startMs > 0 there specifically means "there's a
+        //   real wait", true for an ordinary count-in, false/0 for a
+        //   mid-exercise seek, which skips the count-in entirely — a seek
+        //   must NOT get a runway, there's no count-in click to justify one).
+        // - Every later row borrows from the TAIL END of the row right
+        //   before it — a separate <rect> at a separate screen position, so
+        //   stealing a little of its own final stretch for this row's
+        //   pre-roll doesn't touch its notes, its grading, or its own
+        //   timing in any way; the piece itself never actually pauses
+        //   between rows, only the cursor visually "arrives early" here.
         const barRealDurationMs = rowTiming.durationMs / rowBars
-        const availableWaitMs = rowIndex === 0 ? Math.max(0, rowTiming.startMs) : 0
+        const availableWaitMs = rowIndex === 0 ? Math.max(0, rowTiming.startMs) : rowRealTimings[rowIndex - 1]!.durationMs
         // How long covering COUNT_IN_RUNWAY_PX takes at this row's own
         // px/ms rate — same rate the rest of this row's own bars use, so
         // the runway's motion is neither stretched nor compressed relative
         // to bar 1 right after it. Capped by whatever wait is actually
-        // available (in principle a fast enough tempo's count-in bar could
-        // be shorter than the runway's own time-equivalent) — the cursor
-        // sits still for whatever's left of the count-in before this, same
-        // as it always did pre-runway.
+        // available (in principle a fast enough tempo's count-in bar, or an
+        // unusually short previous row, could be shorter than the runway's
+        // own time-equivalent) — the cursor sits still (row 0) or the
+        // previous row's own cursor simply hasn't reached that point yet
+        // (later rows) for whatever's left before this.
         const preRollMs = availableWaitMs > 0 ? Math.min(availableWaitMs, (COUNT_IN_RUNWAY_PX * barRealDurationMs) / BAR_WIDTH_PX) : 0
         const preRollPx = preRollMs > 0 ? (preRollMs * BAR_WIDTH_PX) / barRealDurationMs : 0
 
@@ -634,14 +642,20 @@ export function ExerciseNotationSheet({
                 noteBeamY.get(event.id) ??
                 (direction === 'down' ? y + NOTE_RADIUS_PX + STEM_LENGTH_PX : y - NOTE_RADIUS_PX - STEM_LENGTH_PX)
               const isHighlighted = highlightedEventIds?.has(event.id) ?? false
-              // perfect/early/late all "counted as a hit" — same green,
-              // matching gradeCounts/HitFeedback's own perfect+early+late
-              // grouping; the finer distinction is what showHitMarker above
-              // uses instead, not the note's own color.
+              // Three-tier, not perfect/early/late-all-green: explicit user
+              // feedback — an amber-with-an-X early/late note that was still
+              // ALSO colored green read as "wait, is this one right or not?"
+              // Pure green is reserved for an actual 'perfect' grade now;
+              // early/late (still a counted hit, per gradeCounts/HitFeedback's
+              // own perfect+early+late grouping — this is a display-only
+              // distinction) gets the same amber showHitMarker's X already
+              // uses, so a note is never both green AND marked with an X.
               const noteColor = grade
                 ? grade === 'miss'
                   ? 'var(--color-danger-text)'
-                  : 'var(--color-success-text)'
+                  : grade === 'perfect'
+                    ? 'var(--color-success-text)'
+                    : 'var(--color-warning-text)'
                 : isHighlighted
                   ? 'var(--color-warning-text)'
                   : undefined
