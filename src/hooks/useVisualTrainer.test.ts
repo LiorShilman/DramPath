@@ -621,6 +621,87 @@ describe('useVisualTrainer', () => {
     expect(result.current.lastDynamicsGrade).toBeUndefined()
   })
 
+  // Explicit user request: hands stay on the real kit, so a kick hit while
+  // idle/finished starts/restarts the exercise, same as pressing Play.
+  it('a kick MIDI hit while idle starts the exercise, same as pressing Play', async () => {
+    vi.stubGlobal('AudioContext', FakeAudioContext)
+    const input = new FakeMIDIInput()
+    stubMidiAccess(input)
+    const exercise = makeExercise([
+      { id: createId(), bar: 1, beat: 1, subdivisionIndex: 0, instrument: 'kick', velocity: 100 },
+    ])
+    const { result } = renderHook(() => useVisualTrainer(exercise, noHighwayRef))
+
+    act(() => result.current.toggleMidiControl())
+    await waitFor(() => expect(result.current.midiStatus).toBe('connected'))
+    expect(result.current.phase).toBe('idle')
+
+    // Note 36 = kick (midi-drum-map.ts).
+    act(() => input.simulateMessage([0x99, 36, 100]))
+
+    await waitFor(() => expect(result.current.phase).toBe('count-in'), { timeout: 3000 })
+  })
+
+  it('a kick MIDI hit after a run finishes restarts the exercise', async () => {
+    vi.stubGlobal('AudioContext', FakeAudioContext)
+    const input = new FakeMIDIInput()
+    stubMidiAccess(input)
+    const exercise = makeExercise([
+      { id: createId(), bar: 1, beat: 1, subdivisionIndex: 0, instrument: 'kick', velocity: 100 },
+    ])
+    const { result } = renderHook(() => useVisualTrainer(exercise, noHighwayRef))
+
+    act(() => result.current.toggleMidiControl())
+    await waitFor(() => expect(result.current.midiStatus).toBe('connected'))
+    await act(() => result.current.start())
+    await waitFor(() => expect(result.current.phase).toBe('running'), { timeout: 3000 })
+    act(() => input.simulateMessage([0x99, 36, 127]))
+    await waitFor(() => expect(result.current.phase).toBe('finished'), { timeout: 3000 })
+
+    act(() => input.simulateMessage([0x99, 36, 127]))
+
+    await waitFor(() => expect(result.current.phase).toBe('count-in'), { timeout: 3000 })
+  })
+
+  it('a non-kick MIDI hit while idle does nothing', async () => {
+    vi.stubGlobal('AudioContext', FakeAudioContext)
+    const input = new FakeMIDIInput()
+    stubMidiAccess(input)
+    const exercise = makeExercise([
+      { id: createId(), bar: 1, beat: 1, subdivisionIndex: 0, instrument: 'snare', velocity: 100 },
+    ])
+    const { result } = renderHook(() => useVisualTrainer(exercise, noHighwayRef))
+
+    act(() => result.current.toggleMidiControl())
+    await waitFor(() => expect(result.current.midiStatus).toBe('connected'))
+
+    // Note 38 = snare (midi-drum-map.ts).
+    act(() => input.simulateMessage([0x99, 38, 100]))
+
+    expect(result.current.phase).toBe('idle')
+  })
+
+  it('a kick MIDI hit while paused does not restart the exercise', async () => {
+    vi.stubGlobal('AudioContext', FakeAudioContext)
+    const input = new FakeMIDIInput()
+    stubMidiAccess(input)
+    const exercise = makeExercise([
+      { id: createId(), bar: 1, beat: 1, subdivisionIndex: 0, instrument: 'kick', velocity: 100 },
+    ])
+    const { result } = renderHook(() => useVisualTrainer(exercise, noHighwayRef))
+
+    act(() => result.current.toggleMidiControl())
+    await waitFor(() => expect(result.current.midiStatus).toBe('connected'))
+    await act(() => result.current.start())
+    await waitFor(() => expect(result.current.phase).toBe('running'), { timeout: 3000 })
+    act(() => result.current.pause())
+    expect(result.current.phase).toBe('paused')
+
+    act(() => input.simulateMessage([0x99, 36, 100]))
+
+    expect(result.current.phase).toBe('paused')
+  })
+
   // notation-mirroring to the phone (ADR 0007's host->controller direction)
   // — gated purely on the isMidiControlEnabled *toggle*, not on an actual
   // MIDI device being present, so these tests don't need the FakeMIDIInput

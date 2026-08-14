@@ -339,6 +339,10 @@ export function useVisualTrainer(
   // Mirrors isDemo state — tick() reads this ref directly (like phaseRef)
   // so it doesn't need isDemo in its own dependency array.
   const isDemoRef = useRef(false)
+  // handleMidiHit (below) needs to call start() on a kick hit while idle —
+  // same declaration-order problem sendNotationStateRef etc. already solve:
+  // start isn't declared until well after this point in the hook.
+  const startRef = useRef<() => void>(() => {})
 
   const thresholds = GRADING_THRESHOLDS[exercise.difficulty]
 
@@ -711,7 +715,21 @@ export function useVisualTrainer(
   const handleMidiHit = useCallback(
     (instrument: DrumInstrument, hitTimeMs: number, velocity: number) => {
       if (isDemoRef.current) return
-      if (phaseRef.current !== 'running' && phaseRef.current !== 'count-in') return
+      if (phaseRef.current !== 'running' && phaseRef.current !== 'count-in') {
+        // Explicit user request: hands are on the real kit, not the phone
+        // or keyboard — a kick hit while nothing's playing (idle, or the
+        // previous run just finished) starts/restarts THIS exercise, same
+        // as pressing Play, so a set of reps never needs reaching for
+        // anything else. Only the foot-voice instrument (kick) triggers
+        // this, and only from idle/finished — not mid-pause (resuming a
+        // pause is a deliberate, different action, not "play again"), and
+        // every other pad still does nothing outside a real run, same as
+        // before.
+        if (instrument === 'kick' && (phaseRef.current === 'idle' || phaseRef.current === 'finished')) {
+          startRef.current()
+        }
+        return
+      }
       handleHit(instrument, hitTimeMs, velocity)
     },
     [handleHit],
@@ -865,6 +883,9 @@ export function useVisualTrainer(
   )
 
   const start = useCallback(() => beginPlayback(false), [beginPlayback])
+  useEffect(() => {
+    startRef.current = start
+  }, [start])
   const startDemo = useCallback(() => beginPlayback(true), [beginPlayback])
   const seekDemo = useCallback((offsetMs: number) => beginPlayback(true, { startOffsetMs: offsetMs }), [beginPlayback])
   // General seek — jumps whichever kind of run is currently active (demo or
