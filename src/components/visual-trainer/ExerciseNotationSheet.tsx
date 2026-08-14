@@ -340,14 +340,22 @@ export function ExerciseNotationSheet({
     })
   }
 
-  // The note(s) at a row's own earliest (beat, subdivisionIndex) — several
-  // can tie (two instruments on the same first beat), in which case all of
-  // them are "next up" together. beat/subdivisionIndex are always small
-  // non-negative integers, so a single combined sort key is safe.
+  // The note(s) at a row's own earliest (barIndexInRow, beat,
+  // subdivisionIndex) — several can tie (two instruments on the same first
+  // beat of the row's first bar), in which case all of them are "next up"
+  // together. Must include barIndexInRow, not just (beat, subdivisionIndex)
+  // — a multi-bar row (barsPerRow > 1) has the same beat/subdivisionIndex
+  // recurring once per bar (e.g. every bar's own beat 1), so without it
+  // every bar in the row would tie for "first" instead of just the row's
+  // actual first bar (this is what produced a bogus "הבא: סנר + סנר + …"
+  // hint, one repeat per bar, for a plain single-instrument pattern).
+  // barIndexInRow/beat/subdivisionIndex are all always small non-negative
+  // integers, so a single combined sort key is safe.
   function firstEventsOfRow(rowEvents: (typeof eventsByRow)[number]) {
     if (rowEvents.length === 0) return []
-    const minKey = Math.min(...rowEvents.map((event) => event.beat * 100 + event.subdivisionIndex))
-    return rowEvents.filter((event) => event.beat * 100 + event.subdivisionIndex === minKey)
+    const sortKey = (event: (typeof rowEvents)[number]) => event.barIndexInRow * 100000 + event.beat * 100 + event.subdivisionIndex
+    const minKey = Math.min(...rowEvents.map(sortKey))
+    return rowEvents.filter((event) => sortKey(event) === minKey)
   }
 
   // The viewBox must match the widest row actually drawn — rows can now

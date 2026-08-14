@@ -144,6 +144,23 @@ describe('ExerciseNotationSheet', () => {
     expect(container.textContent).toContain('הבא: סנר (ימין)')
   })
 
+  it('shows the hint once, not once per bar, when a multi-bar row repeats the same beat in every bar', () => {
+    // Regression: firstEventsOfRow used to key purely on (beat,
+    // subdivisionIndex), so with a 4-bar row where every bar has its own
+    // beat-1 note, all 4 tied for "row's first event" instead of just bar
+    // 1's — producing a bogus "הבא: סנר + סנר + סנר + סנר" hint for a plain
+    // one-note-per-beat pattern (exactly what stage 1's curriculum lessons
+    // do). Row 1 (bars 5-8) should surface only bar 5's own beat-1 note.
+    const fourBarRowExercise = {
+      ...EXERCISE,
+      bars: 8,
+      events: [1, 2, 3, 4, 5, 6, 7, 8].map((bar) => makeEvent({ instrument: 'snare', bar, beat: 1 })),
+    }
+    const { container } = render(<ExerciseNotationSheet exercise={fourBarRowExercise} barsPerRow={4} showNextUpHint />)
+    expect(container.textContent).toContain('הבא: סנר')
+    expect(container.textContent).not.toContain('הבא: סנר + סנר')
+  })
+
   it('shows no hint at all after the last row (nothing left to come up)', () => {
     const oneRowExercise = { ...EXERCISE, bars: 1 }
     const { container } = render(<ExerciseNotationSheet exercise={oneRowExercise} showNextUpHint />)
