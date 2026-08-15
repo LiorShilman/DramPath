@@ -97,6 +97,22 @@ describe('ExerciseNotationSheet', () => {
     expect(cursor.getAttribute('stroke')).toBe('var(--color-primary-text)')
   })
 
+  it('floors the perfect-window box at the notehead\'s own size, never narrower than the note it wraps', () => {
+    // Direct user report: the box moves continuously with time while a note
+    // sits at one fixed spot — if the box's own half-width computed out
+    // narrower than the note's own drawn radius (NOTE_RADIUS_PX, a
+    // module-private constant — 3px here), the note's visible edge would be
+    // "outside" the box almost the instant it arrives. 10ms at 120bpm/4-4
+    // (0.1px/ms) is naively just 1px — well under the 3px note radius, so
+    // the floor must kick in.
+    const { container } = render(
+      <ExerciseNotationSheet exercise={EXERCISE} playbackProgress={{ bpm: 120, sessionId: 1 }} perfectWindowMs={10} />,
+    )
+    const cursor = container.querySelector('[data-testid="notation-row-0-cursor"]')!
+    expect(cursor.getAttribute('x')).toBe('-3')
+    expect(cursor.getAttribute('width')).toBe('6')
+  })
+
   it('gives row 0\'s cursor a count-in "runway" (starts left of x=0, arrives at x=0 exactly when the count-in ends) — explicit user request: bar 1\'s own first note used to have zero visual lead-in', () => {
     const { container } = render(
       // startOffsetMs mirrors VisualTrainerPage's own seekOffsetMs-minus-

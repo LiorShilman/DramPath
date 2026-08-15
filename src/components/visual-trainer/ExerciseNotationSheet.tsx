@@ -569,9 +569,21 @@ export function ExerciseNotationSheet({
         // inline IIFE there) — this file has hit the react-hooks/refs lint
         // error before from wrapping a ref-accessing handler (the cursor's
         // own onAnimationStart, below) inside an IIFE.
+        // Floored at NOTE_RADIUS_PX (not just 1px) — reported directly: the
+        // box moves continuously with time while a note sits at one fixed
+        // spot, so if the box's own half-width is narrower than the
+        // note's own drawn radius, the note's visible edge is "outside" the
+        // box almost the instant it arrives, even though hitting anywhere
+        // on the note itself is supposed to be a valid target at minimum.
+        // Only actually matters at a very slow tempo/tight difficulty combo
+        // (the real ms-per-pixel rate can make even a generous perfectMs
+        // shrink below the notehead's own tiny size) — in that narrow edge
+        // case this floor makes the box a hair more generous than the true
+        // threshold, which is a far smaller sin than a "perfect" zone that
+        // doesn't even fully contain the note it's drawn around.
         const halfWindowPx =
           perfectWindowMs !== undefined && barRealDurationMs > 0
-            ? Math.max(1, (perfectWindowMs * BAR_WIDTH_PX) / barRealDurationMs)
+            ? Math.max(NOTE_RADIUS_PX, (perfectWindowMs * BAR_WIDTH_PX) / barRealDurationMs)
             : 1
         const availableWaitMs = rowIndex === 0 ? Math.max(0, rowTiming.startMs) : rowRealTimings[rowIndex - 1]!.durationMs
         // How long covering COUNT_IN_RUNWAY_PX takes at this row's own
