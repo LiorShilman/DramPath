@@ -337,6 +337,10 @@ export function useVisualTrainer(
   // as every phase transition, never a separate one that could race it
   // (useRemoteDrumSender's playbackStatus is a full replace, not a merge).
   const routineProgressRef = useRef(options?.routineProgress)
+  // Fixed once per run (set in beginPlayback below) — calculateAccuracy's
+  // own baseline denominator, so the live accuracy number stays anchored to
+  // the whole piece instead of swinging on a small resolved-so-far sample.
+  const totalExpectedEventsRef = useRef(0)
 
   const clockOffsetMsRef = useRef(0)
   const countInDurationMsRef = useRef(0)
@@ -391,7 +395,7 @@ export function useVisualTrainer(
   }, [clearStickClickTimeouts, stopLoops])
 
   const recomputeScoring = useCallback(() => {
-    setScoring(summarizeScoring(hitResultsRef.current, extraHitsRef.current))
+    setScoring(summarizeScoring(hitResultsRef.current, extraHitsRef.current, totalExpectedEventsRef.current))
     setGradeCounts(countGrades(hitResultsRef.current, extraHitsRef.current))
   }, [])
 
@@ -400,7 +404,8 @@ export function useVisualTrainer(
   // site below, which run inside the same synchronous handler as the ref
   // mutations that feed it, before React would ever flush the `scoring`
   // state update itself.
-  const currentLiveAccuracyPercent = () => calculateAccuracy(hitResultsRef.current, extraHitsRef.current)
+  const currentLiveAccuracyPercent = () =>
+    calculateAccuracy(hitResultsRef.current, extraHitsRef.current, totalExpectedEventsRef.current)
 
   // Grading/lifecycle logic (count-in->running, miss detection, finished) is
   // invoked through this ref from BOTH the rAF-driven tick() below AND
@@ -551,7 +556,8 @@ export function useVisualTrainer(
           phase: 'finished',
           routineProgress: routineProgressRef.current,
           resultsSummary: {
-            accuracyPercent: summarizeScoring(hitResultsRef.current, extraHitsRef.current).accuracyPercent,
+            accuracyPercent: summarizeScoring(hitResultsRef.current, extraHitsRef.current, totalExpectedEventsRef.current)
+              .accuracyPercent,
             gradeCounts: countGrades(hitResultsRef.current, extraHitsRef.current),
           },
         })
@@ -857,6 +863,7 @@ export function useVisualTrainer(
         }))
       hitResultsRef.current = []
       extraHitsRef.current = []
+      totalExpectedEventsRef.current = pendingRef.current.length
 
       barDurationMsRef.current = calculateBarDurationMs(exercise.bpm, exercise.timeSignature)
       beatDurationMsRef.current = barDurationMsRef.current / exercise.timeSignature.numerator
@@ -970,9 +977,9 @@ export function useVisualTrainer(
   // General seek — jumps whichever kind of run is currently active (demo or
   // real) to offsetMs, instead of always forcing demo like seekDemo. A real
   // run's scoring only ends up counting notes from the seek point onward
-  // (beginPlayback already drops earlier pendingRef entries, so they never
-  // become part of hitResultsRef either) — accepted tradeoff, same one
-  // seeking already made for demo, just now available outside it too
+  // (beginPlayback already drops earlier pendingRef entries and sizes
+  // totalExpectedEventsRef off whatever's left) — accepted tradeoff, same
+  // one seeking already made for demo, just now available outside it too
   // (explicit user request: no way to skip ahead in a real practice run).
   const seek = useCallback(
     (offsetMs: number) => beginPlayback(isDemoRef.current, { startOffsetMs: offsetMs }),

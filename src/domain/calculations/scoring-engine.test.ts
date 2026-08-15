@@ -25,7 +25,7 @@ function makeExtraHit(hitTimeMs: number): ExtraHitEvent {
 }
 
 describe('calculateAccuracy', () => {
-  it('divides non-miss hits by how many events have resolved (hit or missed) so far', () => {
+  it('when every event has resolved, equals non-miss hits / (total + extra hits) — the plain spec formula', () => {
     const hitResults = [
       makeHit('perfect', 1),
       makeHit('early', 2),
@@ -38,22 +38,40 @@ describe('calculateAccuracy', () => {
       makeHit('miss', 9),
       makeHit('miss', 10),
     ]
-    expect(calculateAccuracy(hitResults, [])).toBe(70)
+    expect(calculateAccuracy(hitResults, [], 10)).toBe(70)
   })
 
   it('counts extra hits as mistakes that widen the denominator', () => {
     const hitResults = [makeHit('perfect', 1), makeHit('perfect', 2)]
     const extraHits = [makeExtraHit(3)]
-    // 2 non-miss hits out of (2 resolved + 1 extra) = 66.67%
-    expect(calculateAccuracy(hitResults, extraHits)).toBeCloseTo(66.67, 1)
+    // 2 non-miss hits out of (2 total + 1 extra) = 66.67%
+    expect(calculateAccuracy(hitResults, extraHits, 2)).toBeCloseTo(66.67, 1)
   })
 
-  it('returns 100 (nothing to judge yet), not 0 or NaN, when nothing has resolved', () => {
-    // Explicit user feedback: a live indicator denominated by the whole
-    // piece necessarily starts at 0% and climbs toward the final score as
-    // more of the piece is simply reached — reads as "doing badly" before
-    // anything has actually happened. 100 ("nothing wrong yet") avoids that.
-    expect(calculateAccuracy([], [])).toBe(100)
+  it('returns 100 (nothing wrong yet), not 0 or NaN, when nothing has resolved', () => {
+    // Explicit user feedback (two rounds): a live indicator denominated by
+    // the whole piece with a plain non-miss-count numerator necessarily
+    // starts at 0% and climbs toward the final score as more of the piece
+    // is simply reached — reads as "doing badly" before anything has
+    // actually happened. 100 ("nothing wrong yet") avoids that.
+    expect(calculateAccuracy([], [], 10)).toBe(100)
+  })
+
+  it('a single early miss costs only its own weight against the WHOLE piece, not a huge chunk of a tiny resolved-so-far sample', () => {
+    // Explicit user feedback: an earlier version denominated by "how many
+    // events have resolved so far" swung hard on an early mistake — 1 miss
+    // out of the first 1-2 resolved notes read as ~0%, not "one mistake".
+    const hitResults = [makeHit('miss', 1)]
+    // 1 miss out of a 20-note piece — costs 5 points, not 100.
+    expect(calculateAccuracy(hitResults, [], 20)).toBe(95)
+  })
+
+  it('does not move on a correct hit — only a miss or extra hit changes it, so it is monotonically non-increasing through a run', () => {
+    const total = 10
+    const afterOneCorrect = calculateAccuracy([makeHit('perfect', 1)], [], total)
+    expect(afterOneCorrect).toBe(100)
+    const afterTwoCorrect = calculateAccuracy([makeHit('perfect', 1), makeHit('perfect', 2)], [], total)
+    expect(afterTwoCorrect).toBe(100)
   })
 })
 

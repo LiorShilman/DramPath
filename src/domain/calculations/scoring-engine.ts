@@ -16,25 +16,37 @@ export interface ScoringSummary {
   averageTimingErrorMs: number | undefined
 }
 
-// Denominator is hitResults.length (events actually resolved — hit OR
-// missed — so far), not the exercise's own fixed total event count.
-// Explicit user feedback: a live indicator denominated by the WHOLE piece
-// necessarily starts at 0% and mechanically climbs toward the final score
-// as more of the piece is simply reached, regardless of how well it's being
-// played — that reads as "doing badly" early on, not as "hasn't happened
-// yet." Starts at 100 (nothing to judge yet) and only moves once something
-// actually happens. Exactly equals what a total-denominated formula would
-// give once every event has resolved (every one ends up in hitResults by
-// the time a run reaches 'finished' — see useVisualTrainer's own
-// detectMissedEvents-driven completion), so this single formula is correct
-// as both the live, in-progress number AND the final one — no second
-// "final" formula needed.
-export function calculateAccuracy(hitResults: HitResult[], extraHits: ExtraHitEvent[]): number {
-  const denominator = hitResults.length + extraHits.length
+// Two rounds of live-indicator feedback landed on this exact shape:
+// - v1 (denominator = totalExpectedEvents, the plain spec formula) starts
+//   at 0% and mechanically climbs toward the final score as more of the
+//   piece is simply reached, regardless of how well it's being played —
+//   reads as "doing badly" early on, not "hasn't happened yet".
+// - v2 (denominator = hitResults.length, "resolved so far") fixed the
+//   starting point but swings wildly on an early mistake — one miss out of
+//   the first couple of resolved notes reads as ~0%, not a single mistake,
+//   and stays volatile for as long as the resolved sample is small.
+// This version keeps totalExpectedEvents as BOTH the numerator's baseline
+// AND (with extraHits) the denominator — every unresolved event is
+// optimistically assumed "good" until proven otherwise, so only a
+// CONFIRMED miss or extra hit ever moves the number, and each one costs
+// exactly its true weight against the whole piece (1/totalExpectedEvents),
+// never more just because little has happened yet. Starts at 100 (nothing
+// wrong yet) and is monotonically non-increasing for the rest of the run.
+// Exactly equals the plain spec formula (non-miss hits / (expected events +
+// extra hits) * 100) once every event has resolved — at that point
+// totalExpectedEvents - missCount IS the non-miss count — so this one
+// formula is correct as both the live, in-progress number and the final
+// one; no second "final" formula needed.
+export function calculateAccuracy(
+  hitResults: HitResult[],
+  extraHits: ExtraHitEvent[],
+  totalExpectedEvents: number,
+): number {
+  const denominator = totalExpectedEvents + extraHits.length
   if (denominator === 0) return 100
 
-  const nonMissCount = hitResults.filter((result) => result.grade !== 'miss').length
-  return (nonMissCount / denominator) * 100
+  const missCount = hitResults.filter((result) => result.grade === 'miss').length
+  return ((totalExpectedEvents - missCount) / denominator) * 100
 }
 
 interface ComboEvent {
@@ -77,10 +89,14 @@ export function calculateAverageTimingError(hitResults: HitResult[]): number | u
   return errors.reduce((sum, value) => sum + value, 0) / errors.length
 }
 
-export function summarizeScoring(hitResults: HitResult[], extraHits: ExtraHitEvent[]): ScoringSummary {
+export function summarizeScoring(
+  hitResults: HitResult[],
+  extraHits: ExtraHitEvent[],
+  totalExpectedEvents: number,
+): ScoringSummary {
   const combo = calculateCombo(hitResults, extraHits)
   return {
-    accuracyPercent: calculateAccuracy(hitResults, extraHits),
+    accuracyPercent: calculateAccuracy(hitResults, extraHits, totalExpectedEvents),
     currentCombo: combo.current,
     bestCombo: combo.best,
     averageTimingErrorMs: calculateAverageTimingError(hitResults),

@@ -852,23 +852,22 @@ describe('useVisualTrainer', () => {
     await act(() => result.current.start())
     await waitFor(() => expect(result.current.phase).toBe('running'), { timeout: 3000 })
 
-    // A well-timed kick hit matches the exercise's own 1st event — 100%
-    // accuracy (1 non-miss out of 1 event RESOLVED so far; the 2nd event
-    // hasn't been hit or missed yet, so it doesn't count toward the
-    // denominator at all — see calculateAccuracy's own doc comment).
+    // A well-timed kick hit matches the exercise's own 1st event — stays
+    // 100% (a correct hit never moves this number; only a miss or extra hit
+    // does — see calculateAccuracy's own doc comment).
     act(() => {
       fireEvent.keyDown(window, { code: 'KeyJ' })
     })
     await waitFor(() => expect(result.current.lastGrade).not.toBeUndefined())
     expect((latestNotationCall() as NotationStatePayload).liveAccuracyPercent).toBe(100)
 
-    // An extra (unmatched) hit grows the denominator without growing the
-    // numerator — accuracy drops.
+    // An extra (unmatched) hit widens the denominator (2 total + 1 extra)
+    // without touching the numerator (2 total - 0 misses) — 66.67%.
     act(() => {
       fireEvent.keyDown(window, { code: 'KeyK' })
     })
     await waitFor(() => expect(result.current.lastGrade).toBe('extra'))
-    expect((latestNotationCall() as NotationStatePayload).liveAccuracyPercent).toBe(50)
+    expect((latestNotationCall() as NotationStatePayload).liveAccuracyPercent).toBeCloseTo(66.67, 1)
   })
 
   it('a graded hit during a mirrored staff_cursor+MIDI run pushes an updated gradedEventIds', async () => {
