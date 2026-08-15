@@ -704,6 +704,37 @@ describe('useVisualTrainer', () => {
     )
   })
 
+  it('two kick hits landing before beginPlayback catches up only start the exercise once (no re-entrant double-start)', async () => {
+    // Direct user report: a fast double-kick used to START (not restart) an
+    // idle exercise sometimes broke the phone's sync. beginPlayback is
+    // async (awaits audioContext.resume()), so phaseRef.current can still
+    // read 'idle' for a brief window after the 1st kick already triggered
+    // it — firing both kicks synchronously, in the same act(), reproduces
+    // that window deterministically (a promise never resolves within the
+    // same synchronous turn that created it). playSessionId incrementing by
+    // exactly 1 (not 2) confirms the 2nd kick was ignored, not re-entrant.
+    vi.stubGlobal('AudioContext', FakeAudioContext)
+    const input = new FakeMIDIInput()
+    stubMidiAccess(input)
+    const exercise = makeExercise([
+      { id: createId(), bar: 1, beat: 1, subdivisionIndex: 0, instrument: 'kick', velocity: 100 },
+    ])
+    const { result } = renderHook(() => useVisualTrainer(exercise, noHighwayRef))
+
+    act(() => result.current.toggleMidiControl())
+    await waitFor(() => expect(result.current.midiStatus).toBe('connected'))
+    expect(result.current.phase).toBe('idle')
+    const playSessionIdBefore = result.current.playSessionId
+
+    act(() => {
+      input.simulateMessage([0x99, 36, 100])
+      input.simulateMessage([0x99, 36, 100])
+    })
+
+    await waitFor(() => expect(result.current.phase).toBe('count-in'), { timeout: 3000 })
+    expect(result.current.playSessionId).toBe(playSessionIdBefore + 1)
+  })
+
   it('a kick MIDI hit after a run finishes restarts the exercise', async () => {
     vi.stubGlobal('AudioContext', FakeAudioContext)
     const input = new FakeMIDIInput()
@@ -1045,6 +1076,31 @@ describe('useVisualTrainer', () => {
 
     act(() => result.current.resume())
     expect(latestNotationCall()).toMatchObject({ paused: false })
+  })
+
+  it("resendStatus() re-sends both playback_status AND the current notation payload — a controller (re)connecting needs a full resync, not just the phase", async () => {
+    // Direct user report: a phone that drops and reconnects mid-run had no
+    // way to learn the desktop's current state (including which notes were
+    // already graded) until the next unrelated thing changed it.
+    vi.stubGlobal('AudioContext', FakeAudioContext)
+    const exercise = {
+      ...makeExercise([{ id: createId(), bar: 1, beat: 4, subdivisionIndex: 0, instrument: 'kick', velocity: 100 }]),
+      displayMode: 'staff_cursor' as const,
+    }
+    const { result } = renderHook(() => useVisualTrainer(exercise, noHighwayRef))
+
+    act(() => result.current.toggleMidiControl())
+    await act(() => result.current.start())
+    await waitFor(() => expect(result.current.phase).toBe('running'), { timeout: 3000 })
+
+    remoteHostMocks.sendPlaybackStatus.mockClear()
+    remoteHostMocks.sendNotationState.mockClear()
+
+    act(() => remoteHostMocks.capturedSessionHolder.current?.resendStatus())
+
+    expect(remoteHostMocks.sendPlaybackStatus).toHaveBeenCalledWith(expect.objectContaining({ phase: 'running' }))
+    expect(remoteHostMocks.sendNotationState).toHaveBeenCalledTimes(1)
+    expect((latestNotationCall() as NotationStatePayload).exercise.id).toBe(exercise.id)
   })
 
   it(

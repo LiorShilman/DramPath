@@ -296,6 +296,53 @@ describe('RemoteHostProvider / useRemoteHost', () => {
     expect(() => act(() => latestSocket().simulateMessage({ type: 'transport_command', action: 'pause' }))).not.toThrow()
   })
 
+  it('a controller_status increase (a phone (re)connecting) re-asserts the registered session\'s real status', () => {
+    // Direct user report: a phone that drops and reconnects mid-run had no
+    // way to learn the desktop's current state until the next unrelated
+    // thing happened to change it — controller_status (already sent by the
+    // relay on every connect/disconnect) is the actual reconnect signal.
+    vi.stubGlobal('WebSocket', FakeWebSocket)
+    const { result } = renderHook(() => useRemoteHost(), { wrapper })
+    const session = makeFakeSession()
+
+    act(() => result.current.toggleEnabled())
+    act(() => {
+      result.current.registerSession(session)
+    })
+
+    act(() => latestSocket().simulateMessage({ type: 'controller_status', count: 1 }))
+
+    expect(session.resendStatus).toHaveBeenCalledTimes(1)
+  })
+
+  it('a controller_status decrease (a phone disconnecting) does not trigger a resend', () => {
+    vi.stubGlobal('WebSocket', FakeWebSocket)
+    const { result } = renderHook(() => useRemoteHost(), { wrapper })
+    const session = makeFakeSession()
+
+    act(() => result.current.toggleEnabled())
+    act(() => {
+      result.current.registerSession(session)
+    })
+    act(() => latestSocket().simulateMessage({ type: 'controller_status', count: 1 }))
+    session.resendStatus.mockClear()
+
+    act(() => latestSocket().simulateMessage({ type: 'controller_status', count: 0 }))
+
+    expect(session.resendStatus).not.toHaveBeenCalled()
+  })
+
+  it('a controller_status increase with no session registered does not throw', () => {
+    vi.stubGlobal('WebSocket', FakeWebSocket)
+    const { result } = renderHook(() => useRemoteHost(), { wrapper })
+
+    act(() => result.current.toggleEnabled())
+
+    expect(() =>
+      act(() => latestSocket().simulateMessage({ type: 'controller_status', count: 1 })),
+    ).not.toThrow()
+  })
+
   it("registerSession's unregister only clears the slot if it's still the same registration (identity guard)", () => {
     vi.stubGlobal('WebSocket', FakeWebSocket)
     const { result } = renderHook(() => useRemoteHost(), { wrapper })

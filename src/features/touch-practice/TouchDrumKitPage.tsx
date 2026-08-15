@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   ArrowLeft,
   List,
@@ -393,6 +393,23 @@ export function TouchDrumKitPage() {
     }
   }
 
+  // Direct user report: a phone refresh (or a fullscreen toggle that
+  // happens to disrupt the tab) drops the connection and required manually
+  // pressing "connect" again every time, even though the relay URL itself
+  // is already remembered (see relayUrlInput's own init above). Same
+  // connect logic handleToggleRemoteConnection uses, fired once on mount
+  // instead of waiting for a tap — an explicit disconnect later shouldn't
+  // immediately auto-reconnect behind the player's back, so this only ever
+  // runs the one time (empty deps), not on every status change.
+  useEffect(() => {
+    if (IS_PRODUCTION_ORIGIN) {
+      remoteSender.connect()
+    } else if (relayUrlInput.trim()) {
+      remoteSender.connect(relayUrlInput.trim())
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-once by design, see comment above
+  }, [])
+
   function handleOpenExerciseBrowser() {
     remoteSender.requestExerciseList()
     setIsBrowsingExercises(true)
@@ -497,7 +514,11 @@ export function TouchDrumKitPage() {
             while relying on this connection for live grading feedback. A
             stuck-but-not-yet-detected-as-closed connection (common on
             mobile WiFi) otherwise has no visible symptom here at all. */}
-        <div className="flex shrink-0 items-center gap-1 self-end px-1 text-xs text-[var(--color-text-muted)]">
+        <div
+          className={`flex shrink-0 items-center gap-1 self-end px-1 text-xs ${
+            remoteSender.status === 'connected' ? 'text-[var(--color-success-text)]' : 'text-[var(--color-danger-text)]'
+          }`}
+        >
           {remoteSender.status === 'connected' ? (
             <Wifi className="h-3.5 w-3.5" aria-hidden="true" />
           ) : (

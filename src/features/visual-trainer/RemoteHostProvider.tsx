@@ -42,6 +42,21 @@ export function RemoteHostProvider({ children }: { children: ReactNode }) {
     registeredSessionRef.current?.handleHit(instrument, hitTimeMs)
   }, [])
 
+  // Direct user report: a phone that drops and reconnects mid-run (a real
+  // disconnect/reconnect, not just a stuck connection — see
+  // controller_status's own doc comment) had no way to learn the desktop's
+  // current state until the next thing happened to change it (a hit, a
+  // phase transition, or the multi-second heartbeat). previousCountRef lets
+  // this fire only on a genuine INCREASE (a controller joining), not on
+  // every count change — a controller LEAVING doesn't need a resync.
+  const previousControllerCountRef = useRef(0)
+  const handleControllerCountChange = useCallback((count: number) => {
+    if (count > previousControllerCountRef.current) {
+      registeredSessionRef.current?.resendStatus()
+    }
+    previousControllerCountRef.current = count
+  }, [])
+
   const handleRequestExerciseList = useCallback(() => {
     void Promise.all([interactiveExerciseRepository.getAll(), practiceRoutineRepository.getAll()]).then(
       ([customExercises, routines]) => {
@@ -141,6 +156,7 @@ export function RemoteHostProvider({ children }: { children: ReactNode }) {
     onSelectExercise: handleSelectExercise,
     onSelectRoutine: handleSelectRoutine,
     onTransportCommand: handleTransportCommand,
+    onControllerCountChange: handleControllerCountChange,
   })
 
   useEffect(() => {

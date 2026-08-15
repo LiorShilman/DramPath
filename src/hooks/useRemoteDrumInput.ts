@@ -29,6 +29,15 @@ export interface UseRemoteDrumInputOptions {
   onSelectExercise?: (exerciseId: string) => void
   onSelectRoutine?: (routineId: string) => void
   onTransportCommand?: (action: TransportCommandAction) => void
+  /** Fires on every controller_status message (any controller connecting
+   * or disconnecting) — RemoteHostProvider uses an INCREASE specifically to
+   * detect "a controller just (re)joined" and push a full resync, rather
+   * than waiting on the regular per-hit updates or the multi-second
+   * heartbeat. Direct user report: a phone that drops and reconnects mid-run
+   * (a real disconnect/reconnect, not just a stuck connection) otherwise has
+   * no way to learn the desktop's current state until the next thing
+   * happens to change it. */
+  onControllerCountChange?: (count: number) => void
 }
 
 /** A null payload clears whatever notation the phone was showing (session
@@ -147,6 +156,7 @@ export function useRemoteDrumInput({
   onSelectExercise,
   onSelectRoutine,
   onTransportCommand,
+  onControllerCountChange,
 }: UseRemoteDrumInputOptions): UseRemoteDrumInputResult {
   // 'disabled' is a pure derived value (see the return statement below),
   // never set here directly — this state only ever tracks the connection's
@@ -159,6 +169,7 @@ export function useRemoteDrumInput({
   const onSelectExerciseRef = useRef(onSelectExercise)
   const onSelectRoutineRef = useRef(onSelectRoutine)
   const onTransportCommandRef = useRef(onTransportCommand)
+  const onControllerCountChangeRef = useRef(onControllerCountChange)
   const socketRef = useRef<WebSocket | undefined>(undefined)
 
   useEffect(() => {
@@ -176,6 +187,9 @@ export function useRemoteDrumInput({
   useEffect(() => {
     onTransportCommandRef.current = onTransportCommand
   }, [onTransportCommand])
+  useEffect(() => {
+    onControllerCountChangeRef.current = onControllerCountChange
+  }, [onControllerCountChange])
 
   useEffect(() => {
     if (!enabled) return undefined
@@ -197,6 +211,7 @@ export function useRemoteDrumInput({
           onHitRef.current(message.instrument, performance.now())
         } else if (message.type === 'controller_status') {
           setConnectionStatus(message.count > 0 ? 'connected' : 'waiting-for-phone')
+          onControllerCountChangeRef.current?.(message.count)
         } else if (message.type === 'request_exercise_list') {
           onRequestExerciseListRef.current?.()
         } else if (message.type === 'select_exercise') {

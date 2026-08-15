@@ -370,6 +370,25 @@ export function useVisualTrainer(
   // Timestamp (performance.now()) of the last kick hit that counted toward
   // a "jump to start" double-click gesture — see DOUBLE_KICK_RESTART_WINDOW_MS.
   const lastExtraKickAtRef = useRef<number | null>(null)
+  // Direct user report: a fast double-kick used to START an idle exercise
+  // (not restart a running one — see the double-click-restart branch of
+  // handleMidiHit below, which is unaffected) could land its 2nd press
+  // while phaseRef.current STILL read 'idle' — beginPlayback is async
+  // (awaits audioContext.resume()), so phaseRef.current doesn't actually
+  // become 'count-in' until after that resolves, leaving a real (if
+  // usually short) window where phase alone can't tell "already starting"
+  // apart from "still idle". Without this guard, a 2nd kick landing in that
+  // window called beginPlayback again while the 1st call was still
+  // in-flight, and the two overlapping runs left inconsistent state behind
+  // (whichever's async continuation happened to finish last "won", but not
+  // necessarily consistently across pendingRef/lastNotationPayloadRef/the
+  // engine itself) — reported directly as the phone's grading mirror
+  // breaking specifically after a double-kick start, never a clean single
+  // kick. Set the instant a kick-triggered start fires, cleared once
+  // beginPlayback's own async work has actually caught up (right where it
+  // sets the real starting phase) — not derived from phaseRef itself, since
+  // that's exactly the value with the lag this guards against.
+  const kickStartInFlightRef = useRef(false)
 
   const thresholds = GRADING_THRESHOLDS[exercise.difficulty]
 
@@ -837,7 +856,12 @@ export function useVisualTrainer(
         // pause is a deliberate, different action, not "play again"), and
         // every other pad still does nothing outside a real run, same as
         // before.
-        if (instrument === 'kick' && (phaseRef.current === 'idle' || phaseRef.current === 'finished')) {
+        if (
+          instrument === 'kick' &&
+          (phaseRef.current === 'idle' || phaseRef.current === 'finished') &&
+          !kickStartInFlightRef.current
+        ) {
+          kickStartInFlightRef.current = true
           startRef.current()
           scheduleRemoteCatchupResend()
         }
@@ -1013,6 +1037,10 @@ export function useVisualTrainer(
       noteHighwayRef.current?.reset()
       const startingPhase = countInBars > 0 ? 'count-in' : 'running'
       setPhaseBoth(startingPhase)
+      // See kickStartInFlightRef's own doc comment — phase has now actually
+      // caught up, so a kick landing from here on reads the real phase
+      // again instead of a stale 'idle'.
+      kickStartInFlightRef.current = false
       // Unconditional, unlike the notation_state block above (staff_cursor+
       // MIDI only) — this is what drives the phone's transport buttons
       // regardless of display mode, so it always fires.
@@ -1103,17 +1131,19 @@ export function useVisualTrainer(
     sendPlaybackStatus({ exerciseId: null, title: null, bpm: null, phase: 'none' })
   }, [clearStickClickTimeouts, sendNotationState, sendPlaybackStatus, setPhaseBoth, stopLoops])
 
-  // Re-asserts THIS session's real current status on demand — not the
+  // Re-asserts THIS session's real current status (and, if a real MIDI run
+  // is mirroring notation, its current notation too) on demand — not the
   // registration effect's own mount-time 'idle' snapshot below, which would
   // be wrong once the run has actually moved past idle (running/paused/
-  // finished). Exists specifically for RemoteHostProvider's "re-selecting
-  // whatever's already the current route" case: navigate() to an unchanged
-  // location is a no-op (nothing remounts), so if the phone's own display
-  // is already stuck wrong for any reason — a dropped message, or simply
-  // reconnecting mid-run — there's otherwise no way to correct it short of
-  // an actual phase transition happening to occur. Reads phaseRef (the
-  // live value tick()/handleHit() themselves already trust), not the
-  // `phase` state closed over at whatever render defined this callback.
+  // finished). Exists for two cases with the same underlying shape:
+  // RemoteHostProvider's "re-selecting whatever's already the current
+  // route" (navigate() to an unchanged location is a no-op, nothing
+  // remounts), and a controller (re)connecting mid-run (see
+  // onControllerCountChange — a fresh/returning phone has no way to learn
+  // the desktop's current state otherwise, short of the next thing that
+  // happens to change it). Reads phaseRef (the live value tick()/
+  // handleHit() themselves already trust), not the `phase` state closed
+  // over at whatever render defined this callback.
   const resendStatus = useCallback(() => {
     sendPlaybackStatus({
       exerciseId: exercise.id,
@@ -1122,7 +1152,8 @@ export function useVisualTrainer(
       phase: phaseRef.current,
       routineProgress: routineProgressRef.current,
     })
-  }, [exercise, sendPlaybackStatus])
+    if (lastNotationPayloadRef.current) sendNotationState(lastNotationPayloadRef.current)
+  }, [exercise, sendNotationState, sendPlaybackStatus])
 
   // Registers this instance as RemoteHostProvider's "active session" — a
   // phone hit or transport_command reaches whichever useVisualTrainer
