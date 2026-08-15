@@ -791,6 +791,40 @@ describe('useVisualTrainer', () => {
     await waitFor(() => expect(result.current.phase).toBe('count-in'), { timeout: 3000 })
   })
 
+  it('a double-kick restart also schedules a delayed catch-up resend to the phone', async () => {
+    // Same reasoning/fix as the kick-to-start catch-up resend test above —
+    // direct user report that this reproduced on a double-kick restart too,
+    // not just the very first kick-to-start.
+    vi.stubGlobal('AudioContext', FakeAudioContext)
+    const input = new FakeMIDIInput()
+    stubMidiAccess(input)
+    const exercise = {
+      ...makeExercise([{ id: createId(), bar: 1, beat: 1, subdivisionIndex: 0, instrument: 'snare', velocity: 100 }]),
+      displayMode: 'staff_cursor' as const,
+    }
+    const { result } = renderHook(() => useVisualTrainer(exercise, noHighwayRef))
+
+    act(() => result.current.toggleMidiControl())
+    await waitFor(() => expect(result.current.midiStatus).toBe('connected'))
+    await act(() => result.current.start())
+    await waitFor(() => expect(result.current.phase).toBe('running'), { timeout: 3000 })
+
+    act(() => input.simulateMessage([0x99, 36, 100]))
+    act(() => input.simulateMessage([0x99, 36, 100]))
+    await waitFor(() => expect(result.current.phase).toBe('count-in'), { timeout: 3000 })
+
+    remoteHostMocks.sendNotationState.mockClear()
+    remoteHostMocks.sendPlaybackStatus.mockClear()
+
+    await waitFor(
+      () => {
+        expect(remoteHostMocks.sendNotationState).toHaveBeenCalled()
+        expect(remoteHostMocks.sendPlaybackStatus).toHaveBeenCalled()
+      },
+      { timeout: 1500 },
+    )
+  })
+
   it('two extra kick hits further apart than the double-click window do not restart the exercise', async () => {
     vi.stubGlobal('AudioContext', FakeAudioContext)
     const input = new FakeMIDIInput()

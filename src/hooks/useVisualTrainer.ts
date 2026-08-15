@@ -794,6 +794,36 @@ export function useVisualTrainer(
   // Same phase/demo gating as handleRemoteHit, and the same reasoning for
   // why (useMidiDrumInput's own connection lifecycle is decoupled from
   // `phase` too).
+  // Explicit user report: a kick-triggered start/restart fires the instant
+  // the pedal is hit — no network round trip, often faster than anything a
+  // phone-driven Play/transport press could ever manage — and occasionally
+  // faster than this session's own async work (fresh-mount settling for a
+  // start, or whatever else) has actually caught up, leaving the phone's
+  // notation_state/playback_status stuck stale even though the exercise
+  // plays correctly on the desktop. Confirmed directly: never reproduces
+  // via the phone's own Play button, and waiting a couple of seconds
+  // before kicking avoids it too — a phone-driven action always gets that
+  // same couple of seconds of round-trip time "for free". A one-shot
+  // delayed catch-up resend gives whatever needs to settle the same head
+  // start, without waiting for the regular 2s heartbeat (startBarInterval)
+  // to get there on its own. Reuses stickClickTimeoutIdsRef's own
+  // cleanup lifecycle (cleared on unmount/exit/beginPlayback) rather than
+  // a dedicated ref, since it's just "a pending timeout tied to this run".
+  const scheduleRemoteCatchupResend = useCallback(() => {
+    const timeoutId = setTimeout(() => {
+      stickClickTimeoutIdsRef.current.delete(timeoutId)
+      if (lastNotationPayloadRef.current) sendNotationStateRef.current(lastNotationPayloadRef.current)
+      sendPlaybackStatusRef.current({
+        exerciseId: exercise.id,
+        title: exercise.title,
+        bpm: exercise.bpm,
+        phase: phaseRef.current,
+        routineProgress: routineProgressRef.current,
+      })
+    }, 500)
+    stickClickTimeoutIdsRef.current.add(timeoutId)
+  }, [exercise])
+
   const handleMidiHit = useCallback(
     (instrument: DrumInstrument, hitTimeMs: number, velocity: number) => {
       if (isDemoRef.current) return
@@ -809,32 +839,7 @@ export function useVisualTrainer(
         // before.
         if (instrument === 'kick' && (phaseRef.current === 'idle' || phaseRef.current === 'finished')) {
           startRef.current()
-          // Explicit user report: kicking to start fires the instant the
-          // pedal is hit — no network round trip, often faster than
-          // anything a phone-driven Play press could ever manage — and
-          // occasionally faster than this fresh session's own async
-          // startup work has actually settled, leaving the phone's FIRST
-          // notation_state/playback_status stuck stale even though the
-          // exercise plays correctly on the desktop (confirmed directly:
-          // this never reproduces via the phone's own Play button, and
-          // waiting a couple of seconds before kicking avoids it too — a
-          // phone-driven Play always gets that same couple of seconds of
-          // round-trip time "for free"). A one-shot delayed catch-up
-          // resend gives whatever needs to settle the same head start,
-          // without waiting for the regular 2s heartbeat (startBarInterval)
-          // to get there on its own.
-          const timeoutId = setTimeout(() => {
-            stickClickTimeoutIdsRef.current.delete(timeoutId)
-            if (lastNotationPayloadRef.current) sendNotationStateRef.current(lastNotationPayloadRef.current)
-            sendPlaybackStatusRef.current({
-              exerciseId: exercise.id,
-              title: exercise.title,
-              bpm: exercise.bpm,
-              phase: phaseRef.current,
-              routineProgress: routineProgressRef.current,
-            })
-          }, 500)
-          stickClickTimeoutIdsRef.current.add(timeoutId)
+          scheduleRemoteCatchupResend()
         }
         return
       }
@@ -860,9 +865,10 @@ export function useVisualTrainer(
       if (lastExtraKickAt !== null && now - lastExtraKickAt <= DOUBLE_KICK_RESTART_WINDOW_MS) {
         lastExtraKickAtRef.current = null
         restartRef.current()
+        scheduleRemoteCatchupResend()
       }
     },
-    [handleHit, exercise],
+    [handleHit, scheduleRemoteCatchupResend],
   )
 
   const midiStatus = useMidiDrumInput({ enabled: isMidiControlEnabled, onHit: handleMidiHit })

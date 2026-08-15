@@ -491,6 +491,20 @@ export function TouchDrumKitPage() {
             where reaching for the desktop isn't an option. pt-14 clears the
             absolute X/fullscreen buttons above. */}
         <div className="shrink-0 pt-14">{remoteControlBar}</div>
+        {/* Explicit user request: the normal kit view's own WiFi/"מחובר"
+            badge (below) never renders here — this view replaces the whole
+            kit UI, and that's exactly the screen a player is looking at
+            while relying on this connection for live grading feedback. A
+            stuck-but-not-yet-detected-as-closed connection (common on
+            mobile WiFi) otherwise has no visible symptom here at all. */}
+        <div className="flex shrink-0 items-center gap-1 self-end px-1 text-xs text-[var(--color-text-muted)]">
+          {remoteSender.status === 'connected' ? (
+            <Wifi className="h-3.5 w-3.5" aria-hidden="true" />
+          ) : (
+            <WifiOff className="h-3.5 w-3.5" aria-hidden="true" />
+          )}
+          {REMOTE_STATUS_LABELS[remoteSender.status]}
+        </div>
         {/* Explicit user request: see accuracy live during the run, not
             just at the end — hidden once 'finished' since RemoteControlBar's
             own resultsSummary badge already covers that moment. */}
