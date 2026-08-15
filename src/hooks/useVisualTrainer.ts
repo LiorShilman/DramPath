@@ -153,6 +153,10 @@ const METRONOME_MUTED_STORAGE_KEY = 'drumpath.isMetronomeMuted'
 
 const COUNT_IN_BARS = 1
 const BAR_UPDATE_INTERVAL_MS = 200
+// How often the phone's mirrored state gets a full resync while a run is
+// active, piggybacked on the bar-update interval's own tick — see
+// startBarInterval's own doc comment on why this exists.
+const REMOTE_HEARTBEAT_INTERVAL_TICKS = Math.round(2000 / BAR_UPDATE_INTERVAL_MS)
 // Two kick hits that both land outside the exercise's own pattern (graded
 // 'extra', not matched to any scheduled note) within this window count as a
 // deliberate "jump to start" gesture — gating on 'extra' specifically is
@@ -418,6 +422,7 @@ export function useVisualTrainer(
   const runGradingTickRef = useRef<(elapsedMs: number) => void>(() => {})
 
   const startBarInterval = useCallback(() => {
+    let heartbeatTickCount = 0
     barIntervalIdRef.current = setInterval(() => {
       const audioContext = audioContextRef.current
       const engine = engineRef.current
@@ -441,10 +446,35 @@ export function useVisualTrainer(
       const elapsedMs = rawElapsedMs - countInDurationMsRef.current + startOffsetMsRef.current
       setElapsedMs(Math.max(0, elapsedMs))
       runGradingTickRef.current(elapsedMs)
+
+      // Periodic full resync to the phone — explicit user report: the
+      // relay's "no queueing" design (ADR 0007) means a single dropped
+      // notation_state/playback_status frame (a WiFi blip near the kit, or
+      // just bad luck) leaves the phone stuck on stale data for the rest of
+      // the run, with nothing to prompt a retry since nothing on the phone
+      // itself errors. This isn't a queue (no history is buffered/replayed)
+      // — just re-sending the CURRENT state often enough that any one lost
+      // frame self-corrects within one heartbeat instead of staying wrong
+      // until the next real grading event happens to fire (which, for a
+      // sparse pattern or a phone that missed the very FIRST message,
+      // could be a very long time — or never, if that miss silently drops
+      // the one message that would've told the player anything changed).
+      heartbeatTickCount += 1
+      if (heartbeatTickCount % REMOTE_HEARTBEAT_INTERVAL_TICKS === 0) {
+        if (lastNotationPayloadRef.current) sendNotationStateRef.current(lastNotationPayloadRef.current)
+        sendPlaybackStatusRef.current({
+          exerciseId: exercise.id,
+          title: exercise.title,
+          bpm: exercise.bpm,
+          phase: phaseRef.current,
+          routineProgress: routineProgressRef.current,
+        })
+      }
+
       if (elapsedMs < 0) return
       setCurrentBar(Math.max(1, Math.floor(elapsedMs / barDurationMsRef.current) + 1))
     }, BAR_UPDATE_INTERVAL_MS)
-  }, [])
+  }, [exercise])
 
   const tickRef = useRef<() => void>(() => {})
 

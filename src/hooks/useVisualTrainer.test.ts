@@ -977,6 +977,42 @@ describe('useVisualTrainer', () => {
     expect(latestNotationCall()).toMatchObject({ paused: false })
   })
 
+  it(
+    'periodically resends the current notation and playback status while running — self-heals a dropped WS message',
+    async () => {
+      vi.stubGlobal('AudioContext', FakeAudioContext)
+      // The only event sits on bar 3's own beat 4 (2750ms in, at the
+      // default 240bpm) — keeps this run 'running' well past the heartbeat
+      // window below, instead of finishing (and clearing notation) before
+      // it's observed. Default bpm (not slowed down) keeps the count-in
+      // itself short, so reaching 'running' stays comfortably inside the
+      // first waitFor's own timeout.
+      const exercise = {
+        ...makeExercise([{ id: createId(), bar: 3, beat: 4, subdivisionIndex: 0, instrument: 'kick', velocity: 100 }]),
+        bars: 3,
+        displayMode: 'staff_cursor' as const,
+      }
+      const { result } = renderHook(() => useVisualTrainer(exercise, noHighwayRef))
+
+      act(() => result.current.toggleMidiControl())
+      await act(() => result.current.start())
+      await waitFor(() => expect(result.current.phase).toBe('running'), { timeout: 3000 })
+
+      remoteHostMocks.sendNotationState.mockClear()
+      remoteHostMocks.sendPlaybackStatus.mockClear()
+
+      // REMOTE_HEARTBEAT_INTERVAL_TICKS * BAR_UPDATE_INTERVAL_MS = 2000ms.
+      await waitFor(
+        () => {
+          expect(remoteHostMocks.sendNotationState).toHaveBeenCalled()
+          expect(remoteHostMocks.sendPlaybackStatus).toHaveBeenCalledWith(expect.objectContaining({ phase: 'running' }))
+        },
+        { timeout: 3000 },
+      )
+    },
+    8000,
+  )
+
   it('finishing a staff_cursor+MIDI run keeps the last graded notation visible (not cleared)', async () => {
     vi.stubGlobal('AudioContext', FakeAudioContext)
     const eventId = createId()
