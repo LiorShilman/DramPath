@@ -809,6 +809,32 @@ export function useVisualTrainer(
         // before.
         if (instrument === 'kick' && (phaseRef.current === 'idle' || phaseRef.current === 'finished')) {
           startRef.current()
+          // Explicit user report: kicking to start fires the instant the
+          // pedal is hit — no network round trip, often faster than
+          // anything a phone-driven Play press could ever manage — and
+          // occasionally faster than this fresh session's own async
+          // startup work has actually settled, leaving the phone's FIRST
+          // notation_state/playback_status stuck stale even though the
+          // exercise plays correctly on the desktop (confirmed directly:
+          // this never reproduces via the phone's own Play button, and
+          // waiting a couple of seconds before kicking avoids it too — a
+          // phone-driven Play always gets that same couple of seconds of
+          // round-trip time "for free"). A one-shot delayed catch-up
+          // resend gives whatever needs to settle the same head start,
+          // without waiting for the regular 2s heartbeat (startBarInterval)
+          // to get there on its own.
+          const timeoutId = setTimeout(() => {
+            stickClickTimeoutIdsRef.current.delete(timeoutId)
+            if (lastNotationPayloadRef.current) sendNotationStateRef.current(lastNotationPayloadRef.current)
+            sendPlaybackStatusRef.current({
+              exerciseId: exercise.id,
+              title: exercise.title,
+              bpm: exercise.bpm,
+              phase: phaseRef.current,
+              routineProgress: routineProgressRef.current,
+            })
+          }, 500)
+          stickClickTimeoutIdsRef.current.add(timeoutId)
         }
         return
       }
@@ -836,7 +862,7 @@ export function useVisualTrainer(
         restartRef.current()
       }
     },
-    [handleHit],
+    [handleHit, exercise],
   )
 
   const midiStatus = useMidiDrumInput({ enabled: isMidiControlEnabled, onHit: handleMidiHit })

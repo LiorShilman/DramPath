@@ -668,6 +668,42 @@ describe('useVisualTrainer', () => {
     await waitFor(() => expect(result.current.phase).toBe('count-in'), { timeout: 3000 })
   })
 
+  it('a kick-triggered start schedules a one-shot delayed catch-up resend to the phone, on top of the initial send', async () => {
+    // Direct user report: kicking to start fires the instant the pedal is
+    // hit (no network round trip, unlike a phone-driven Play press) — a
+    // fresh session's own async startup work occasionally hadn't settled
+    // yet, leaving the phone's first notation_state/playback_status stuck
+    // stale even though the exercise played correctly on the desktop. This
+    // locks in the fix: a delayed resend fires shortly after the
+    // kick-triggered start, independent of whatever the initial send did.
+    vi.stubGlobal('AudioContext', FakeAudioContext)
+    const input = new FakeMIDIInput()
+    stubMidiAccess(input)
+    const exercise = {
+      ...makeExercise([{ id: createId(), bar: 1, beat: 1, subdivisionIndex: 0, instrument: 'kick', velocity: 100 }]),
+      displayMode: 'staff_cursor' as const,
+    }
+    const { result } = renderHook(() => useVisualTrainer(exercise, noHighwayRef))
+
+    act(() => result.current.toggleMidiControl())
+    await waitFor(() => expect(result.current.midiStatus).toBe('connected'))
+    expect(result.current.phase).toBe('idle')
+
+    act(() => input.simulateMessage([0x99, 36, 100]))
+    await waitFor(() => expect(result.current.phase).toBe('count-in'), { timeout: 3000 })
+
+    remoteHostMocks.sendNotationState.mockClear()
+    remoteHostMocks.sendPlaybackStatus.mockClear()
+
+    await waitFor(
+      () => {
+        expect(remoteHostMocks.sendNotationState).toHaveBeenCalled()
+        expect(remoteHostMocks.sendPlaybackStatus).toHaveBeenCalled()
+      },
+      { timeout: 1500 },
+    )
+  })
+
   it('a kick MIDI hit after a run finishes restarts the exercise', async () => {
     vi.stubGlobal('AudioContext', FakeAudioContext)
     const input = new FakeMIDIInput()
