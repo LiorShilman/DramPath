@@ -296,6 +296,7 @@ export function VisualTrainerRunner({
         paused={trainer.phase === 'paused'}
         gradedEventIds={trainer.gradedEventIds}
         hitTimingByEventId={trainer.hitTimingByEventId}
+        extraHits={trainer.extraHits}
         showBeatLabels
         showNextUpHint
         rowBreakBars={exercise.rowBreakBars}

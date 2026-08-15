@@ -6,7 +6,7 @@ import {
   parseRemoteRelayMessage,
 } from '../lib/visual-trainer/remote-drum-protocol'
 import type { ExerciseListItem, RoutineListItem, TransportCommandAction } from '../lib/visual-trainer/remote-drum-protocol'
-import type { DrumInstrument, HitGrade, InteractiveExercise } from '../domain'
+import type { DrumInstrument, ExtraHitEvent, HitGrade, InteractiveExercise } from '../domain'
 
 function hostRelayWsUrl(): string {
   // The deployed IIS site is https — connect to the always-on production
@@ -46,6 +46,12 @@ export interface NotationStatePayload {
    * ExerciseNotationSheet's own hitTimingByEventId prop, same plain-object
    * shape/reasoning as gradedEventIds above. */
   hitTimingByEventId: Record<string, number>
+  /** Every hit this run that matched no pending event — mirrors
+   * useVisualTrainer's own extraHits, same reasoning as its own doc comment:
+   * lets the phone draw a marker for a hit the results already count
+   * against accuracy but that has no expectedEventId to key gradedEventIds/
+   * hitTimingByEventId by. */
+  extraHits: ExtraHitEvent[]
   /** Live running accuracy (0-100), recomputed on every hit/miss — the
    * phone's own view of what useVisualTrainer's own `scoring.accuracyPercent`
    * already tracks locally on the desktop, mid-run rather than only once

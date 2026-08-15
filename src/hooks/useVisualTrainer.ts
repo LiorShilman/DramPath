@@ -79,6 +79,13 @@ export interface UseVisualTrainerResult {
    * on-time) — ExerciseNotationSheet draws a small marker at this time's own
    * x position, right beside the note's. */
   hitTimingByEventId: ReadonlyMap<string, number>
+  /** Every hit this run that matched no pending event (wrong instrument, or
+   * outside every event's own hit window) — explicit user request: shown as
+   * its own marker on the notation, at the hit's real elapsed time, so an
+   * "extra hit" in the results (which lowers accuracy — see
+   * calculateAccuracy) has something to point at on screen instead of
+   * looking like a mismatch between the numbers and an all-green sheet. */
+  extraHits: readonly ExtraHitEvent[]
   /** Bumped on every beginPlayback — feeds ExerciseNotationSheet's own
    * playbackProgress.sessionId so its CSS fill/cursor animations restart
    * on a new run instead of no-oping on an unchanged style, same idea as
@@ -182,7 +189,8 @@ function applyStaffCursorTimingBias(expectedTimeMs: number, displayMode: Display
   return expectedTimeMs - STAFF_CURSOR_BASE_TIMING_BIAS_MS
 }
 const EMPTY_SCORING: ScoringSummary = {
-  accuracyPercent: 0,
+  // Matches calculateAccuracy's own "nothing to judge yet" convention.
+  accuracyPercent: 100,
   currentCombo: 0,
   bestCombo: 0,
   averageTimingErrorMs: undefined,
@@ -257,6 +265,7 @@ export function useVisualTrainer(
   const [stickClickToken, setStickClickToken] = useState<string | undefined>(undefined)
   const [gradedEventIds, setGradedEventIds] = useState<ReadonlyMap<string, HitGrade>>(new Map())
   const [hitTimingByEventId, setHitTimingByEventId] = useState<ReadonlyMap<string, number>>(new Map())
+  const [extraHits, setExtraHits] = useState<readonly ExtraHitEvent[]>([])
   const [isMetronomeMuted, setIsMetronomeMuted] = useState(
     () => localStorage.getItem(METRONOME_MUTED_STORAGE_KEY) === 'true',
   )
@@ -328,7 +337,6 @@ export function useVisualTrainer(
   // as every phase transition, never a separate one that could race it
   // (useRemoteDrumSender's playbackStatus is a full replace, not a merge).
   const routineProgressRef = useRef(options?.routineProgress)
-  const totalExpectedEventsRef = useRef(0)
 
   const clockOffsetMsRef = useRef(0)
   const countInDurationMsRef = useRef(0)
@@ -383,7 +391,7 @@ export function useVisualTrainer(
   }, [clearStickClickTimeouts, stopLoops])
 
   const recomputeScoring = useCallback(() => {
-    setScoring(summarizeScoring(hitResultsRef.current, extraHitsRef.current, totalExpectedEventsRef.current))
+    setScoring(summarizeScoring(hitResultsRef.current, extraHitsRef.current))
     setGradeCounts(countGrades(hitResultsRef.current, extraHitsRef.current))
   }, [])
 
@@ -392,8 +400,7 @@ export function useVisualTrainer(
   // site below, which run inside the same synchronous handler as the ref
   // mutations that feed it, before React would ever flush the `scoring`
   // state update itself.
-  const currentLiveAccuracyPercent = () =>
-    calculateAccuracy(hitResultsRef.current, extraHitsRef.current, totalExpectedEventsRef.current)
+  const currentLiveAccuracyPercent = () => calculateAccuracy(hitResultsRef.current, extraHitsRef.current)
 
   // Grading/lifecycle logic (count-in->running, miss detection, finished) is
   // invoked through this ref from BOTH the rAF-driven tick() below AND
@@ -544,8 +551,7 @@ export function useVisualTrainer(
           phase: 'finished',
           routineProgress: routineProgressRef.current,
           resultsSummary: {
-            accuracyPercent: summarizeScoring(hitResultsRef.current, extraHitsRef.current, totalExpectedEventsRef.current)
-              .accuracyPercent,
+            accuracyPercent: summarizeScoring(hitResultsRef.current, extraHitsRef.current).accuracyPercent,
             gradeCounts: countGrades(hitResultsRef.current, extraHitsRef.current),
           },
         })
@@ -659,12 +665,18 @@ export function useVisualTrainer(
         recomputeScoring()
         return grade
       }
-      extraHitsRef.current.push({ id: createId(), instrument, hitTimeMs: elapsedMs })
+      const extraHit: ExtraHitEvent = { id: createId(), instrument, hitTimeMs: elapsedMs }
+      extraHitsRef.current.push(extraHit)
+      setExtraHits((prev) => [...prev, extraHit])
       if (lastNotationPayloadRef.current) {
         // An 'extra' hit has no eventId to key gradedEventIds/hitTimingByEventId
         // by, but it still moves the denominator (see calculateAccuracy) —
         // the phone's own live accuracy needs this update just as much as a
-        // graded hit's does.
+        // graded hit's does. extraHits itself (see NotationStatePayload's
+        // own doc comment) is what lets the phone draw the same marker for
+        // it the desktop does, instead of a mismatch between "5 extra hits"
+        // in the results and an all-green sheet showing nothing wrong.
+        lastNotationPayloadRef.current.extraHits = [...lastNotationPayloadRef.current.extraHits, extraHit]
         lastNotationPayloadRef.current.liveAccuracyPercent = currentLiveAccuracyPercent()
         sendNotationStateRef.current(lastNotationPayloadRef.current)
       }
@@ -845,7 +857,6 @@ export function useVisualTrainer(
         }))
       hitResultsRef.current = []
       extraHitsRef.current = []
-      totalExpectedEventsRef.current = pendingRef.current.length
 
       barDurationMsRef.current = calculateBarDurationMs(exercise.bpm, exercise.timeSignature)
       beatDurationMsRef.current = barDurationMsRef.current / exercise.timeSignature.numerator
@@ -909,9 +920,10 @@ export function useVisualTrainer(
           paused: false,
           gradedEventIds: {},
           hitTimingByEventId: {},
+          extraHits: [],
           // Matches EMPTY_SCORING.accuracyPercent — nothing graded yet at
           // the very start of a run.
-          liveAccuracyPercent: 0,
+          liveAccuracyPercent: 100,
         }
         lastNotationPayloadRef.current = notationPayload
         sendNotationState(notationPayload)
@@ -924,6 +936,7 @@ export function useVisualTrainer(
       setStickClickToken(undefined)
       setGradedEventIds(new Map())
       setHitTimingByEventId(new Map())
+      setExtraHits([])
       setPlaySessionId((current) => current + 1)
       setCurrentBar(Math.max(1, Math.floor(startOffsetMs / barDurationMsRef.current) + 1))
       setCurrentBeat(1)
@@ -957,9 +970,9 @@ export function useVisualTrainer(
   // General seek — jumps whichever kind of run is currently active (demo or
   // real) to offsetMs, instead of always forcing demo like seekDemo. A real
   // run's scoring only ends up counting notes from the seek point onward
-  // (beginPlayback already drops earlier pendingRef entries and sizes
-  // totalExpectedEventsRef off whatever's left) — accepted tradeoff, same
-  // one seeking already made for demo, just now available outside it too
+  // (beginPlayback already drops earlier pendingRef entries, so they never
+  // become part of hitResultsRef either) — accepted tradeoff, same one
+  // seeking already made for demo, just now available outside it too
   // (explicit user request: no way to skip ahead in a real practice run).
   const seek = useCallback(
     (offsetMs: number) => beginPlayback(isDemoRef.current, { startOffsetMs: offsetMs }),
@@ -1100,6 +1113,7 @@ export function useVisualTrainer(
     stickClickToken,
     gradedEventIds,
     hitTimingByEventId,
+    extraHits,
     playSessionId,
     countInDurationMs,
     seekOffsetMs,

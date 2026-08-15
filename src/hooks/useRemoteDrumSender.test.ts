@@ -217,6 +217,7 @@ describe('useRemoteDrumSender', () => {
         paused: false,
         gradedEventIds: { 'event-1': 'perfect' },
         hitTimingByEventId: { 'event-1': 1234 },
+        extraHits: [],
         liveAccuracyPercent: 100,
       }),
     )
@@ -227,6 +228,7 @@ describe('useRemoteDrumSender', () => {
       paused: false,
       gradedEventIds: { 'event-1': 'perfect' },
       hitTimingByEventId: { 'event-1': 1234 },
+      extraHits: [],
       liveAccuracyPercent: 100,
     })
   })
@@ -245,6 +247,7 @@ describe('useRemoteDrumSender', () => {
         paused: false,
         gradedEventIds: {},
         hitTimingByEventId: {},
+        extraHits: [],
         liveAccuracyPercent: 0,
       }),
     )
@@ -269,6 +272,7 @@ describe('useRemoteDrumSender', () => {
         paused: false,
         gradedEventIds: {},
         hitTimingByEventId: {},
+        extraHits: [],
         liveAccuracyPercent: 0,
       }),
     )

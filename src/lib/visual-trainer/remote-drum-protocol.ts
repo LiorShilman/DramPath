@@ -1,5 +1,11 @@
 import { z } from 'zod'
-import { drumInstrumentSchema, hitGradeSchema, interactiveExerciseDifficultySchema, interactiveExerciseSchema } from '../../domain'
+import {
+  drumInstrumentSchema,
+  extraHitEventSchema,
+  hitGradeSchema,
+  interactiveExerciseDifficultySchema,
+  interactiveExerciseSchema,
+} from '../../domain'
 
 // Wire format for server/remote-drum-relay's WebSocket endpoints — kept in
 // its own module (rather than inlined in the two hooks that use it) so
@@ -42,6 +48,11 @@ const notationStateMessageSchema = z.object({
   // ExerciseNotationSheet's own hitTimingByEventId prop, same
   // keyed-by-DrumNoteEvent-id/plain-object shape as gradedEventIds above.
   hitTimingByEventId: z.record(z.string(), z.number()),
+  // Every hit this run that matched no pending event — explicit user
+  // request: with the results screen already counting these against
+  // accuracy, an all-green sheet showing nothing wrong for them read as a
+  // mismatch between the numbers and the display.
+  extraHits: z.array(extraHitEventSchema),
   // Live running accuracy (0-100), recomputed on every hit/miss — explicit
   // user request: seeing where you stand mid-run, not just at the end.
   // Rides this same message (not a separate one) for the same reason

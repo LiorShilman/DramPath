@@ -506,6 +506,7 @@ export function TouchDrumKitPage() {
             paused={notationState.paused}
             gradedEventIds={remoteGradedEventIds}
             hitTimingByEventId={remoteHitTimingByEventId}
+            extraHits={notationState.extraHits}
             showFill={false}
             showBeatLabels
             showNextUpHint

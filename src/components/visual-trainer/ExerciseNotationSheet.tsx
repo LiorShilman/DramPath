@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { SUBDIVISIONS_PER_BEAT, calculateBarDurationMs, calculateEventTimeMs } from '../../domain/calculations/event-timing'
 import { STAFF_POSITION, staffPositionToOffsetPx } from '../../lib/visual-trainer/staff-notation-layout'
 import { INSTRUMENT_LABELS } from '../../lib/visual-trainer/instrument-labels'
-import type { DrumInstrument, HitGrade, InteractiveExercise, Subdivision } from '../../domain'
+import type { DrumInstrument, ExtraHitEvent, HitGrade, InteractiveExercise, Subdivision } from '../../domain'
 
 // Standard drum-notation convention: the "foot" voice (kick) stems down,
 // every "hand" voice (snare/toms/cymbals) stems up — this is what makes it
@@ -68,6 +68,17 @@ export interface ExerciseNotationSheetProps {
    * playbackProgress simply never draws any marker, same as gradedEventIds
    * already assumes a real run. */
   hitTimingByEventId?: ReadonlyMap<string, number>
+  /** Every hit this run that matched no scheduled event — explicit user
+   * request: the results screen already counts these against accuracy, and
+   * an all-green sheet showing nothing wrong for them read as a mismatch
+   * between the numbers and what's on screen. Drawn as the same small
+   * red-X marker as an early/late hitTimingByEventId marker, at the hit's
+   * OWN instrument's staff line — there's no scheduled note to draw it
+   * "beside", since by definition nothing matched. Only meaningful
+   * alongside playbackProgress (needs the run's real bpm to convert the
+   * hit's real elapsed ms into a bar/x position), same as
+   * hitTimingByEventId above. */
+  extraHits?: readonly ExtraHitEvent[]
   /** Off by default (cymbals draw as a plain X, no stem). When on, cymbal
    * (X notehead) instruments also get a stem and join the same beam
    * grouping as normal noteheads — an isolated cymbal note still gets its
@@ -227,6 +238,7 @@ export function ExerciseNotationSheet({
   paused = false,
   gradedEventIds,
   hitTimingByEventId,
+  extraHits,
   beamCymbals = false,
   showBeatLabels = false,
   barsPerRow = BARS_PER_ROW,
@@ -321,6 +333,35 @@ export function ExerciseNotationSheet({
     const start = rowStartBars[rowIndex]!
     const nextStart = rowStartBars[rowIndex + 1] ?? exercise.bars + 1
     return nextStart - start
+  }
+
+  // extraHits, grouped by row and positioned via the SAME proportional x
+  // math a real note uses (barIndexInRow*BAR_WIDTH_PX + fraction*BAR_WIDTH_PX
+  // — see noteX below), just computed from the hit's own real elapsed time
+  // instead of a scheduled DrumNoteEvent's grid position. Needs
+  // playbackProgress's real bpm to convert real ms into a bar+fraction —
+  // without it there's no live clock to place these against, so none are
+  // drawn (matches extraHits' own doc comment). Modulo the exercise's own
+  // single-loop duration — a hit during loop 2+ (loopCount > 1) still needs
+  // to land somewhere on this sheet, which only ever shows one loop's worth
+  // of bars.
+  const extraHitsByRow = new Map<number, { id: string; instrument: DrumInstrument; x: number }[]>()
+  if (playbackProgress && extraHits) {
+    const realBarMs = calculateBarDurationMs(playbackProgress.bpm, exercise.timeSignature)
+    const singleLoopDurationMs = exercise.bars * realBarMs
+    for (const hit of extraHits) {
+      const wrappedMs = singleLoopDurationMs > 0 ? hit.hitTimeMs % singleLoopDurationMs : hit.hitTimeMs
+      const totalBarPosition = wrappedMs / realBarMs
+      const barGlobalIndex = Math.floor(totalBarPosition)
+      if (barGlobalIndex < 0 || barGlobalIndex >= exercise.bars) continue
+      const fraction = totalBarPosition - barGlobalIndex
+      const rowIndex = rowIndexForBar(barGlobalIndex + 1)
+      const barIndexInRow = barGlobalIndex - (rowStartBars[rowIndex]! - 1)
+      const x = barIndexInRow * BAR_WIDTH_PX + fraction * BAR_WIDTH_PX
+      const rowHits = extraHitsByRow.get(rowIndex) ?? []
+      rowHits.push({ id: hit.id, instrument: hit.instrument, x })
+      extraHitsByRow.set(rowIndex, rowHits)
+    }
   }
 
   // Only reserve vertical room up to the highest notehead actually used
@@ -907,6 +948,20 @@ export function ExerciseNotationSheet({
                 })}
               </g>
             ))}
+            {/* extraHits — no scheduled note to draw "beside", so this is
+                its own marker at the hit's own instrument staff line (see
+                extraHits' own doc comment). Same red-X glyph as the
+                early/late showHitMarker above, for the same "here's exactly
+                where an unmatched hit landed" meaning. */}
+            {(extraHitsByRow.get(rowIndex) ?? []).map((hit) => {
+              const y = toY(STAFF_POSITION[hit.instrument].position)
+              return (
+                <g key={hit.id} data-testid="notation-extra-hit-marker" style={{ color: 'var(--color-danger-text)' }}>
+                  <line x1={hit.x - 3} y1={y - 3} x2={hit.x + 3} y2={y + 3} stroke="currentColor" strokeWidth={1.3} strokeLinecap="round" />
+                  <line x1={hit.x - 3} y1={y + 3} x2={hit.x + 3} y2={y - 3} stroke="currentColor" strokeWidth={1.3} strokeLinecap="round" />
+                </g>
+              )
+            })}
           </g>
         )
         })}

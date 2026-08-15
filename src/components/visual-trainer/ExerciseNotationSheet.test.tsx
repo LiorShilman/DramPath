@@ -318,6 +318,45 @@ describe('ExerciseNotationSheet', () => {
     expect(container.querySelectorAll('[data-testid="notation-hit-marker"]')).toHaveLength(0)
   })
 
+  it('draws a marker for an extra (unmatched) hit, at its own instrument\'s staff line', () => {
+    // Explicit user request: an "extra hit" already counts against accuracy
+    // in the results — an all-green sheet showing nothing wrong for it read
+    // as a mismatch between the numbers and what's on screen.
+    const exercise = { ...EXERCISE, bars: 1 }
+    const { container } = render(
+      <ExerciseNotationSheet
+        exercise={exercise}
+        playbackProgress={{ bpm: 120, sessionId: 1 }}
+        extraHits={[{ id: 'extra-1', instrument: 'crash', hitTimeMs: 1500 }]}
+      />,
+    )
+    expect(container.querySelectorAll('[data-testid="notation-extra-hit-marker"]')).toHaveLength(1)
+  })
+
+  it('draws no extra-hit marker without playbackProgress (no real clock to place it against)', () => {
+    const exercise = { ...EXERCISE, bars: 1 }
+    const { container } = render(
+      <ExerciseNotationSheet exercise={exercise} extraHits={[{ id: 'extra-1', instrument: 'crash', hitTimeMs: 1500 }]} />,
+    )
+    expect(container.querySelectorAll('[data-testid="notation-extra-hit-marker"]')).toHaveLength(0)
+  })
+
+  it('wraps an extra hit from a later loop back onto the single rendered loop', () => {
+    // loopCount > 1 means a real run can produce a hit at an elapsed time
+    // past the sheet's own single-loop bar count — it still needs to land
+    // somewhere on screen instead of vanishing.
+    const exercise = { ...EXERCISE, bars: 1 }
+    // 1 bar at 120bpm 4/4 = 2000ms/bar — 2500ms is 500ms into loop 2's own bar 1.
+    const { container } = render(
+      <ExerciseNotationSheet
+        exercise={exercise}
+        playbackProgress={{ bpm: 120, sessionId: 1 }}
+        extraHits={[{ id: 'extra-1', instrument: 'crash', hitTimeMs: 2500 }]}
+      />,
+    )
+    expect(container.querySelectorAll('[data-testid="notation-extra-hit-marker"]')).toHaveLength(1)
+  })
+
   it('positions kick with a filled circle notehead, low on the staff', () => {
     const { container } = render(<ExerciseNotationSheet exercise={EXERCISE} />)
     const kick = container.querySelector('[data-instrument="kick"]')!

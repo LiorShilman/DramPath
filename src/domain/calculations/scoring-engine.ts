@@ -3,7 +3,7 @@ import type { DynamicsGrade, HitResult, ExtraHitEvent } from '../hit-result'
 // VISUAL_DRUM_TRAINER_SPEC.md §2/§5 — the spec names Accuracy/Combo/Timing
 // Error as feedback metrics but doesn't give exact formulas; these were
 // confirmed with the user:
-// - Accuracy = non-miss hits / (expected events + extra hits) * 100 — an
+// - Accuracy = non-miss hits / (resolved events + extra hits) * 100 — an
 //   extra hit (wrong instrument/timing, no matching event) counts as a
 //   mistake just like a miss does.
 // - Combo = consecutive non-miss hits, broken by a miss OR an extra hit;
@@ -16,13 +16,22 @@ export interface ScoringSummary {
   averageTimingErrorMs: number | undefined
 }
 
-export function calculateAccuracy(
-  hitResults: HitResult[],
-  extraHits: ExtraHitEvent[],
-  totalExpectedEvents: number,
-): number {
-  const denominator = totalExpectedEvents + extraHits.length
-  if (denominator === 0) return 0
+// Denominator is hitResults.length (events actually resolved — hit OR
+// missed — so far), not the exercise's own fixed total event count.
+// Explicit user feedback: a live indicator denominated by the WHOLE piece
+// necessarily starts at 0% and mechanically climbs toward the final score
+// as more of the piece is simply reached, regardless of how well it's being
+// played — that reads as "doing badly" early on, not as "hasn't happened
+// yet." Starts at 100 (nothing to judge yet) and only moves once something
+// actually happens. Exactly equals what a total-denominated formula would
+// give once every event has resolved (every one ends up in hitResults by
+// the time a run reaches 'finished' — see useVisualTrainer's own
+// detectMissedEvents-driven completion), so this single formula is correct
+// as both the live, in-progress number AND the final one — no second
+// "final" formula needed.
+export function calculateAccuracy(hitResults: HitResult[], extraHits: ExtraHitEvent[]): number {
+  const denominator = hitResults.length + extraHits.length
+  if (denominator === 0) return 100
 
   const nonMissCount = hitResults.filter((result) => result.grade !== 'miss').length
   return (nonMissCount / denominator) * 100
@@ -68,14 +77,10 @@ export function calculateAverageTimingError(hitResults: HitResult[]): number | u
   return errors.reduce((sum, value) => sum + value, 0) / errors.length
 }
 
-export function summarizeScoring(
-  hitResults: HitResult[],
-  extraHits: ExtraHitEvent[],
-  totalExpectedEvents: number,
-): ScoringSummary {
+export function summarizeScoring(hitResults: HitResult[], extraHits: ExtraHitEvent[]): ScoringSummary {
   const combo = calculateCombo(hitResults, extraHits)
   return {
-    accuracyPercent: calculateAccuracy(hitResults, extraHits, totalExpectedEvents),
+    accuracyPercent: calculateAccuracy(hitResults, extraHits),
     currentCombo: combo.current,
     bestCombo: combo.best,
     averageTimingErrorMs: calculateAverageTimingError(hitResults),

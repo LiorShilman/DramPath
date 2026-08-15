@@ -70,6 +70,7 @@ describe('parseRemoteRelayMessage', () => {
       paused: false,
       gradedEventIds: { 'event-1': 'perfect', 'event-2': 'miss' },
       hitTimingByEventId: { 'event-1': 1234 },
+      extraHits: [{ id: '11111111-1111-4111-8111-111111111111', instrument: 'crash', hitTimeMs: 500 }],
       liveAccuracyPercent: 50,
     })
     expect(parseRemoteRelayMessage(raw)).toEqual({
@@ -79,6 +80,7 @@ describe('parseRemoteRelayMessage', () => {
       paused: false,
       gradedEventIds: { 'event-1': 'perfect', 'event-2': 'miss' },
       hitTimingByEventId: { 'event-1': 1234 },
+      extraHits: [{ id: '11111111-1111-4111-8111-111111111111', instrument: 'crash', hitTimeMs: 500 }],
       liveAccuracyPercent: 50,
     })
   })

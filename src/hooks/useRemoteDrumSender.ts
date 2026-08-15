@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { buildProductionRelayWsUrl, parseRemoteRelayMessage } from '../lib/visual-trainer/remote-drum-protocol'
 import type { ExerciseListItem, RoutineListItem, TransportCommandAction } from '../lib/visual-trainer/remote-drum-protocol'
-import type { DrumInstrument, HitGrade, InteractiveExercise } from '../domain'
+import type { DrumInstrument, ExtraHitEvent, HitGrade, InteractiveExercise } from '../domain'
 
 export type RemoteDrumSenderStatus = 'disconnected' | 'connecting' | 'connected' | 'error'
 
@@ -18,6 +18,9 @@ export interface RemoteNotationState {
   /** Per-note actual strike time (ms), keyed by DrumNoteEvent id — see
    * remote-drum-protocol.ts's own doc comment on the wire field. */
   hitTimingByEventId: Record<string, number>
+  /** Every hit this run that matched no pending event — see
+   * remote-drum-protocol.ts's own doc comment on the wire field. */
+  extraHits: ExtraHitEvent[]
   /** Live running accuracy (0-100) — see remote-drum-protocol.ts's own doc
    * comment on the wire field. */
   liveAccuracyPercent: number
@@ -146,6 +149,7 @@ export function useRemoteDrumSender(): UseRemoteDrumSenderResult {
           paused: message.paused,
           gradedEventIds: message.gradedEventIds,
           hitTimingByEventId: message.hitTimingByEventId,
+          extraHits: message.extraHits,
           liveAccuracyPercent: message.liveAccuracyPercent,
         })
       } else if (message?.type === 'notation_clear') {

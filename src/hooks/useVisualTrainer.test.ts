@@ -165,7 +165,8 @@ describe('useVisualTrainer', () => {
     const { result } = renderHook(() => useVisualTrainer(exercise, noHighwayRef))
 
     expect(result.current.phase).toBe('idle')
-    expect(result.current.scoring.accuracyPercent).toBe(0)
+    // Nothing has resolved yet — "nothing wrong so far", not "doing badly".
+    expect(result.current.scoring.accuracyPercent).toBe(100)
   })
 
   it('moves from count-in to running after start', async () => {
@@ -222,6 +223,31 @@ describe('useVisualTrainer', () => {
     // as lastGrade above), not deferred until the run finishes — explicit
     // user request: the hit-position marker needs to appear live, mid-run.
     expect(result.current.hitTimingByEventId.get(exercise.events[0]!.id)).toBeGreaterThanOrEqual(0)
+  })
+
+  it('an unmatched hit is recorded in extraHits, and restart() clears it', async () => {
+    vi.stubGlobal('AudioContext', FakeAudioContext)
+    const exercise = makeExercise([
+      { id: createId(), bar: 1, beat: 1, subdivisionIndex: 0, instrument: 'kick', velocity: 100 },
+    ])
+    const { result } = renderHook(() => useVisualTrainer(exercise, noHighwayRef))
+
+    await act(() => result.current.start())
+    await waitFor(() => expect(result.current.phase).toBe('running'), { timeout: 3000 })
+
+    // KeyK = tom_floor (keyboard-map.ts) — not in this exercise, so it
+    // never matches anything and always grades 'extra'.
+    act(() => {
+      fireEvent.keyDown(window, { code: 'KeyK' })
+    })
+
+    await waitFor(() => expect(result.current.lastGrade).toBe('extra'))
+    expect(result.current.extraHits).toHaveLength(1)
+    expect(result.current.extraHits[0]).toMatchObject({ instrument: 'tom_floor' })
+
+    act(() => result.current.restart())
+
+    await waitFor(() => expect(result.current.extraHits).toHaveLength(0))
   })
 
   it('records a miss and finishes when no key is pressed', async () => {
@@ -455,7 +481,7 @@ describe('useVisualTrainer', () => {
 
     expect(result.current.phase).toBe('idle')
     expect(result.current.lastGrade).toBeUndefined()
-    expect(result.current.scoring.accuracyPercent).toBe(0)
+    expect(result.current.scoring.accuracyPercent).toBe(100)
   })
 
   it('drops a hit forwarded during a demo run — demo notes auto-resolve, real hits never count', async () => {
@@ -807,7 +833,8 @@ describe('useVisualTrainer', () => {
     // established for the desktop's own ExerciseNotationSheet.
     expect((payload as NotationStatePayload).playbackProgress.startOffsetMs).toBeLessThan(0)
     expect((payload as NotationStatePayload).gradedEventIds).toEqual({})
-    expect((payload as NotationStatePayload).liveAccuracyPercent).toBe(0)
+    // Nothing has resolved yet — "nothing wrong so far", not "doing badly".
+    expect((payload as NotationStatePayload).liveAccuracyPercent).toBe(100)
   })
 
   it('a graded hit updates liveAccuracyPercent, and a subsequent extra hit lowers it — mirrored live, not just at finish', async () => {
@@ -826,15 +853,14 @@ describe('useVisualTrainer', () => {
     await waitFor(() => expect(result.current.phase).toBe('running'), { timeout: 3000 })
 
     // A well-timed kick hit matches the exercise's own 1st event — 100%
-    // accuracy (1 non-miss out of 1 expected event so far isn't how
-    // calculateAccuracy works — it's actually 1/(2 total events), i.e. 50%,
-    // since the 2nd event hasn't been missed or hit yet but still counts
-    // toward the exercise's total).
+    // accuracy (1 non-miss out of 1 event RESOLVED so far; the 2nd event
+    // hasn't been hit or missed yet, so it doesn't count toward the
+    // denominator at all — see calculateAccuracy's own doc comment).
     act(() => {
       fireEvent.keyDown(window, { code: 'KeyJ' })
     })
     await waitFor(() => expect(result.current.lastGrade).not.toBeUndefined())
-    expect((latestNotationCall() as NotationStatePayload).liveAccuracyPercent).toBe(50)
+    expect((latestNotationCall() as NotationStatePayload).liveAccuracyPercent).toBe(100)
 
     // An extra (unmatched) hit grows the denominator without growing the
     // numerator — accuracy drops.
@@ -842,7 +868,7 @@ describe('useVisualTrainer', () => {
       fireEvent.keyDown(window, { code: 'KeyK' })
     })
     await waitFor(() => expect(result.current.lastGrade).toBe('extra'))
-    expect((latestNotationCall() as NotationStatePayload).liveAccuracyPercent).toBeCloseTo(33.33, 1)
+    expect((latestNotationCall() as NotationStatePayload).liveAccuracyPercent).toBe(50)
   })
 
   it('a graded hit during a mirrored staff_cursor+MIDI run pushes an updated gradedEventIds', async () => {

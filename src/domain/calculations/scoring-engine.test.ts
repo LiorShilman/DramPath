@@ -25,7 +25,7 @@ function makeExtraHit(hitTimeMs: number): ExtraHitEvent {
 }
 
 describe('calculateAccuracy', () => {
-  it('divides non-miss hits by total expected events', () => {
+  it('divides non-miss hits by how many events have resolved (hit or missed) so far', () => {
     const hitResults = [
       makeHit('perfect', 1),
       makeHit('early', 2),
@@ -38,18 +38,22 @@ describe('calculateAccuracy', () => {
       makeHit('miss', 9),
       makeHit('miss', 10),
     ]
-    expect(calculateAccuracy(hitResults, [], 10)).toBe(70)
+    expect(calculateAccuracy(hitResults, [])).toBe(70)
   })
 
   it('counts extra hits as mistakes that widen the denominator', () => {
     const hitResults = [makeHit('perfect', 1), makeHit('perfect', 2)]
     const extraHits = [makeExtraHit(3)]
-    // 2 non-miss hits out of (2 expected + 1 extra) = 66.67%
-    expect(calculateAccuracy(hitResults, extraHits, 2)).toBeCloseTo(66.67, 1)
+    // 2 non-miss hits out of (2 resolved + 1 extra) = 66.67%
+    expect(calculateAccuracy(hitResults, extraHits)).toBeCloseTo(66.67, 1)
   })
 
-  it('returns 0 rather than NaN when there is nothing to score', () => {
-    expect(calculateAccuracy([], [], 0)).toBe(0)
+  it('returns 100 (nothing to judge yet), not 0 or NaN, when nothing has resolved', () => {
+    // Explicit user feedback: a live indicator denominated by the whole
+    // piece necessarily starts at 0% and climbs toward the final score as
+    // more of the piece is simply reached — reads as "doing badly" before
+    // anything has actually happened. 100 ("nothing wrong yet") avoids that.
+    expect(calculateAccuracy([], [])).toBe(100)
   })
 })
 
