@@ -15,6 +15,7 @@ import { KeyboardGuide } from '../../components/visual-trainer/KeyboardGuide'
 import { SessionResults } from '../../components/visual-trainer/SessionResults'
 import { useVisualTrainer } from '../../hooks/useVisualTrainer'
 import { useResolveExercise } from './resolve-exercise'
+import { GRADING_THRESHOLDS } from '../../domain/calculations/hit-matcher'
 import type { DisplayMode, InteractiveExercise } from '../../domain'
 
 export interface VisualTrainerRunnerProps {
@@ -297,6 +298,7 @@ export function VisualTrainerRunner({
         gradedEventIds={trainer.gradedEventIds}
         hitTimingByEventId={trainer.hitTimingByEventId}
         extraHits={trainer.extraHits}
+        perfectWindowMs={GRADING_THRESHOLDS[exercise.difficulty].perfectMs}
         showBeatLabels
         showNextUpHint
         rowBreakBars={exercise.rowBreakBars}

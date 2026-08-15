@@ -72,6 +72,31 @@ describe('ExerciseNotationSheet', () => {
     expect(Number(kickInBar2.getAttribute('cx'))).toBe(1 * 200)
   })
 
+  it('draws the cursor as a plain thin filled line by default (no perfectWindowMs given)', () => {
+    const { container } = render(<ExerciseNotationSheet exercise={EXERCISE} playbackProgress={{ bpm: 120, sessionId: 1 }} />)
+    const cursor = container.querySelector('[data-testid="notation-row-0-cursor"]')!
+    expect(cursor.getAttribute('width')).toBe('2')
+    expect(cursor.getAttribute('fill')).toBe('var(--color-primary-text)')
+    expect(cursor.getAttribute('stroke')).toBeNull()
+  })
+
+  it('draws the cursor as a hollow box sized to the real perfect-hit window when perfectWindowMs is given', () => {
+    // Explicit user request, after reporting that judging "close enough"
+    // against a fixed-size notehead was misleading — the box shows the
+    // ACTUAL window a hit needs to land inside to grade 'perfect' (see
+    // hit-matcher.ts), converted to pixels at the real tempo, instead of
+    // an unrelated fixed dot size. 120bpm/4-4 = 2000ms/bar, BAR_WIDTH_PX=200
+    // (module-private) — 0.1px/ms, so a 50ms window is ±5px (10px wide).
+    const { container } = render(
+      <ExerciseNotationSheet exercise={EXERCISE} playbackProgress={{ bpm: 120, sessionId: 1 }} perfectWindowMs={50} />,
+    )
+    const cursor = container.querySelector('[data-testid="notation-row-0-cursor"]')!
+    expect(cursor.getAttribute('x')).toBe('-5')
+    expect(cursor.getAttribute('width')).toBe('10')
+    expect(cursor.getAttribute('fill')).toBe('none')
+    expect(cursor.getAttribute('stroke')).toBe('var(--color-primary-text)')
+  })
+
   it('gives row 0\'s cursor a count-in "runway" (starts left of x=0, arrives at x=0 exactly when the count-in ends) — explicit user request: bar 1\'s own first note used to have zero visual lead-in', () => {
     const { container } = render(
       // startOffsetMs mirrors VisualTrainerPage's own seekOffsetMs-minus-

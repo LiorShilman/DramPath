@@ -41,6 +41,21 @@ export interface ExerciseNotationSheetProps {
    * was correct) — the thin cursor line alone is the real position
    * indicator there. */
   showFill?: boolean
+  /** When set, the moving cursor is drawn as a hollow box (not a thin line)
+   * spanning ±this many ms around "now", converted to pixels at the row's
+   * own real tempo — the exact same window a hit needs to land inside to
+   * grade 'perfect' (see hit-matcher.ts's GRADING_THRESHOLDS; callers pass
+   * `GRADING_THRESHOLDS[exercise.difficulty].perfectMs`). Explicit user
+   * request, after reporting that judging "did I hit close enough" against
+   * a fixed-size notehead was misleading: the note's own visual size never
+   * changed, but the real perfect window (tied to difficulty, not pixels)
+   * does — at a slow tempo it's often already WIDER than the note looks;
+   * at a fast one, narrower. Showing the actual window directly, instead of
+   * expecting a player to judge it against an unrelated dot size, is what
+   * this solves. Ignored (falls back to the plain thin line) without this
+   * prop — every read-only preview call site (not a real graded run) has
+   * no such window to show. */
+  perfectWindowMs?: number
   /** Freezes the fill/cursor animations in place (via CSS
    * animation-play-state) — real practice needs this, unlike the read-only
    * previews playbackProgress originally served: those never paused
@@ -239,6 +254,7 @@ export function ExerciseNotationSheet({
   gradedEventIds,
   hitTimingByEventId,
   extraHits,
+  perfectWindowMs,
   beamCymbals = false,
   showBeatLabels = false,
   barsPerRow = BARS_PER_ROW,
@@ -546,6 +562,17 @@ export function ExerciseNotationSheet({
         //   timing in any way; the piece itself never actually pauses
         //   between rows, only the cursor visually "arrives early" here.
         const barRealDurationMs = rowTiming.durationMs / rowBars
+        // See perfectWindowMs's own doc comment — ±perfectWindowMs converted
+        // to pixels at THIS row's own real tempo. Falls back to 1 (the
+        // original thin 2px-wide line's own half-width) when no window was
+        // given. Hoisted out of the cursor <rect>'s own conditional (not an
+        // inline IIFE there) — this file has hit the react-hooks/refs lint
+        // error before from wrapping a ref-accessing handler (the cursor's
+        // own onAnimationStart, below) inside an IIFE.
+        const halfWindowPx =
+          perfectWindowMs !== undefined && barRealDurationMs > 0
+            ? Math.max(1, (perfectWindowMs * BAR_WIDTH_PX) / barRealDurationMs)
+            : 1
         const availableWaitMs = rowIndex === 0 ? Math.max(0, rowTiming.startMs) : rowRealTimings[rowIndex - 1]!.durationMs
         // How long covering COUNT_IN_RUNWAY_PX takes at this row's own
         // px/ms rate — same rate the rest of this row's own bars use, so
@@ -705,11 +732,13 @@ export function ExerciseNotationSheet({
               <rect
                 key={playbackProgress.sessionId}
                 data-testid={`notation-row-${rowIndex}-cursor`}
-                x={-1}
+                x={-halfWindowPx}
                 y={toY(STAFF_TOP_LINE_POSITION) - 6}
-                width={2}
+                width={halfWindowPx * 2}
                 height={toY(STAFF_BOTTOM_LINE_POSITION) - toY(STAFF_TOP_LINE_POSITION) + 12}
-                fill="var(--color-primary-text)"
+                fill={perfectWindowMs !== undefined ? 'none' : 'var(--color-primary-text)'}
+                stroke={perfectWindowMs !== undefined ? 'var(--color-primary-text)' : undefined}
+                strokeWidth={perfectWindowMs !== undefined ? 1.5 : undefined}
                 style={{
                   ...(preRollPx > 0 ? { ['--notation-cursor-start-x' as string]: `${-preRollPx}px` } : {}),
                   ['--notation-cursor-target-x' as string]: `${rowBars * BAR_WIDTH_PX}px`,

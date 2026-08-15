@@ -35,6 +35,7 @@ import type {
 import { useMetronome } from '../practice-session/useMetronome'
 import { withBaseUrl } from '../../lib/asset-url'
 import { SUBDIVISION_LABELS } from '../exercises/exercise-labels'
+import { GRADING_THRESHOLDS } from '../../domain/calculations/hit-matcher'
 import type { Subdivision } from '../../domain'
 
 const DEFAULT_BPM = 90
@@ -542,6 +543,7 @@ export function TouchDrumKitPage() {
             gradedEventIds={remoteGradedEventIds}
             hitTimingByEventId={remoteHitTimingByEventId}
             extraHits={notationState.extraHits}
+            perfectWindowMs={GRADING_THRESHOLDS[notationState.exercise.difficulty].perfectMs}
             showFill={false}
             showBeatLabels
             showNextUpHint
