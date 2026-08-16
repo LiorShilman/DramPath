@@ -8,12 +8,17 @@ export interface GradingThresholds {
 }
 
 export const GRADING_THRESHOLDS: Record<InteractiveExerciseDifficulty, GradingThresholds> = {
-  // perfectMs widened a third time (90/60/35 -> 105/70/40 -> 110/75/45) on
+  // perfectMs widened repeatedly (90/60/35 -> 105/70/40 -> 110/75/45) on
   // direct user feedback that real e-kit hits landing well within a beat
   // still graded early/late more often than felt right — hitMs (the miss
-  // boundary) is untouched, so this only grows the "perfect" slice of an
-  // already-registered hit.
-  beginner: { perfectMs: 110, hitMs: 195 },
+  // boundary) is untouched throughout, so this only grows the "perfect"
+  // slice of an already-registered hit. beginner's own final push to 180
+  // (a deliberate, explicit choice, not a mechanical continuation of the
+  // same small step) leaves only a 15ms early/late sliver against its
+  // 195 hitMs — intentional: this stage is about building coordination
+  // itself, not timing precision, so grading collapses to near-binary
+  // hit/miss on purpose.
+  beginner: { perfectMs: 180, hitMs: 195 },
   intermediate: { perfectMs: 75, hitMs: 135 },
   advanced: { perfectMs: 45, hitMs: 90 },
 }
