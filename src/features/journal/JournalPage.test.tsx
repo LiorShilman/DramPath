@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { JournalPage } from './JournalPage'
 import { db } from '../../data/db'
@@ -115,6 +115,46 @@ describe('JournalPage', () => {
     })
     const remainingEntries = await db.practiceEntries.where('sessionId').equals(session.id).toArray()
     expect(remainingEntries).toHaveLength(0)
+  })
+
+  it('adds a manually-logged workout for a picked lesson, date, and status', async () => {
+    await runSeedIfNeeded()
+    const lesson = (await db.lessons.toArray())[0]!
+
+    render(<JournalPage />)
+    const user = userEvent.setup()
+
+    await user.click(await screen.findByRole('button', { name: 'הוספת אימון' }))
+    await user.selectOptions(screen.getByRole('combobox', { name: 'בחירת שיעור' }), lesson.title)
+    fireEvent.change(screen.getByLabelText('תאריך'), { target: { value: '2026-01-05' } })
+    await user.click(screen.getByRole('button', { name: 'לא בוצע' }))
+    await user.click(screen.getByRole('button', { name: 'שמירה' }))
+
+    expect(await screen.findByText(new RegExp(lesson.title))).toBeInTheDocument()
+    const sessions = await db.practiceSessions.toArray()
+    const created = sessions.find((session) => session.lessonId === lesson.id)
+    expect(created).toBeDefined()
+    expect(created!.status).toBe('abandoned')
+    expect(created!.startedAt.slice(0, 10)).toBe('2026-01-05')
+  })
+
+  it('updates a session status from the journal row', async () => {
+    await runSeedIfNeeded()
+    const exercise = (await db.exercises.toArray())[0]!
+    const session = await seedCompletedSession(exercise.id)
+
+    render(<JournalPage />)
+    const toggle = await screen.findByRole('button', { name: /5 דק׳/ })
+    const user = userEvent.setup()
+    await user.click(toggle)
+
+    await user.click(screen.getByRole('button', { name: 'לא בוצע' }))
+
+    await waitFor(async () => {
+      const updated = await db.practiceSessions.get(session.id)
+      expect(updated?.status).toBe('abandoned')
+    })
+    expect(await screen.findByText(/ננטש/)).toBeInTheDocument()
   })
 
   it('excludes draft sessions from the journal', async () => {

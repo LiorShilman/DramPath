@@ -1,10 +1,9 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Routes, Route } from 'react-router'
 import { TodayPage } from './TodayPage'
 import { db } from '../../data/db'
-import { runSeedIfNeeded } from '../../data/seed/seed-runner'
 import { exerciseRepository, lessonRepository, practiceSessionRepository } from '../../data/repositories'
 import { nowIso } from '../../domain'
 import type { Exercise } from '../../domain'
@@ -63,7 +62,7 @@ async function seedLessonWithExercise(): Promise<{ exercise: Exercise; lessonTit
 }
 
 describe('TodayPage', () => {
-  it('shows an empty state when there are no exercises yet', async () => {
+  it('shows an empty state when there are no lessons yet', async () => {
     renderToday()
     expect(await screen.findByRole('link', { name: 'לאשף ההפעלה' })).toBeInTheDocument()
   })
@@ -73,7 +72,7 @@ describe('TodayPage', () => {
     // recommendation had no real relationship to independent, self-directed
     // practice — a fresh session now starts empty, waiting for the player
     // to pick a real lesson.
-    await runSeedIfNeeded()
+    await seedLessonWithExercise()
     renderToday()
 
     await screen.findByRole('button', { name: "20 דק'" })
@@ -82,7 +81,7 @@ describe('TodayPage', () => {
     expect(session!.plannedExerciseIds).toEqual([])
   })
 
-  it("lists real lessons by their real titles, and selecting one populates the plan from that lesson's own linked exercises", async () => {
+  it("picking a lesson populates the plan from that lesson's own linked exercises, with no per-exercise step", async () => {
     const { exercise, lessonTitle } = await seedLessonWithExercise()
     renderToday()
     await screen.findByRole('button', { name: "20 דק'" })
@@ -90,27 +89,13 @@ describe('TodayPage', () => {
     const user = userEvent.setup()
     await user.selectOptions(screen.getByRole('combobox', { name: 'בחירת שיעור להיום' }), lessonTitle)
 
-    expect(await screen.findByText(exercise.name)).toBeInTheDocument()
     await waitFor(async () => {
       const session = (await db.practiceSessions.toArray())[0]!
       expect(session.plannedExerciseIds).toEqual([exercise.id])
+      expect(session.lessonId).toBeDefined()
     })
-  })
-
-  it('removes an item from the plan and persists it', async () => {
-    const { lessonTitle } = await seedLessonWithExercise()
-    renderToday()
-    await screen.findByRole('button', { name: "20 דק'" })
-    const user = userEvent.setup()
-    await user.selectOptions(screen.getByRole('combobox', { name: 'בחירת שיעור להיום' }), lessonTitle)
-    await screen.findByRole('button', { name: /הסר את/ })
-
-    await user.click(screen.getByRole('button', { name: /הסר את/ }))
-
-    await waitFor(async () => {
-      const session = (await db.practiceSessions.toArray())[0]!
-      expect(session.plannedExerciseIds).toEqual([])
-    })
+    // No exercise-level UI is rendered — the exercise's own name never appears.
+    expect(screen.queryByText(exercise.name)).not.toBeInTheDocument()
   })
 
   it('a duration preset persists on its own, without touching the current plan', async () => {
@@ -119,7 +104,10 @@ describe('TodayPage', () => {
     await screen.findByRole('button', { name: "20 דק'" })
     const user = userEvent.setup()
     await user.selectOptions(screen.getByRole('combobox', { name: 'בחירת שיעור להיום' }), lessonTitle)
-    await screen.findByText(exercise.name)
+    await waitFor(async () => {
+      const session = (await db.practiceSessions.toArray())[0]!
+      expect(session.plannedExerciseIds).toEqual([exercise.id])
+    })
 
     await user.click(screen.getByRole('button', { name: "45 דק'" }))
 
@@ -130,12 +118,25 @@ describe('TodayPage', () => {
     })
   })
 
+  it('changing the date field persists the new date on the draft session', async () => {
+    await seedLessonWithExercise()
+    renderToday()
+    const dateInput = await screen.findByDisplayValue(new Date().toISOString().slice(0, 10))
+
+    fireEvent.change(dateInput, { target: { value: '2026-01-05' } })
+
+    await waitFor(async () => {
+      const session = (await db.practiceSessions.toArray())[0]!
+      expect(session.startedAt.slice(0, 10)).toBe('2026-01-05')
+    })
+  })
+
   it('trusts an already-emptied draft instead of silently regenerating it on the next load', async () => {
     // Direct user report: removing every planned exercise used to get
     // treated (on the following load) as "no draft yet" and silently
     // replaced with a freshly regenerated plan — a removal never actually
     // stuck. A draft with 0 planned exercises is real, intentional state.
-    await runSeedIfNeeded()
+    await seedLessonWithExercise()
     await practiceSessionRepository.create({
       startedAt: nowIso(),
       status: 'draft',
@@ -148,14 +149,13 @@ describe('TodayPage', () => {
     renderToday()
 
     await screen.findByRole('button', { name: "30 דק'" })
-    expect(await screen.findByText(/לא נבחרו תרגילים להיום/)).toBeInTheDocument()
     const sessions = await db.practiceSessions.toArray()
     expect(sessions).toHaveLength(1)
     expect(sessions[0]!.plannedExerciseIds).toEqual([])
   })
 
   it('the start button stays disabled with an empty plan, and navigates once a lesson is picked', async () => {
-    const { exercise, lessonTitle } = await seedLessonWithExercise()
+    const { lessonTitle } = await seedLessonWithExercise()
     renderToday()
     await screen.findByRole('button', { name: "20 דק'" })
 
@@ -163,7 +163,9 @@ describe('TodayPage', () => {
 
     const user = userEvent.setup()
     await user.selectOptions(screen.getByRole('combobox', { name: 'בחירת שיעור להיום' }), lessonTitle)
-    await screen.findByText(exercise.name)
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'התחל אימון' })).toBeEnabled()
+    })
 
     await user.click(screen.getByRole('button', { name: 'התחל אימון' }))
 

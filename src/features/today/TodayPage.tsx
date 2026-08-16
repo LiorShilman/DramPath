@@ -1,15 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
-import {
-  lessonRepository,
-  exerciseRepository,
-  practiceEntryRepository,
-  practiceSessionRepository,
-} from '../../data/repositories'
-import { getLatestCleanBpm } from '../../domain/calculations'
+import { lessonRepository, practiceSessionRepository } from '../../data/repositories'
 import { nowIso } from '../../domain'
-import type { Exercise, Lesson, PracticeSession } from '../../domain'
-import { EXERCISE_CATEGORY_LABELS } from '../exercises/exercise-labels'
+import type { Lesson, PracticeSession } from '../../domain'
 import { Button, PageHeader, buttonClassName } from '../../components/ui'
 
 const DURATION_PRESETS = [10, 20, 30, 45] as const
@@ -17,37 +10,26 @@ const DURATION_PRESETS = [10, 20, 30, 45] as const
 export function TodayPage() {
   const navigate = useNavigate()
   const [session, setSession] = useState<PracticeSession | null>(null)
-  const [planExercises, setPlanExercises] = useState<Exercise[]>([])
-  const [allExercises, setAllExercises] = useState<Exercise[]>([])
   const [lessons, setLessons] = useState<Lesson[]>([])
-  const [recentEntries, setRecentEntries] = useState<
-    Awaited<ReturnType<typeof practiceEntryRepository.getAll>>
-  >([])
   const [status, setStatus] = useState<'loading' | 'empty' | 'ready'>('loading')
-  const [draggingId, setDraggingId] = useState<string | null>(null)
-  const [addExerciseId, setAddExerciseId] = useState('')
   const [selectedLessonId, setSelectedLessonId] = useState('')
 
   useEffect(() => {
     let cancelled = false
 
     async function load() {
-      const [lessonsList, exercises, entries, sessions] = await Promise.all([
+      const [lessonsList, sessions] = await Promise.all([
         lessonRepository.getAll(),
-        exerciseRepository.getAll(),
-        practiceEntryRepository.getAll(),
         practiceSessionRepository.getAll(),
       ])
       if (cancelled) return
 
-      if (exercises.length === 0) {
+      if (lessonsList.length === 0) {
         setStatus('empty')
         return
       }
 
-      setAllExercises(exercises)
       setLessons([...lessonsList].sort((a, b) => a.order - b.order))
-      setRecentEntries(entries)
 
       // Trust whatever draft already exists, regardless of how many
       // exercises are currently planned in it — an intentionally emptied
@@ -62,11 +44,7 @@ export function TodayPage() {
 
       if (existingDraft) {
         setSession(existingDraft)
-        setPlanExercises(
-          existingDraft.plannedExerciseIds
-            .map((id) => exercises.find((exercise) => exercise.id === id))
-            .filter((exercise): exercise is Exercise => exercise !== undefined),
-        )
+        setSelectedLessonId(existingDraft.lessonId ?? '')
         setStatus('ready')
         return
       }
@@ -81,7 +59,6 @@ export function TodayPage() {
       })
       if (cancelled) return
       setSession(created)
-      setPlanExercises([])
       setStatus('ready')
     }
 
@@ -91,15 +68,6 @@ export function TodayPage() {
     }
   }, [])
 
-  async function persistPlan(nextPlan: Exercise[]) {
-    setPlanExercises(nextPlan)
-    if (!session) return
-    const updated = await practiceSessionRepository.patch(session.id, {
-      plannedExerciseIds: nextPlan.map((exercise) => exercise.id),
-    })
-    setSession(updated)
-  }
-
   async function handleDurationChange(minutes: number) {
     if (!session) return
     const updated = await practiceSessionRepository.patch(session.id, {
@@ -108,57 +76,35 @@ export function TodayPage() {
     setSession(updated)
   }
 
-  function handleRemove(exerciseId: string) {
-    void persistPlan(planExercises.filter((exercise) => exercise.id !== exerciseId))
-  }
-
-  function handleAdd() {
-    const exercise = allExercises.find((candidate) => candidate.id === addExerciseId)
-    if (!exercise) return
-    void persistPlan([...planExercises, exercise])
-    setAddExerciseId('')
+  async function handleDateChange(dateValue: string) {
+    if (!session || !dateValue) return
+    const updated = await practiceSessionRepository.patch(session.id, {
+      startedAt: new Date(dateValue).toISOString(),
+    })
+    setSession(updated)
   }
 
   // Explicit user request: pick a real lesson (by its real title) instead
   // of an algorithmic warmup/focus/needs-work/fun recommendation that had
   // no real relationship to independent, self-directed practice — replaces
-  // the current plan with exactly that lesson's own linked exercises.
-  function handleSelectLesson(lessonId: string) {
+  // the current plan with exactly that lesson's own linked exercises, with
+  // no per-exercise add/remove/reorder step in between.
+  async function handleSelectLesson(lessonId: string) {
     setSelectedLessonId(lessonId)
     const lesson = lessons.find((candidate) => candidate.id === lessonId)
-    if (!lesson) return
-    const lessonExercises = lesson.exerciseIds
-      .map((id) => allExercises.find((exercise) => exercise.id === id))
-      .filter((exercise): exercise is Exercise => exercise !== undefined)
-    void persistPlan(lessonExercises)
-  }
-
-  function handleDrop(targetId: string) {
-    if (!draggingId || draggingId === targetId) return
-    const fromIndex = planExercises.findIndex((exercise) => exercise.id === draggingId)
-    const toIndex = planExercises.findIndex((exercise) => exercise.id === targetId)
-    if (fromIndex === -1 || toIndex === -1) return
-
-    const reordered = [...planExercises]
-    const [moved] = reordered.splice(fromIndex, 1)
-    if (moved) reordered.splice(toIndex, 0, moved)
-    setDraggingId(null)
-    void persistPlan(reordered)
+    if (!lesson || !session) return
+    const updated = await practiceSessionRepository.patch(session.id, {
+      lessonId,
+      plannedExerciseIds: lesson.exerciseIds,
+    })
+    setSession(updated)
   }
 
   async function handleStart() {
     void navigate('/practice/session')
   }
 
-  const availableToAdd = useMemo(
-    () => allExercises.filter((exercise) => !planExercises.some((p) => p.id === exercise.id)),
-    [allExercises, planExercises],
-  )
-
-  const todayLabel = useMemo(
-    () => new Date().toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'long' }),
-    [],
-  )
+  const dateValue = useMemo(() => session?.startedAt.slice(0, 10) ?? '', [session])
 
   if (status === 'loading') {
     return <p className="text-[var(--color-text-muted)]">טוען…</p>
@@ -179,26 +125,24 @@ export function TodayPage() {
 
   return (
     <div className="flex max-w-2xl flex-col gap-4">
-      <PageHeader title="האימון של היום" subtitle={todayLabel} />
+      <PageHeader title="האימון של היום" />
 
-      {lessons.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-sm text-[var(--color-text-muted)]">שיעור:</span>
-          <select
-            aria-label="בחירת שיעור להיום"
-            value={selectedLessonId}
-            onChange={(event) => handleSelectLesson(event.target.value)}
-            className="rounded-[var(--radius-card)] border border-[var(--color-border)] px-2 py-1.5 text-sm"
-          >
-            <option value="">בחרו שיעור...</option>
-            {lessons.map((lesson) => (
-              <option key={lesson.id} value={lesson.id}>
-                {lesson.title}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-sm text-[var(--color-text-muted)]">שיעור:</span>
+        <select
+          aria-label="בחירת שיעור להיום"
+          value={selectedLessonId}
+          onChange={(event) => void handleSelectLesson(event.target.value)}
+          className="rounded-[var(--radius-card)] border border-[var(--color-border)] px-2 py-1.5 text-sm"
+        >
+          <option value="">בחרו שיעור...</option>
+          {lessons.map((lesson) => (
+            <option key={lesson.id} value={lesson.id}>
+              {lesson.title}
+            </option>
+          ))}
+        </select>
+      </div>
 
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-sm text-[var(--color-text-muted)]">משך אימון:</span>
@@ -215,74 +159,21 @@ export function TodayPage() {
         ))}
       </div>
 
-      {planExercises.length === 0 ? (
-        <p className="text-[var(--color-text-muted)]">
-          לא נבחרו תרגילים להיום. בחרו שיעור למעלה, או הוסיפו תרגילים מהרשימה למטה.
-        </p>
-      ) : (
-        <ul className="flex flex-col gap-2">
-          {planExercises.map((exercise) => {
-            const lastBpm = getLatestCleanBpm(recentEntries, exercise.id)
-            return (
-              <li
-                key={exercise.id}
-                draggable
-                onDragStart={() => setDraggingId(exercise.id)}
-                onDragOver={(event) => event.preventDefault()}
-                onDrop={() => handleDrop(exercise.id)}
-                className="flex flex-col gap-1 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-3 [box-shadow:var(--shadow-card)] sm:flex-row sm:items-center sm:justify-between"
-              >
-                <div>
-                  <p className="font-semibold">{exercise.name}</p>
-                  <p className="text-sm text-[var(--color-text-muted)]">
-                    {EXERCISE_CATEGORY_LABELS[exercise.category]} ·{' '}
-                    {Math.round(exercise.durationSeconds / 60)} דק׳ ·{' '}
-                    <span className="tabular-nums">
-                      {lastBpm ?? '—'}/{exercise.targetBpm} BPM
-                    </span>
-                  </p>
-                </div>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="self-start"
-                  onClick={() => handleRemove(exercise.id)}
-                  aria-label={`הסר את ${exercise.name} מהתוכנית`}
-                >
-                  הסר
-                </Button>
-              </li>
-            )
-          })}
-        </ul>
-      )}
-
-      {availableToAdd.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2">
-          <select
-            aria-label="הוספת תרגיל לתוכנית"
-            value={addExerciseId}
-            onChange={(event) => setAddExerciseId(event.target.value)}
-            className="rounded-[var(--radius-card)] border border-[var(--color-border)] px-2 py-1.5 text-sm"
-          >
-            <option value="">בחרו תרגיל להוספה...</option>
-            {availableToAdd.map((exercise) => (
-              <option key={exercise.id} value={exercise.id}>
-                {exercise.name}
-              </option>
-            ))}
-          </select>
-          <Button size="sm" variant="ghost" onClick={handleAdd} disabled={!addExerciseId}>
-            הוסף
-          </Button>
-        </div>
-      )}
+      <label className="flex items-center gap-2 text-sm">
+        <span className="text-[var(--color-text-muted)]">תאריך:</span>
+        <input
+          type="date"
+          value={dateValue}
+          onChange={(event) => void handleDateChange(event.target.value)}
+          className="rounded-[var(--radius-card)] border border-[var(--color-border)] px-2 py-1.5 text-sm"
+        />
+      </label>
 
       <Button
         size="lg"
         className="self-start"
         onClick={() => void handleStart()}
-        disabled={planExercises.length === 0}
+        disabled={!session || session.plannedExerciseIds.length === 0}
       >
         התחל אימון
       </Button>

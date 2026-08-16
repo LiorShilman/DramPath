@@ -14,6 +14,9 @@ export const practiceSessionSchema = z.object({
   plannedDurationMinutes: z.number().int().positive(),
   actualDurationSeconds: z.number().int().nonnegative(),
   weekId: uuidSchema.optional(),
+  // Manual journal entries ("הוספת אימון") log a lesson that was practiced
+  // on a given date without going through /today's live-run flow.
+  lessonId: uuidSchema.optional(),
   // Stage 4: a resumable exercise queue — §17 requires resuming an
   // unfinished session after refresh/close, which needs the plan itself
   // persisted, not just kept in router/component state.
