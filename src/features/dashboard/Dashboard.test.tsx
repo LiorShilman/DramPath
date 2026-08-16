@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter } from 'react-router'
+import { MemoryRouter, Routes, Route } from 'react-router'
 import { Dashboard } from './Dashboard'
 import { db } from '../../data/db'
 import { runSeedIfNeeded } from '../../data/seed/seed-runner'
@@ -69,18 +69,26 @@ describe('Dashboard', () => {
     expect(screen.queryByText(/לא בוצע גיבוי כבר/)).not.toBeInTheDocument()
   })
 
-  it('creates a draft PracticeSession when starting practice', async () => {
+  it('navigates to /today when starting practice, without minting its own draft session', async () => {
+    // TodayPage's own load() is now the single place that finds-or-creates
+    // today's draft session — Dashboard creating one here too used to mint
+    // a brand-new EMPTY draft on every click regardless of whether one
+    // already existed, leaving orphaned drafts behind.
     await runSeedIfNeeded()
-    renderDashboard()
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <Routes>
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/today" element={<p>האימון של היום</p>} />
+        </Routes>
+      </MemoryRouter>,
+    )
     const user = userEvent.setup()
 
     const button = await screen.findByRole('button', { name: 'התחל אימון' })
     await user.click(button)
 
-    await waitFor(async () => {
-      const sessions = await db.practiceSessions.toArray()
-      expect(sessions).toHaveLength(1)
-      expect(sessions[0]?.status).toBe('draft')
-    })
+    expect(await screen.findByText('האימון של היום')).toBeInTheDocument()
+    expect(await db.practiceSessions.toArray()).toHaveLength(0)
   })
 })

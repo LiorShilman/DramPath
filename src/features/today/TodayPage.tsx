@@ -1,15 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
 import {
-  coursePlanRepository,
-  weekRepository,
   lessonRepository,
   exerciseRepository,
   practiceEntryRepository,
   practiceSessionRepository,
 } from '../../data/repositories'
-import { buildDailyPlan, getExercisesForWeek, getLatestCleanBpm } from '../../domain/calculations'
-import { nowIso, type Exercise, type PracticeSession } from '../../domain'
+import { getLatestCleanBpm } from '../../domain/calculations'
+import { nowIso } from '../../domain'
+import type { Exercise, Lesson, PracticeSession } from '../../domain'
 import { EXERCISE_CATEGORY_LABELS } from '../exercises/exercise-labels'
 import { Button, PageHeader, buttonClassName } from '../../components/ui'
 
@@ -20,21 +19,20 @@ export function TodayPage() {
   const [session, setSession] = useState<PracticeSession | null>(null)
   const [planExercises, setPlanExercises] = useState<Exercise[]>([])
   const [allExercises, setAllExercises] = useState<Exercise[]>([])
+  const [lessons, setLessons] = useState<Lesson[]>([])
   const [recentEntries, setRecentEntries] = useState<
     Awaited<ReturnType<typeof practiceEntryRepository.getAll>>
   >([])
   const [status, setStatus] = useState<'loading' | 'empty' | 'ready'>('loading')
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const [addExerciseId, setAddExerciseId] = useState('')
+  const [selectedLessonId, setSelectedLessonId] = useState('')
 
   useEffect(() => {
     let cancelled = false
 
     async function load() {
-      const coursePlans = await coursePlanRepository.getAll()
-      const activePlan = coursePlans.find((plan) => plan.isActive) ?? coursePlans[0]
-      const [weeks, lessons, exercises, entries, sessions] = await Promise.all([
-        weekRepository.getAll(),
+      const [lessonsList, exercises, entries, sessions] = await Promise.all([
         lessonRepository.getAll(),
         exerciseRepository.getAll(),
         practiceEntryRepository.getAll(),
@@ -42,27 +40,27 @@ export function TodayPage() {
       ])
       if (cancelled) return
 
-      if (!activePlan || exercises.length === 0) {
+      if (exercises.length === 0) {
         setStatus('empty')
         return
       }
 
       setAllExercises(exercises)
+      setLessons([...lessonsList].sort((a, b) => a.order - b.order))
       setRecentEntries(entries)
 
-      const activeWeek = weeks.find(
-        (week) => week.coursePlanId === activePlan.id && week.status === 'active',
-      )
-      const lessonsThisWeek = activeWeek
-        ? lessons.filter((lesson) => lesson.weekId === activeWeek.id)
-        : []
-      const weekExercises = getExercisesForWeek(lessonsThisWeek, exercises)
-
+      // Trust whatever draft already exists, regardless of how many
+      // exercises are currently planned in it — an intentionally emptied
+      // plan (every exercise removed one at a time) is real, persisted
+      // state, not "no draft yet". Explicit user report: an
+      // emptied-plan-length check here used to treat a cleared plan as
+      // missing and silently regenerate a fresh algorithmic one on the very
+      // next load, so a removal never actually stuck.
       const existingDraft = sessions
         .filter((candidate) => candidate.status === 'draft')
         .sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0]
 
-      if (existingDraft && existingDraft.plannedExerciseIds.length > 0) {
+      if (existingDraft) {
         setSession(existingDraft)
         setPlanExercises(
           existingDraft.plannedExerciseIds
@@ -73,30 +71,17 @@ export function TodayPage() {
         return
       }
 
-      const plan = buildDailyPlan({
-        weekExercises,
-        allExercises: exercises,
-        recentEntries: entries,
-        plannedDurationMinutes: existingDraft?.plannedDurationMinutes ?? 20,
+      const created = await practiceSessionRepository.create({
+        startedAt: nowIso(),
+        status: 'draft',
+        plannedDurationMinutes: 20,
+        actualDurationSeconds: 0,
+        plannedExerciseIds: [],
+        currentExerciseIndex: 0,
       })
-
-      const persisted = existingDraft
-        ? await practiceSessionRepository.patch(existingDraft.id, {
-            plannedExerciseIds: plan.map((exercise) => exercise.id),
-          })
-        : await practiceSessionRepository.create({
-            startedAt: nowIso(),
-            status: 'draft',
-            plannedDurationMinutes: 20,
-            actualDurationSeconds: 0,
-            weekId: activeWeek?.id,
-            plannedExerciseIds: plan.map((exercise) => exercise.id),
-            currentExerciseIndex: 0,
-          })
-
       if (cancelled) return
-      setSession(persisted)
-      setPlanExercises(plan)
+      setSession(created)
+      setPlanExercises([])
       setStatus('ready')
     }
 
@@ -117,24 +102,10 @@ export function TodayPage() {
 
   async function handleDurationChange(minutes: number) {
     if (!session) return
-    const activePlanWeekId = session.weekId
-    const lessons = await lessonRepository.getAll()
-    const lessonsThisWeek = activePlanWeekId
-      ? lessons.filter((lesson) => lesson.weekId === activePlanWeekId)
-      : []
-    const weekExercises = getExercisesForWeek(lessonsThisWeek, allExercises)
-    const plan = buildDailyPlan({
-      weekExercises,
-      allExercises,
-      recentEntries,
-      plannedDurationMinutes: minutes,
-    })
     const updated = await practiceSessionRepository.patch(session.id, {
       plannedDurationMinutes: minutes,
-      plannedExerciseIds: plan.map((exercise) => exercise.id),
     })
     setSession(updated)
-    setPlanExercises(plan)
   }
 
   function handleRemove(exerciseId: string) {
@@ -146,6 +117,20 @@ export function TodayPage() {
     if (!exercise) return
     void persistPlan([...planExercises, exercise])
     setAddExerciseId('')
+  }
+
+  // Explicit user request: pick a real lesson (by its real title) instead
+  // of an algorithmic warmup/focus/needs-work/fun recommendation that had
+  // no real relationship to independent, self-directed practice — replaces
+  // the current plan with exactly that lesson's own linked exercises.
+  function handleSelectLesson(lessonId: string) {
+    setSelectedLessonId(lessonId)
+    const lesson = lessons.find((candidate) => candidate.id === lessonId)
+    if (!lesson) return
+    const lessonExercises = lesson.exerciseIds
+      .map((id) => allExercises.find((exercise) => exercise.id === id))
+      .filter((exercise): exercise is Exercise => exercise !== undefined)
+    void persistPlan(lessonExercises)
   }
 
   function handleDrop(targetId: string) {
@@ -170,6 +155,11 @@ export function TodayPage() {
     [allExercises, planExercises],
   )
 
+  const todayLabel = useMemo(
+    () => new Date().toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'long' }),
+    [],
+  )
+
   if (status === 'loading') {
     return <p className="text-[var(--color-text-muted)]">טוען…</p>
   }
@@ -189,7 +179,26 @@ export function TodayPage() {
 
   return (
     <div className="flex max-w-2xl flex-col gap-4">
-      <PageHeader title="האימון של היום" />
+      <PageHeader title="האימון של היום" subtitle={todayLabel} />
+
+      {lessons.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-sm text-[var(--color-text-muted)]">שיעור:</span>
+          <select
+            aria-label="בחירת שיעור להיום"
+            value={selectedLessonId}
+            onChange={(event) => handleSelectLesson(event.target.value)}
+            className="rounded-[var(--radius-card)] border border-[var(--color-border)] px-2 py-1.5 text-sm"
+          >
+            <option value="">בחרו שיעור...</option>
+            {lessons.map((lesson) => (
+              <option key={lesson.id} value={lesson.id}>
+                {lesson.title}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-sm text-[var(--color-text-muted)]">משך אימון:</span>
@@ -208,7 +217,7 @@ export function TodayPage() {
 
       {planExercises.length === 0 ? (
         <p className="text-[var(--color-text-muted)]">
-          לא נבחרו תרגילים להיום. הוסיפו תרגילים מהרשימה למטה.
+          לא נבחרו תרגילים להיום. בחרו שיעור למעלה, או הוסיפו תרגילים מהרשימה למטה.
         </p>
       ) : (
         <ul className="flex flex-col gap-2">

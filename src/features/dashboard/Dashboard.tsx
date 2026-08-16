@@ -1,12 +1,9 @@
 import { Link, useNavigate } from 'react-router'
 import { useDashboardData } from './useDashboardData'
-import { practiceSessionRepository } from '../../data/repositories'
-import { nowIso } from '../../domain'
 import { Card, StatTile, buttonClassName } from '../../components/ui'
 
 const REMINDER_THRESHOLD_DAYS = 3
 const BACKUP_REMINDER_THRESHOLD_DAYS = 14
-const DEFAULT_SESSION_MINUTES = 20
 
 function formatMinutes(seconds: number): number {
   return Math.round(seconds / 60)
@@ -50,15 +47,12 @@ export function Dashboard() {
     daysSinceLastBackup,
   } = data
 
-  async function handleStartPractice() {
-    await practiceSessionRepository.create({
-      startedAt: nowIso(),
-      status: 'draft',
-      plannedDurationMinutes: DEFAULT_SESSION_MINUTES,
-      actualDurationSeconds: 0,
-      plannedExerciseIds: [],
-      currentExerciseIndex: 0,
-    })
+  // TodayPage's own load() is now the single place that finds-or-creates
+  // today's draft session — creating one here too used to mint a brand-new
+  // EMPTY draft on every single click regardless of whether one already
+  // existed, leaving orphaned drafts behind and (combined with TodayPage
+  // picking "most recent draft") repeatedly resurfacing a stale empty plan.
+  function handleStartPractice() {
     void navigate('/today')
   }
 
@@ -87,7 +81,7 @@ export function Dashboard() {
         <h2 className="text-lg font-semibold">האימון הבא</h2>
         <button
           type="button"
-          onClick={() => void handleStartPractice()}
+          onClick={handleStartPractice}
           className="mt-3 min-h-11 rounded-[var(--radius-card)] bg-white px-4 py-2 font-semibold text-[var(--color-primary)] transition-opacity hover:opacity-90"
         >
           התחל אימון

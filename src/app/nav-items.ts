@@ -3,7 +3,6 @@ import {
   ListChecks,
   Map,
   BookOpen,
-  Dumbbell,
   Music,
   Drum,
   NotebookPen,
@@ -28,7 +27,9 @@ export const NAV_ITEMS: NavItem[] = [
   { path: '/today', label: 'האימון של היום', icon: ListChecks },
   { path: '/course', label: 'מסלול הקורס', icon: Map },
   { path: '/lessons', label: 'ספריית שיעורים', icon: BookOpen },
-  { path: '/exercises', label: 'ספריית תרגילים', icon: Dumbbell },
+  // Explicit user request: hidden from nav for now — the exercise library
+  // still initializes with generic seed content, not anything real/relevant
+  // yet. The route/page itself is untouched, just not promoted in nav.
   { path: '/practice/visual', label: 'תרגול ויזואלי', icon: Drum },
   { path: '/songs', label: 'ספריית שירים', icon: Music },
   { path: '/journal', label: 'יומן אימונים', icon: NotebookPen },
