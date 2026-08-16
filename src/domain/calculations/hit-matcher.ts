@@ -8,13 +8,14 @@ export interface GradingThresholds {
 }
 
 export const GRADING_THRESHOLDS: Record<InteractiveExerciseDifficulty, GradingThresholds> = {
-  // perfectMs widened again (90/60/35 -> 105/70/40) on direct user feedback
-  // that real e-kit hits landing well within a beat still graded early/late
-  // more often than felt right — hitMs (the miss boundary) is untouched, so
-  // this only grows the "perfect" slice of an already-registered hit.
-  beginner: { perfectMs: 105, hitMs: 195 },
-  intermediate: { perfectMs: 70, hitMs: 135 },
-  advanced: { perfectMs: 40, hitMs: 90 },
+  // perfectMs widened a third time (90/60/35 -> 105/70/40 -> 110/75/45) on
+  // direct user feedback that real e-kit hits landing well within a beat
+  // still graded early/late more often than felt right — hitMs (the miss
+  // boundary) is untouched, so this only grows the "perfect" slice of an
+  // already-registered hit.
+  beginner: { perfectMs: 110, hitMs: 195 },
+  intermediate: { perfectMs: 75, hitMs: 135 },
+  advanced: { perfectMs: 45, hitMs: 90 },
 }
 
 export interface PendingDrumEvent {
