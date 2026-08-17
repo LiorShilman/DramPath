@@ -53,6 +53,20 @@ export interface RemotePlaybackStatus {
   }
 }
 
+/** PedalDisciplinePage's own mirror — a completely separate screen from the
+ * notation/exercise flow above (no InteractiveExercise), see
+ * remote-drum-protocol.ts's pedal_discipline_state for field meaning.
+ * undefined whenever that screen isn't open on the desktop right now. */
+export interface RemotePedalDisciplineState {
+  isRunning: boolean
+  streak: number
+  bestStreak: number
+  totalHits: number
+  closedHits: number
+  elapsedSeconds: number
+  lastHit?: 'closed' | 'open'
+}
+
 export interface UseRemoteDrumSenderResult {
   status: RemoteDrumSenderStatus
   /** relayUrl (a LAN "host:port", dev-mode only) is optional — omit it to
@@ -68,6 +82,7 @@ export interface UseRemoteDrumSenderResult {
   exerciseList: ExerciseListItem[] | undefined
   routineList: RoutineListItem[] | undefined
   playbackStatus: RemotePlaybackStatus | undefined
+  pedalDisciplineState: RemotePedalDisciplineState | undefined
   requestExerciseList: () => void
   selectExercise: (exerciseId: string) => void
   selectRoutine: (routineId: string) => void
@@ -104,6 +119,7 @@ export function useRemoteDrumSender(): UseRemoteDrumSenderResult {
   const [exerciseList, setExerciseList] = useState<ExerciseListItem[] | undefined>(undefined)
   const [routineList, setRoutineList] = useState<RoutineListItem[] | undefined>(undefined)
   const [playbackStatus, setPlaybackStatus] = useState<RemotePlaybackStatus | undefined>(undefined)
+  const [pedalDisciplineState, setPedalDisciplineState] = useState<RemotePedalDisciplineState | undefined>(undefined)
   const socketRef = useRef<WebSocket | undefined>(undefined)
   const retryTimeoutIdRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const hasConnectedOnceRef = useRef(false)
@@ -166,6 +182,18 @@ export function useRemoteDrumSender(): UseRemoteDrumSenderResult {
           routineProgress: message.routineProgress,
           resultsSummary: message.resultsSummary,
         })
+      } else if (message?.type === 'pedal_discipline_state') {
+        setPedalDisciplineState({
+          isRunning: message.isRunning,
+          streak: message.streak,
+          bestStreak: message.bestStreak,
+          totalHits: message.totalHits,
+          closedHits: message.closedHits,
+          elapsedSeconds: message.elapsedSeconds,
+          lastHit: message.lastHit,
+        })
+      } else if (message?.type === 'pedal_discipline_clear') {
+        setPedalDisciplineState(undefined)
       }
     }
 
@@ -211,6 +239,7 @@ export function useRemoteDrumSender(): UseRemoteDrumSenderResult {
     setExerciseList(undefined)
     setRoutineList(undefined)
     setPlaybackStatus(undefined)
+    setPedalDisciplineState(undefined)
   }, [clearRetryTimeout])
 
   const sendHit = useCallback((instrument: DrumInstrument) => {
@@ -252,6 +281,7 @@ export function useRemoteDrumSender(): UseRemoteDrumSenderResult {
     exerciseList,
     routineList,
     playbackStatus,
+    pedalDisciplineState,
     requestExerciseList,
     selectExercise,
     selectRoutine,

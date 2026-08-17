@@ -248,6 +248,57 @@ describe('parseRemoteRelayMessage', () => {
     const raw = JSON.stringify({ type: 'playback_status', exerciseId: null, title: null, bpm: null, phase: 'rewinding' })
     expect(parseRemoteRelayMessage(raw)).toBeUndefined()
   })
+
+  it('parses a valid pedal_discipline_state message, with and without lastHit', () => {
+    const withoutLastHit = JSON.stringify({
+      type: 'pedal_discipline_state',
+      isRunning: true,
+      streak: 3,
+      bestStreak: 5,
+      totalHits: 4,
+      closedHits: 3,
+      elapsedSeconds: 12,
+    })
+    expect(parseRemoteRelayMessage(withoutLastHit)).toEqual({
+      type: 'pedal_discipline_state',
+      isRunning: true,
+      streak: 3,
+      bestStreak: 5,
+      totalHits: 4,
+      closedHits: 3,
+      elapsedSeconds: 12,
+    })
+
+    const withLastHit = JSON.stringify({
+      type: 'pedal_discipline_state',
+      isRunning: true,
+      streak: 0,
+      bestStreak: 5,
+      totalHits: 5,
+      closedHits: 3,
+      elapsedSeconds: 13,
+      lastHit: 'open',
+    })
+    expect(parseRemoteRelayMessage(withLastHit)).toMatchObject({ lastHit: 'open' })
+  })
+
+  it('returns undefined for a pedal_discipline_state message with an invalid lastHit', () => {
+    const raw = JSON.stringify({
+      type: 'pedal_discipline_state',
+      isRunning: true,
+      streak: 0,
+      bestStreak: 0,
+      totalHits: 0,
+      closedHits: 0,
+      elapsedSeconds: 0,
+      lastHit: 'half-open',
+    })
+    expect(parseRemoteRelayMessage(raw)).toBeUndefined()
+  })
+
+  it('parses a valid pedal_discipline_clear message', () => {
+    expect(parseRemoteRelayMessage('{"type":"pedal_discipline_clear"}')).toEqual({ type: 'pedal_discipline_clear' })
+  })
 })
 
 describe('buildProductionRelayWsUrl', () => {

@@ -3,6 +3,24 @@ import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { PedalDisciplinePage } from './PedalDisciplinePage'
 
+// Same mock-the-whole-module technique as RoutinePlayerPage.test.tsx — this
+// page isn't wrapped in a real RemoteHostProvider in tests (which would need
+// a Router ancestor too, for its own useNavigate/useLocation), so
+// useRemoteHost() would otherwise throw "must be used within a
+// RemoteHostProvider".
+const sendPedalDisciplineState = vi.fn()
+vi.mock('./remote-host-context', () => ({
+  useRemoteHost: () => ({
+    status: 'disabled',
+    isEnabled: false,
+    toggleEnabled: vi.fn(),
+    sendNotationState: vi.fn(),
+    sendPlaybackStatus: vi.fn(),
+    sendPedalDisciplineState,
+    registerSession: vi.fn(() => () => {}),
+  }),
+}))
+
 // Same hand-rolled test doubles as useMidiDrumInput.test.ts/useVisualTrainer.test.ts.
 class FakeMIDIInput {
   onmidimessage: ((event: { data: Uint8Array }) => void) | null = null
@@ -35,6 +53,7 @@ describe('PedalDisciplinePage', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
     localStorage.clear()
+    sendPedalDisciplineState.mockClear()
   })
 
   async function renderAndStart() {
@@ -131,7 +150,46 @@ describe('PedalDisciplinePage', () => {
 
     act(() => input.simulateMessage(CLOSED_HIHAT))
     await waitFor(() => expect(screen.getByText('1')).toBeInTheDocument())
-    // Well below the existing best — no celebration banner.
-    expect(screen.queryByText('🔥 שיא אישי חדש!')).not.toBeInTheDocument()
+    // Well below the existing best — the celebration banner stays in the
+    // DOM (always mounted, see PedalDisciplinePage's own comment on why),
+    // just invisible via opacity.
+    expect(screen.getByText('🔥 שיא אישי חדש!')).toHaveClass('opacity-0')
+  })
+
+  it('mirrors state to the phone on mount, on every hit, and on stop', async () => {
+    const input = await renderAndStart()
+    sendPedalDisciplineState.mockClear() // drop the mount-time + start-time sends
+
+    act(() => input.simulateMessage(CLOSED_HIHAT))
+    await waitFor(() =>
+      expect(sendPedalDisciplineState).toHaveBeenCalledWith(
+        expect.objectContaining({ isRunning: true, streak: 1, totalHits: 1, closedHits: 1, lastHit: 'closed' }),
+      ),
+    )
+
+    act(() => input.simulateMessage(OPEN_HIHAT))
+    await waitFor(() =>
+      expect(sendPedalDisciplineState).toHaveBeenCalledWith(
+        expect.objectContaining({ isRunning: true, streak: 0, totalHits: 2, closedHits: 1, lastHit: 'open' }),
+      ),
+    )
+
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'עצירה' }))
+    expect(sendPedalDisciplineState).toHaveBeenCalledWith(
+      expect.objectContaining({ isRunning: false, totalHits: 2, closedHits: 1 }),
+    )
+  })
+
+  it('clears the phone mirror on unmount', async () => {
+    const input = new FakeMIDIInput()
+    stubMidiAccess(input)
+    const { unmount } = render(<PedalDisciplinePage />)
+    await waitFor(() => expect(screen.getByText('קיט תופים מחובר')).toBeInTheDocument())
+    sendPedalDisciplineState.mockClear()
+
+    unmount()
+
+    expect(sendPedalDisciplineState).toHaveBeenCalledWith(null)
   })
 })

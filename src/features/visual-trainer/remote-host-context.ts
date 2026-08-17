@@ -1,5 +1,10 @@
 import { createContext, useContext } from 'react'
-import type { NotationStatePayload, PlaybackStatusPayload, RemoteDrumInputStatus } from '../../hooks/useRemoteDrumInput'
+import type {
+  NotationStatePayload,
+  PedalDisciplineStatePayload,
+  PlaybackStatusPayload,
+  RemoteDrumInputStatus,
+} from '../../hooks/useRemoteDrumInput'
 import type { DrumInstrument } from '../../domain'
 
 /** What a mounted useVisualTrainer instance registers with
@@ -47,6 +52,12 @@ export interface RemoteHostContextValue {
   toggleEnabled: () => void
   sendNotationState: (state: NotationStatePayload | null) => void
   sendPlaybackStatus: (status: PlaybackStatusPayload) => void
+  /** PedalDisciplinePage's own mirror — see PedalDisciplineStatePayload. A
+   * completely separate screen from the notation/exercise flow above, sent
+   * directly by that page rather than via registerSession (it doesn't take
+   * remote hits/transport commands, so there's no RemoteSession to
+   * register). */
+  sendPedalDisciplineState: (state: PedalDisciplineStatePayload | null) => void
   /** Called by useVisualTrainer on mount (and whenever its callbacks'
    * identities change); returns an unregister function. The unregister
    * function only clears the slot if it's still the registration that

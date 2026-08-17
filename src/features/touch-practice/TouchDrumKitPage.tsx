@@ -16,6 +16,7 @@ import {
   X,
 } from 'lucide-react'
 import { DrumKit } from '../../components/visual-trainer/DrumKit'
+import { HiHatVisual } from '../../components/visual-trainer/HiHatVisual'
 import { ExerciseNotationSheet } from '../../components/visual-trainer/ExerciseNotationSheet'
 import { LiveAccuracyMeter } from '../../components/visual-trainer/LiveAccuracyMeter'
 import { StickingPatternGuide } from '../../components/visual-trainer/StickingPatternGuide'
@@ -347,6 +348,12 @@ export function TouchDrumKitPage() {
   const [dismissedSessionId, setDismissedSessionId] = useState<
     number | undefined
   >(undefined)
+  // PedalDisciplinePage's own mirror — no numeric sessionId of its own (no
+  // InteractiveExercise, nothing to key one by), so dismissal is a plain
+  // boolean instead, reset whenever the state transitions from absent to
+  // present (the effect below) rather than compared per-message like
+  // dismissedSessionId above.
+  const [isPedalMirrorDismissed, setIsPedalMirrorDismissed] = useState(false)
   // Full remote control's exercise-picker sheet — local UI state, not tied
   // to the connection itself. requestExerciseList() is fired fresh every
   // time it opens (no caching): the desktop is the source of truth and this
@@ -367,6 +374,18 @@ export function TouchDrumKitPage() {
       new Map(Object.entries(remoteSender.notationState?.hitTimingByEventId ?? {})),
     [remoteSender.notationState?.hitTimingByEventId],
   )
+
+  // Adjusted during render (not a useEffect — React's own recommended
+  // pattern for "reset state when a prop transitions"), same technique
+  // VisualTrainerPage's own previousPhase tracking already uses: a genuine
+  // absent->present transition un-dismisses the mirror, but re-renders with
+  // it already present (a hit updating the same session) don't touch it.
+  const isPedalDisciplineActive = remoteSender.pedalDisciplineState !== undefined
+  const [previousPedalDisciplineActive, setPreviousPedalDisciplineActive] = useState(false)
+  if (isPedalDisciplineActive !== previousPedalDisciplineActive) {
+    setPreviousPedalDisciplineActive(isPedalDisciplineActive)
+    if (isPedalDisciplineActive) setIsPedalMirrorDismissed(false)
+  }
 
   function adjustBpm(delta: number) {
     const next = Math.min(MAX_BPM, Math.max(MIN_BPM, bpm + delta))
@@ -558,6 +577,56 @@ export function TouchDrumKitPage() {
             onSelectRoutine={handleSelectRoutine}
             onClose={() => setIsBrowsingExercises(false)}
           />
+        )}
+      </div>
+    )
+  }
+
+  // PedalDisciplinePage's own mirror (explicit user request) — a completely
+  // separate screen from the notation flow above (no InteractiveExercise),
+  // so it's its own early return rather than a branch inside that block.
+  // Same "replace the whole kit UI" reasoning as the notation view: this is
+  // a read-only companion display, not something to share the screen with
+  // the kit/metronome controls.
+  const pedalDisciplineState = remoteSender.pedalDisciplineState
+  if (pedalDisciplineState && !isPedalMirrorDismissed) {
+    const pedalClosedPercent =
+      pedalDisciplineState.totalHits > 0
+        ? Math.round((pedalDisciplineState.closedHits / pedalDisciplineState.totalHits) * 100)
+        : 100
+    return (
+      <div
+        className="relative flex h-svh w-full flex-col items-center justify-center gap-4 overflow-hidden bg-[var(--color-bg)] p-4"
+        style={{ paddingLeft: `calc(env(safe-area-inset-left) + 1rem)` }}
+      >
+        <button
+          type="button"
+          onClick={() => setIsPedalMirrorDismissed(true)}
+          aria-label="חזרה לתצוגת הקיט"
+          className="absolute start-2 top-2 z-10 flex h-11 w-11 items-center justify-center rounded-full bg-[var(--color-text-muted)] text-white shadow-[var(--shadow-card)]"
+        >
+          <X className="h-5 w-5" aria-hidden="true" />
+        </button>
+        <h2 className="text-lg font-semibold">משמעת פדל — היי-הט</h2>
+        <HiHatVisual
+          isRunning={pedalDisciplineState.isRunning}
+          feedback={
+            pedalDisciplineState.lastHit
+              ? { kind: pedalDisciplineState.lastHit, token: String(pedalDisciplineState.totalHits) }
+              : null
+          }
+        />
+        <div className="min-w-[8rem] text-center text-7xl font-black tabular-nums">
+          {pedalDisciplineState.streak}
+        </div>
+        <p className="text-sm text-[var(--color-text-muted)]">
+          רצף נוכחי · שיא אישי: {pedalDisciplineState.bestStreak}
+        </p>
+        {pedalDisciplineState.isRunning && (
+          <div className="flex flex-wrap items-center justify-center gap-4 text-sm text-[var(--color-text-muted)]">
+            <span className="tabular-nums">{pedalDisciplineState.totalHits} הקשות</span>
+            <span className="tabular-nums">{pedalClosedPercent}% סגור</span>
+          </div>
         )}
       </div>
     )

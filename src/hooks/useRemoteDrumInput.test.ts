@@ -320,4 +320,25 @@ describe('useRemoteDrumInput', () => {
     }).not.toThrow()
     expect(FakeWebSocket.instances).toHaveLength(0)
   })
+
+  it('sendPedalDisciplineState sends a pedal_discipline_state frame with the given state once connected', () => {
+    vi.stubGlobal('WebSocket', FakeWebSocket)
+    const onHit = vi.fn()
+    const { result } = renderHook(() => useRemoteDrumInput({ enabled: true, onHit }))
+    const state = { isRunning: true, streak: 3, bestStreak: 5, totalHits: 4, closedHits: 3, elapsedSeconds: 12 }
+
+    act(() => result.current.sendPedalDisciplineState(state))
+
+    expect(JSON.parse(latestSocket().sentMessages[0]!)).toEqual({ type: 'pedal_discipline_state', ...state })
+  })
+
+  it('sendPedalDisciplineState sends a pedal_discipline_clear frame when given null', () => {
+    vi.stubGlobal('WebSocket', FakeWebSocket)
+    const onHit = vi.fn()
+    const { result } = renderHook(() => useRemoteDrumInput({ enabled: true, onHit }))
+
+    act(() => result.current.sendPedalDisciplineState(null))
+
+    expect(JSON.parse(latestSocket().sentMessages[0]!)).toEqual({ type: 'pedal_discipline_clear' })
+  })
 })

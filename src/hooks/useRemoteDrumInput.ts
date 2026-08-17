@@ -91,6 +91,20 @@ export interface PlaybackStatusPayload {
   }
 }
 
+/** PedalDisciplinePage's own mirror to the phone — a completely separate
+ * screen from the notation/exercise flow (no InteractiveExercise), so it
+ * rides its own message rather than notation_state/playback_status. null
+ * means the pedal-discipline screen isn't open on the desktop right now. */
+export interface PedalDisciplineStatePayload {
+  isRunning: boolean
+  streak: number
+  bestStreak: number
+  totalHits: number
+  closedHits: number
+  elapsedSeconds: number
+  lastHit?: 'closed' | 'open'
+}
+
 export interface UseRemoteDrumInputResult {
   status: RemoteDrumInputStatus
   /** Pushes the desktop's currently-playing notation to every connected
@@ -105,6 +119,8 @@ export interface UseRemoteDrumInputResult {
   sendExerciseList: (exercises: ExerciseListItem[], routines: RoutineListItem[]) => void
   /** Full remote control (RemoteHostProvider) — see PlaybackStatusPayload. */
   sendPlaybackStatus: (status: PlaybackStatusPayload) => void
+  /** PedalDisciplinePage's own mirror — see PedalDisciplineStatePayload. */
+  sendPedalDisciplineState: (state: PedalDisciplineStatePayload | null) => void
 }
 
 const RECONNECT_INTERVAL_MS = 3000
@@ -265,5 +281,17 @@ export function useRemoteDrumInput({
     socket.send(JSON.stringify({ type: 'playback_status', ...status }))
   }, [])
 
-  return { status: enabled ? connectionStatus : 'disabled', sendNotationState, sendExerciseList, sendPlaybackStatus }
+  const sendPedalDisciplineState = useCallback((state: PedalDisciplineStatePayload | null) => {
+    const socket = socketRef.current
+    if (!socket || socket.readyState !== WebSocket.OPEN) return
+    socket.send(JSON.stringify(state ? { type: 'pedal_discipline_state', ...state } : { type: 'pedal_discipline_clear' }))
+  }, [])
+
+  return {
+    status: enabled ? connectionStatus : 'disabled',
+    sendNotationState,
+    sendExerciseList,
+    sendPlaybackStatus,
+    sendPedalDisciplineState,
+  }
 }

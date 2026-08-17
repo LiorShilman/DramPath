@@ -145,6 +145,30 @@ const playbackStatusMessageSchema = z.object({
     .optional(),
 })
 
+// Host -> controller, PedalDisciplinePage's own mirroring — a completely
+// separate screen from the notation/exercise flow above (no
+// InteractiveExercise, no notation), so it gets its own small message
+// rather than being shoehorned into notation_state/playback_status. null
+// means "the pedal-discipline screen isn't open on the desktop right now",
+// mirroring playback_status's own null-fields-together convention.
+const pedalDisciplineStateMessageSchema = z.object({
+  type: z.literal('pedal_discipline_state'),
+  isRunning: z.boolean(),
+  streak: z.number().int().nonnegative(),
+  bestStreak: z.number().int().nonnegative(),
+  totalHits: z.number().int().nonnegative(),
+  closedHits: z.number().int().nonnegative(),
+  elapsedSeconds: z.number().int().nonnegative(),
+  // Present only on the hit that just happened — same "ride the transition
+  // itself" idea as notation_state, not a separate message that could
+  // arrive out of order relative to the counters above.
+  lastHit: z.enum(['closed', 'open']).optional(),
+})
+// Same two-message convention as notation_state/notation_clear — sent when
+// PedalDisciplinePage unmounts, so the phone doesn't keep showing a stale
+// mirror after the player navigates away from the screen entirely.
+const pedalDisciplineClearMessageSchema = z.object({ type: z.literal('pedal_discipline_clear') })
+
 export const remoteRelayMessageSchema = z.discriminatedUnion('type', [
   hitMessageSchema,
   hostStatusMessageSchema,
@@ -157,6 +181,8 @@ export const remoteRelayMessageSchema = z.discriminatedUnion('type', [
   selectRoutineMessageSchema,
   transportCommandMessageSchema,
   playbackStatusMessageSchema,
+  pedalDisciplineStateMessageSchema,
+  pedalDisciplineClearMessageSchema,
 ])
 
 // Mirrors server/remote-drum-relay/app/main.py's SUPERSEDED_CLOSE_CODE — the
@@ -194,6 +220,8 @@ export type SelectRoutineMessage = z.infer<typeof selectRoutineMessageSchema>
 export type TransportCommandAction = z.infer<typeof transportCommandMessageSchema>['action']
 export type TransportCommandMessage = z.infer<typeof transportCommandMessageSchema>
 export type PlaybackStatusMessage = z.infer<typeof playbackStatusMessageSchema>
+export type PedalDisciplineStateMessage = z.infer<typeof pedalDisciplineStateMessageSchema>
+export type PedalDisciplineClearMessage = z.infer<typeof pedalDisciplineClearMessageSchema>
 
 /** Parses a raw WebSocket text frame into a typed message, or undefined for
  * anything malformed (invalid JSON, unknown `type`, wrong shape) — the

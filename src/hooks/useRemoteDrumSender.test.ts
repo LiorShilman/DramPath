@@ -369,6 +369,85 @@ describe('useRemoteDrumSender', () => {
     })
   })
 
+  it('receiving a pedal_discipline_state message sets pedalDisciplineState', () => {
+    vi.stubGlobal('WebSocket', FakeWebSocket)
+    const { result } = renderHook(() => useRemoteDrumSender())
+
+    act(() => result.current.connect('192.168.1.59:8001'))
+    act(() => latestSocket().simulateOpen())
+
+    act(() =>
+      latestSocket().simulateMessage({
+        type: 'pedal_discipline_state',
+        isRunning: true,
+        streak: 3,
+        bestStreak: 5,
+        totalHits: 4,
+        closedHits: 3,
+        elapsedSeconds: 12,
+        lastHit: 'closed',
+      }),
+    )
+
+    expect(result.current.pedalDisciplineState).toEqual({
+      isRunning: true,
+      streak: 3,
+      bestStreak: 5,
+      totalHits: 4,
+      closedHits: 3,
+      elapsedSeconds: 12,
+      lastHit: 'closed',
+    })
+  })
+
+  it('a following pedal_discipline_clear message resets pedalDisciplineState to undefined', () => {
+    vi.stubGlobal('WebSocket', FakeWebSocket)
+    const { result } = renderHook(() => useRemoteDrumSender())
+
+    act(() => result.current.connect('192.168.1.59:8001'))
+    act(() => latestSocket().simulateOpen())
+    act(() =>
+      latestSocket().simulateMessage({
+        type: 'pedal_discipline_state',
+        isRunning: true,
+        streak: 1,
+        bestStreak: 1,
+        totalHits: 1,
+        closedHits: 1,
+        elapsedSeconds: 1,
+      }),
+    )
+    expect(result.current.pedalDisciplineState).toBeDefined()
+
+    act(() => latestSocket().simulateMessage({ type: 'pedal_discipline_clear' }))
+
+    expect(result.current.pedalDisciplineState).toBeUndefined()
+  })
+
+  it('disconnect() clears pedalDisciplineState too', () => {
+    vi.stubGlobal('WebSocket', FakeWebSocket)
+    const { result } = renderHook(() => useRemoteDrumSender())
+
+    act(() => result.current.connect('192.168.1.59:8001'))
+    act(() => latestSocket().simulateOpen())
+    act(() =>
+      latestSocket().simulateMessage({
+        type: 'pedal_discipline_state',
+        isRunning: true,
+        streak: 1,
+        bestStreak: 1,
+        totalHits: 1,
+        closedHits: 1,
+        elapsedSeconds: 1,
+      }),
+    )
+    expect(result.current.pedalDisciplineState).toBeDefined()
+
+    act(() => result.current.disconnect())
+
+    expect(result.current.pedalDisciplineState).toBeUndefined()
+  })
+
   it('requestExerciseList/selectExercise/selectRoutine/sendTransportCommand send the right frames once connected', () => {
     vi.stubGlobal('WebSocket', FakeWebSocket)
     const { result } = renderHook(() => useRemoteDrumSender())

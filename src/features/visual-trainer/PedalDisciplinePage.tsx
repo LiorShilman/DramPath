@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { useMidiDrumInput } from '../../hooks/useMidiDrumInput'
 import type { MidiDrumInputStatus } from '../../hooks/useMidiDrumInput'
+import { useRemoteHost } from './remote-host-context'
 import { Badge, Button, Card, PageHeader } from '../../components/ui'
 import type { BadgeVariant } from '../../components/ui'
+import { HiHatVisual } from '../../components/visual-trainer/HiHatVisual'
+import type { HiHatHitFeedback } from '../../components/visual-trainer/HiHatVisual'
 import { createId } from '../../domain'
 import type { DrumInstrument } from '../../domain'
 
@@ -44,11 +47,6 @@ function saveBestStreak(value: number): void {
   localStorage.setItem(BEST_STREAK_STORAGE_KEY, String(value))
 }
 
-interface HitFeedback {
-  kind: 'closed' | 'open'
-  token: string
-}
-
 interface SessionSummary {
   totalHits: number
   closedHits: number
@@ -63,40 +61,13 @@ function formatDuration(totalSeconds: number): string {
   return `${minutes}:${String(seconds).padStart(2, '0')}`
 }
 
-// The animated hi-hat itself — two bars whose gap smoothly transitions
-// based on the last real hit, plus a glow/shake burst on every hit (keyed
-// by feedback.token so two consecutive same-result hits both visibly pulse,
-// not just a class toggle that no-ops on an unchanged state).
-function HiHatVisual({ isRunning, feedback }: { isRunning: boolean; feedback: HitFeedback | null }) {
-  const gapPx = !isRunning || !feedback ? 18 : feedback.kind === 'closed' ? 6 : 34
-
-  return (
-    <div className="relative flex h-48 w-72 items-end justify-center">
-      <div
-        key={feedback?.token ?? 'idle'}
-        className={`pedal-hihat-glow absolute inset-0 ${feedback ? feedback.kind : ''}`}
-      >
-        {/* stand */}
-        <div className="absolute bottom-0 left-1/2 h-40 w-2 -translate-x-1/2 rounded-full bg-[var(--color-border)]" />
-        {/* bottom cymbal — fixed */}
-        <div className="absolute bottom-16 left-1/2 h-5 w-64 -translate-x-1/2 rounded-[50%] bg-gradient-to-b from-amber-400 to-amber-700 shadow-lg" />
-        {/* top cymbal — moves with gapPx */}
-        <div
-          className="absolute left-1/2 h-5 w-60 -translate-x-1/2 rounded-[50%] bg-gradient-to-b from-amber-300 to-amber-600 shadow-lg transition-[bottom] duration-150 ease-out"
-          style={{ bottom: `${64 + gapPx}px` }}
-        />
-      </div>
-    </div>
-  )
-}
-
 export function PedalDisciplinePage() {
   const [isRunning, setIsRunning] = useState(false)
   const [streak, setStreak] = useState(0)
   const [bestStreak, setBestStreak] = useState(loadBestStreak)
   const [totalHits, setTotalHits] = useState(0)
   const [closedHits, setClosedHits] = useState(0)
-  const [feedback, setFeedback] = useState<HitFeedback | null>(null)
+  const [feedback, setFeedback] = useState<HiHatHitFeedback | null>(null)
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
   const [summary, setSummary] = useState<SessionSummary | null>(null)
   const [celebrationToken, setCelebrationToken] = useState<string | null>(null)
@@ -106,8 +77,31 @@ export function PedalDisciplinePage() {
   const longestStreakThisSessionRef = useRef(0)
   const totalHitsRef = useRef(0)
   const closedHitsRef = useRef(0)
+  const streakRef = useRef(0)
+  const bestStreakRef = useRef(loadBestStreak())
   const bestStreakAtStartRef = useRef(0)
   const hasBeatenBestThisSessionRef = useRef(false)
+
+  const { sendPedalDisciplineState } = useRemoteHost()
+
+  // Mirrors this screen to a paired phone (ADR 0007) — a completely
+  // separate screen from the notation/exercise mirror, so it's sent
+  // directly here rather than via useVisualTrainer's registerSession (this
+  // page takes no remote hits/transport commands, nothing to register).
+  // Sent once on mount (so the phone switches to this view immediately,
+  // before Start is even pressed) and cleared on unmount so the phone
+  // doesn't keep showing a stale mirror after navigating away.
+  useEffect(() => {
+    sendPedalDisciplineState({
+      isRunning: false,
+      streak: 0,
+      bestStreak: loadBestStreak(),
+      totalHits: 0,
+      closedHits: 0,
+      elapsedSeconds: 0,
+    })
+    return () => sendPedalDisciplineState(null)
+  }, [sendPedalDisciplineState])
 
   useEffect(() => {
     if (!isRunning) return undefined
@@ -133,28 +127,40 @@ export function PedalDisciplinePage() {
 
       totalHitsRef.current += 1
       setTotalHits(totalHitsRef.current)
-      setFeedback({ kind: instrument === 'hihat_closed' ? 'closed' : 'open', token: createId() })
+      const hitKind = instrument === 'hihat_closed' ? 'closed' : 'open'
+      setFeedback({ kind: hitKind, token: createId() })
 
       if (instrument === 'hihat_closed') {
         closedHitsRef.current += 1
         setClosedHits(closedHitsRef.current)
-        setStreak((prev) => {
-          const next = prev + 1
-          longestStreakThisSessionRef.current = Math.max(longestStreakThisSessionRef.current, next)
-          if (next > bestStreakAtStartRef.current && !hasBeatenBestThisSessionRef.current) {
-            hasBeatenBestThisSessionRef.current = true
-            saveBestStreak(next)
-            setBestStreak(next)
-            setCelebrationToken(createId())
-          } else if (next > bestStreak) {
-            saveBestStreak(next)
-            setBestStreak(next)
-          }
-          return next
-        })
+        streakRef.current += 1
+        setStreak(streakRef.current)
+        longestStreakThisSessionRef.current = Math.max(longestStreakThisSessionRef.current, streakRef.current)
+        if (streakRef.current > bestStreakAtStartRef.current && !hasBeatenBestThisSessionRef.current) {
+          hasBeatenBestThisSessionRef.current = true
+          bestStreakRef.current = streakRef.current
+          saveBestStreak(streakRef.current)
+          setBestStreak(streakRef.current)
+          setCelebrationToken(createId())
+        } else if (streakRef.current > bestStreakRef.current) {
+          bestStreakRef.current = streakRef.current
+          saveBestStreak(streakRef.current)
+          setBestStreak(streakRef.current)
+        }
       } else {
+        streakRef.current = 0
         setStreak(0)
       }
+
+      sendPedalDisciplineState({
+        isRunning: true,
+        streak: streakRef.current,
+        bestStreak: bestStreakRef.current,
+        totalHits: totalHitsRef.current,
+        closedHits: closedHitsRef.current,
+        elapsedSeconds: startedAtRef.current !== null ? Math.floor((performance.now() - startedAtRef.current) / 1000) : 0,
+        lastHit: hitKind,
+      })
     },
   })
 
@@ -166,14 +172,23 @@ export function PedalDisciplinePage() {
     setSummary(null)
     setElapsedSeconds(0)
     setCelebrationToken(null)
+    streakRef.current = 0
     totalHitsRef.current = 0
     closedHitsRef.current = 0
     longestStreakThisSessionRef.current = 0
-    bestStreakAtStartRef.current = bestStreak
+    bestStreakAtStartRef.current = bestStreakRef.current
     hasBeatenBestThisSessionRef.current = false
     startedAtRef.current = performance.now()
     isRunningRef.current = true
     setIsRunning(true)
+    sendPedalDisciplineState({
+      isRunning: true,
+      streak: 0,
+      bestStreak: bestStreakRef.current,
+      totalHits: 0,
+      closedHits: 0,
+      elapsedSeconds: 0,
+    })
   }
 
   function handleStop() {
@@ -185,6 +200,14 @@ export function PedalDisciplinePage() {
       longestStreak: longestStreakThisSessionRef.current,
       durationSeconds: elapsedSeconds,
       isNewBest: hasBeatenBestThisSessionRef.current,
+    })
+    sendPedalDisciplineState({
+      isRunning: false,
+      streak: streakRef.current,
+      bestStreak: bestStreakRef.current,
+      totalHits: totalHitsRef.current,
+      closedHits: closedHitsRef.current,
+      elapsedSeconds,
     })
   }
 
@@ -201,14 +224,17 @@ export function PedalDisciplinePage() {
 
       <div className="relative flex flex-col items-center gap-2">
         <HiHatVisual isRunning={isRunning} feedback={feedback} />
-        {celebrationToken && (
-          <div
-            key={celebrationToken}
-            className="pedal-streak-number pop absolute -top-4 rounded-full bg-[var(--color-success)] px-4 py-1 text-sm font-bold text-white shadow-lg"
-          >
-            🔥 שיא אישי חדש!
-          </div>
-        )}
+        {/* Always mounted (never conditionally inserted/removed) — direct
+            user report: a conditionally-mounted absolutely-positioned banner
+            could paint one frame before position:absolute fully applied,
+            briefly pushing the rest of the layout down-and-right. Toggling
+            opacity on an always-present node can't do that, since nothing
+            is ever inserted into the DOM after the initial render. */}
+        <div
+          className={`pointer-events-none absolute -top-4 rounded-full bg-[var(--color-success)] px-4 py-1 text-sm font-bold text-white shadow-lg transition-opacity duration-300 ${celebrationToken ? 'opacity-100' : 'opacity-0'}`}
+        >
+          🔥 שיא אישי חדש!
+        </div>
       </div>
 
       <div className="flex flex-col items-center gap-1">

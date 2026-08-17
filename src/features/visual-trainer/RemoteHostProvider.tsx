@@ -149,7 +149,7 @@ export function RemoteHostProvider({ children }: { children: ReactNode }) {
     else if (action === 'previous') session.previous?.()
   }, [])
 
-  const { status, sendNotationState, sendExerciseList, sendPlaybackStatus } = useRemoteDrumInput({
+  const { status, sendNotationState, sendExerciseList, sendPlaybackStatus, sendPedalDisciplineState } = useRemoteDrumInput({
     enabled: isEnabled,
     onHit: handleHit,
     onRequestExerciseList: handleRequestExerciseList,
@@ -182,8 +182,16 @@ export function RemoteHostProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const value = useMemo<RemoteHostContextValue>(
-    () => ({ status, isEnabled, toggleEnabled, sendNotationState, sendPlaybackStatus, registerSession }),
-    [status, isEnabled, toggleEnabled, sendNotationState, sendPlaybackStatus, registerSession],
+    () => ({
+      status,
+      isEnabled,
+      toggleEnabled,
+      sendNotationState,
+      sendPlaybackStatus,
+      sendPedalDisciplineState,
+      registerSession,
+    }),
+    [status, isEnabled, toggleEnabled, sendNotationState, sendPlaybackStatus, sendPedalDisciplineState, registerSession],
   )
 
   return <RemoteHostContext.Provider value={value}>{children}</RemoteHostContext.Provider>
