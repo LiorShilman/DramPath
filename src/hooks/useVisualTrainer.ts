@@ -924,8 +924,19 @@ export function useVisualTrainer(
       const now = performance.now()
       const lastExtraKickAt = lastExtraKickAtRef.current
       lastExtraKickAtRef.current = now
-      if (lastExtraKickAt !== null && now - lastExtraKickAt <= DOUBLE_KICK_RESTART_WINDOW_MS) {
+      // Same in-flight guard the idle/finished single-kick start uses above
+      // — without it, a kick landing just after a *previous* kick-triggered
+      // restart's beginPlayback() had already flipped phase away from
+      // idle/finished (but was still mid-flight) could itself re-enter
+      // restartRef() a second time, unguarded, racing two overlapping runs
+      // against the same lastNotationPayloadRef/pendingRef state.
+      if (
+        lastExtraKickAt !== null &&
+        now - lastExtraKickAt <= DOUBLE_KICK_RESTART_WINDOW_MS &&
+        !kickStartInFlightRef.current
+      ) {
         lastExtraKickAtRef.current = null
+        kickStartInFlightRef.current = true
         restartRef.current()
         scheduleRemoteCatchupResend()
       }
@@ -988,6 +999,24 @@ export function useVisualTrainer(
       hitResultsRef.current = []
       extraHitsRef.current = []
       totalExpectedEventsRef.current = pendingRef.current.length
+      // A stray extra kick from the run that just ended must never survive
+      // into this one — direct user report: a kick-triggered restart from
+      // 'finished' occasionally left the phone showing no markings at all,
+      // fixed only by one more kick. Root cause: the double-kick "jump to
+      // start" gesture below is gated on DOUBLE_KICK_RESTART_WINDOW_MS
+      // purely by elapsed time, with no in-flight guard of its own (unlike
+      // the single-kick idle/finished start above, which kickStartInFlightRef
+      // does protect) — a fast double-kick used to START the run (first
+      // kick) could leave the *second* kick landing just after this fresh
+      // beginPlayback had already flipped phase to count-in/running, getting
+      // graded as a real (if unmatched) hit here instead of being swallowed.
+      // If lastExtraKickAtRef still held a recent timestamp from the
+      // just-finished run, that "extra" grade read as a second double-kick
+      // and fired an unguarded, fully re-entrant restartRef() while the
+      // first beginPlayback() was still resolving — two overlapping runs
+      // racing to set lastNotationPayloadRef/pendingRef, whichever's tail
+      // end happened to finish last silently winning.
+      lastExtraKickAtRef.current = null
 
       barDurationMsRef.current = calculateBarDurationMs(exercise.bpm, exercise.timeSignature)
       beatDurationMsRef.current = barDurationMsRef.current / exercise.timeSignature.numerator

@@ -832,6 +832,50 @@ describe('useVisualTrainer', () => {
     await waitFor(() => expect(result.current.phase).toBe('count-in'), { timeout: 3000 })
   })
 
+  it('a stray extra kick from the run that just finished cannot leak into a fresh kick-started run and trigger an unwanted second restart', async () => {
+    // Direct user report: after a full lesson finished, restarting via the
+    // kick sometimes left the phone with no markings at all. Root cause: an
+    // 'extra'-graded kick during the run left a recent timestamp in
+    // lastExtraKickAtRef; the idle/finished single-kick start path (below)
+    // never touched that ref, so it survived into the fresh run. A kick
+    // landing during that fresh run's own earliest count-in — still within
+    // the double-click window of the *stale* timestamp — read as a second
+    // "double-kick restart" and fired a fully re-entrant restart while the
+    // first one was still resolving. Fixed by resetting lastExtraKickAtRef
+    // at the top of every beginPlayback().
+    vi.stubGlobal('AudioContext', FakeAudioContext)
+    const input = new FakeMIDIInput()
+    stubMidiAccess(input)
+    const exercise = makeExercise([
+      { id: createId(), bar: 1, beat: 1, subdivisionIndex: 0, instrument: 'snare', velocity: 100 },
+    ])
+    const { result } = renderHook(() => useVisualTrainer(exercise, noHighwayRef))
+
+    act(() => result.current.toggleMidiControl())
+    await waitFor(() => expect(result.current.midiStatus).toBe('connected'))
+    await act(() => result.current.start())
+    await waitFor(() => expect(result.current.phase).toBe('running'), { timeout: 3000 })
+
+    // Note 36 = kick — never matches this snare-only exercise, so this
+    // grades 'extra' and leaves a fresh timestamp in lastExtraKickAtRef.
+    act(() => input.simulateMessage([0x99, 36, 100]))
+    await waitFor(() => expect(result.current.phase).toBe('finished'), { timeout: 3000 })
+    const playSessionIdAfterFirstRun = result.current.playSessionId
+
+    // One kick restarts it from 'finished' (the idle/finished path).
+    act(() => input.simulateMessage([0x99, 36, 100]))
+    await waitFor(() => expect(result.current.phase).toBe('count-in'), { timeout: 3000 })
+    expect(result.current.playSessionId).toBe(playSessionIdAfterFirstRun + 1)
+
+    // A kick landing right as the fresh run begins (still snare-only, so
+    // this one grades 'extra' too) must NOT read the stray timestamp from
+    // the previous run as a double-kick and restart a second time.
+    act(() => input.simulateMessage([0x99, 36, 100]))
+    await new Promise((resolve) => setTimeout(resolve, 300))
+
+    expect(result.current.playSessionId).toBe(playSessionIdAfterFirstRun + 1)
+  })
+
   it('a non-kick MIDI hit while idle does nothing', async () => {
     vi.stubGlobal('AudioContext', FakeAudioContext)
     const input = new FakeMIDIInput()
