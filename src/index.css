@@ -366,6 +366,68 @@ input[type='radio'] {
   }
 }
 
+/* PedalDisciplinePage's hi-hat visual — a closing hit pulses green, an
+   accidental open ("leak") flashes red with a small shake. Same
+   remount-on-new-token technique as .drum-piece.hit/.key-cap.pressed above,
+   since a class toggle alone can't restart an animation already applied on
+   rapid repeated hits that resolve the same way. */
+.pedal-hihat-glow.closed {
+  animation: pedal-close-snap 260ms ease-out;
+}
+.pedal-hihat-glow.open {
+  animation: pedal-leak-flash 320ms ease-out;
+}
+
+@keyframes pedal-close-snap {
+  0% {
+    filter: drop-shadow(0 0 0 transparent) brightness(1);
+  }
+  30% {
+    filter: drop-shadow(0 0 18px var(--color-success-text)) brightness(1.3);
+  }
+  100% {
+    filter: drop-shadow(0 0 0 transparent) brightness(1);
+  }
+}
+
+@keyframes pedal-leak-flash {
+  0% {
+    filter: drop-shadow(0 0 0 transparent) brightness(1);
+    transform: translateX(0);
+  }
+  20% {
+    filter: drop-shadow(0 0 18px var(--color-danger-text)) brightness(1.2);
+    transform: translateX(-4px);
+  }
+  40% {
+    transform: translateX(4px);
+  }
+  60% {
+    transform: translateX(-2px);
+  }
+  100% {
+    filter: drop-shadow(0 0 0 transparent) brightness(1);
+    transform: translateX(0);
+  }
+}
+
+/* The streak number itself pops on every increment. */
+.pedal-streak-number.pop {
+  animation: pedal-streak-pop 220ms ease-out;
+}
+
+@keyframes pedal-streak-pop {
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(1.25);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
 /* §30: respect prefers-reduced-motion for any transition/animation in the app. */
 @media (prefers-reduced-motion: reduce) {
   *,

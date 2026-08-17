@@ -77,6 +77,9 @@ export const RoutineBuilderPage = lazy(() =>
 export const RoutinePlayerPage = lazy(() =>
   import('../features/visual-trainer').then((m) => ({ default: m.RoutinePlayerPage })),
 )
+export const PedalDisciplinePage = lazy(() =>
+  import('../features/visual-trainer').then((m) => ({ default: m.PedalDisciplinePage })),
+)
 export const DrumImportPage = lazy(() =>
   import('../features/drum-import').then((m) => ({ default: m.DrumImportPage })),
 )

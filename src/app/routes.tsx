@@ -25,6 +25,7 @@ import {
   RoutineListPage,
   RoutineBuilderPage,
   RoutinePlayerPage,
+  PedalDisciplinePage,
   DrumImportPage,
   TouchDrumKitPage,
   CurriculumGeneratorPage,
@@ -73,6 +74,11 @@ export const routes: RouteObject[] = [
       { path: 'practice/visual/build', element: <ExerciseBuilderPage /> },
       { path: 'practice/visual/build/:exerciseId', element: <ExerciseBuilderPage /> },
       { path: 'practice/visual/import', element: <DrumImportPage /> },
+      // Hi-hat pedal endurance drill — not tied to any InteractiveExercise
+      // (no notation, nothing to read), just a continuous stream of real
+      // hits graded on which instrument they resolved to. Link-only, from
+      // ExerciseSelectPage's own header.
+      { path: 'practice/visual/pedal-discipline', element: <PedalDisciplinePage /> },
       // Practice routines (setlists) — same list+detail(+build) convention
       // as exercises, one level down.
       { path: 'practice/visual/routines', element: <RoutineListPage /> },
