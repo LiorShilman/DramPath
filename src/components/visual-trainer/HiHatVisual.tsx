@@ -19,6 +19,17 @@ export function HiHatVisual({ isRunning, feedback }: HiHatVisualProps) {
 
   return (
     <div className="relative flex h-48 w-72 items-end justify-center">
+      {/* Live-pace pulse ring — fires only on a closed hit (never on an
+          open/leak one), so how OFTEN it pulses is itself a visual read of
+          the player's current pace, alongside the numeric BPM readout next
+          to the streak. Centered independent of the stand/cymbals below, so
+          it doesn't shift if the gap animation moves the top cymbal. */}
+      {feedback?.kind === 'closed' && (
+        <div
+          key={feedback.token}
+          className="pedal-pace-ring pointer-events-none absolute bottom-16 left-1/2 h-24 w-24 -translate-x-1/2 rounded-full border-2 border-[var(--color-success-text)]"
+        />
+      )}
       <div
         key={feedback?.token ?? 'idle'}
         className={`pedal-hihat-glow absolute inset-0 ${feedback ? feedback.kind : ''}`}

@@ -192,4 +192,30 @@ describe('PedalDisciplinePage', () => {
 
     expect(sendPedalDisciplineState).toHaveBeenCalledWith(null)
   })
+
+  it('shows a live BPM readout once at least two closed hits have landed, and mirrors it to the phone', async () => {
+    const input = await renderAndStart()
+
+    act(() => input.simulateMessage(CLOSED_HIHAT))
+    // A single closed hit has no interval to compute a pace from yet.
+    expect(screen.queryByText(/קצב:/)).not.toBeInTheDocument()
+
+    act(() => input.simulateMessage(CLOSED_HIHAT))
+    await waitFor(() => expect(screen.getByText(/קצב: \d+ BPM/)).toBeInTheDocument())
+    expect(sendPedalDisciplineState).toHaveBeenLastCalledWith(
+      expect.objectContaining({ paceBpm: expect.any(Number) }),
+    )
+  })
+
+  it('clears the live BPM readout after an open (leak) hit resets the pace window', async () => {
+    const input = await renderAndStart()
+
+    act(() => input.simulateMessage(CLOSED_HIHAT))
+    act(() => input.simulateMessage(CLOSED_HIHAT))
+    await waitFor(() => expect(screen.getByText(/קצב: \d+ BPM/)).toBeInTheDocument())
+
+    act(() => input.simulateMessage(OPEN_HIHAT))
+
+    await waitFor(() => expect(screen.queryByText(/קצב:/)).not.toBeInTheDocument())
+  })
 })

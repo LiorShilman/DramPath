@@ -299,6 +299,35 @@ describe('parseRemoteRelayMessage', () => {
   it('parses a valid pedal_discipline_clear message', () => {
     expect(parseRemoteRelayMessage('{"type":"pedal_discipline_clear"}')).toEqual({ type: 'pedal_discipline_clear' })
   })
+
+  it('parses a valid pedal_discipline_state message with paceBpm', () => {
+    const raw = JSON.stringify({
+      type: 'pedal_discipline_state',
+      isRunning: true,
+      streak: 3,
+      bestStreak: 5,
+      totalHits: 4,
+      closedHits: 3,
+      elapsedSeconds: 12,
+      lastHit: 'closed',
+      paceBpm: 96,
+    })
+    expect(parseRemoteRelayMessage(raw)).toMatchObject({ paceBpm: 96 })
+  })
+
+  it('returns undefined for a pedal_discipline_state message with a non-positive paceBpm', () => {
+    const raw = JSON.stringify({
+      type: 'pedal_discipline_state',
+      isRunning: true,
+      streak: 0,
+      bestStreak: 0,
+      totalHits: 0,
+      closedHits: 0,
+      elapsedSeconds: 0,
+      paceBpm: 0,
+    })
+    expect(parseRemoteRelayMessage(raw)).toBeUndefined()
+  })
 })
 
 describe('buildProductionRelayWsUrl', () => {

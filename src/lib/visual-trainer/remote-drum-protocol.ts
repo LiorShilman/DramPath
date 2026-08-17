@@ -163,6 +163,11 @@ const pedalDisciplineStateMessageSchema = z.object({
   // itself" idea as notation_state, not a separate message that could
   // arrive out of order relative to the counters above.
   lastHit: z.enum(['closed', 'open']).optional(),
+  // Live pace (BPM), smoothed over the last few CLOSED hits only — undefined
+  // until at least two closed hits have landed since the last open hit/reset,
+  // same reasoning as gradedEventIds being the specific slice worth
+  // computing this from (see PedalDisciplinePage's own computePaceBpm).
+  paceBpm: z.number().int().positive().optional(),
 })
 // Same two-message convention as notation_state/notation_clear — sent when
 // PedalDisciplinePage unmounts, so the phone doesn't keep showing a stale

@@ -65,6 +65,7 @@ export interface RemotePedalDisciplineState {
   closedHits: number
   elapsedSeconds: number
   lastHit?: 'closed' | 'open'
+  paceBpm?: number
 }
 
 export interface UseRemoteDrumSenderResult {
@@ -191,6 +192,7 @@ export function useRemoteDrumSender(): UseRemoteDrumSenderResult {
           closedHits: message.closedHits,
           elapsedSeconds: message.elapsedSeconds,
           lastHit: message.lastHit,
+          paceBpm: message.paceBpm,
         })
       } else if (message?.type === 'pedal_discipline_clear') {
         setPedalDisciplineState(undefined)

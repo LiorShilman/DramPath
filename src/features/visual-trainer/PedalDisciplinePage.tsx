@@ -6,6 +6,7 @@ import { Badge, Button, Card, PageHeader } from '../../components/ui'
 import type { BadgeVariant } from '../../components/ui'
 import { HiHatVisual } from '../../components/visual-trainer/HiHatVisual'
 import type { HiHatHitFeedback } from '../../components/visual-trainer/HiHatVisual'
+import { computePaceBpm } from '../../domain/calculations/pedal-pace'
 import { createId } from '../../domain'
 import type { DrumInstrument } from '../../domain'
 
@@ -61,6 +62,10 @@ function formatDuration(totalSeconds: number): string {
   return `${minutes}:${String(seconds).padStart(2, '0')}`
 }
 
+// An open/leak hit clears recentHitTimestampsRef entirely (see its call
+// site) — computePaceBpm itself just averages whatever window it's given.
+const PACE_WINDOW_SIZE = 6
+
 export function PedalDisciplinePage() {
   const [isRunning, setIsRunning] = useState(false)
   const [streak, setStreak] = useState(0)
@@ -71,6 +76,7 @@ export function PedalDisciplinePage() {
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
   const [summary, setSummary] = useState<SessionSummary | null>(null)
   const [celebrationToken, setCelebrationToken] = useState<string | null>(null)
+  const [livePaceBpm, setLivePaceBpm] = useState<number | undefined>(undefined)
 
   const isRunningRef = useRef(false)
   const startedAtRef = useRef<number | null>(null)
@@ -81,6 +87,7 @@ export function PedalDisciplinePage() {
   const bestStreakRef = useRef(loadBestStreak())
   const bestStreakAtStartRef = useRef(0)
   const hasBeatenBestThisSessionRef = useRef(false)
+  const recentHitTimestampsRef = useRef<number[]>([])
 
   const { sendPedalDisciplineState } = useRemoteHost()
 
@@ -130,6 +137,7 @@ export function PedalDisciplinePage() {
       const hitKind = instrument === 'hihat_closed' ? 'closed' : 'open'
       setFeedback({ kind: hitKind, token: createId() })
 
+      let paceBpm: number | undefined
       if (instrument === 'hihat_closed') {
         closedHitsRef.current += 1
         setClosedHits(closedHitsRef.current)
@@ -147,9 +155,19 @@ export function PedalDisciplinePage() {
           saveBestStreak(streakRef.current)
           setBestStreak(streakRef.current)
         }
+        recentHitTimestampsRef.current = [...recentHitTimestampsRef.current, performance.now()].slice(
+          -PACE_WINDOW_SIZE,
+        )
+        paceBpm = computePaceBpm(recentHitTimestampsRef.current)
+        setLivePaceBpm(paceBpm)
       } else {
         streakRef.current = 0
         setStreak(0)
+        // An open/leak hit breaks the pace window entirely — same reasoning
+        // as the streak resetting: a mistake resets what "current pace"
+        // even means, not just one more (very long) interval to average in.
+        recentHitTimestampsRef.current = []
+        setLivePaceBpm(undefined)
       }
 
       sendPedalDisciplineState({
@@ -160,6 +178,7 @@ export function PedalDisciplinePage() {
         closedHits: closedHitsRef.current,
         elapsedSeconds: startedAtRef.current !== null ? Math.floor((performance.now() - startedAtRef.current) / 1000) : 0,
         lastHit: hitKind,
+        paceBpm,
       })
     },
   })
@@ -172,12 +191,14 @@ export function PedalDisciplinePage() {
     setSummary(null)
     setElapsedSeconds(0)
     setCelebrationToken(null)
+    setLivePaceBpm(undefined)
     streakRef.current = 0
     totalHitsRef.current = 0
     closedHitsRef.current = 0
     longestStreakThisSessionRef.current = 0
     bestStreakAtStartRef.current = bestStreakRef.current
     hasBeatenBestThisSessionRef.current = false
+    recentHitTimestampsRef.current = []
     startedAtRef.current = performance.now()
     isRunningRef.current = true
     setIsRunning(true)
@@ -208,6 +229,7 @@ export function PedalDisciplinePage() {
       totalHits: totalHitsRef.current,
       closedHits: closedHitsRef.current,
       elapsedSeconds,
+      paceBpm: livePaceBpm,
     })
   }
 
@@ -250,6 +272,12 @@ export function PedalDisciplinePage() {
           {streak}
         </div>
         <p className="text-sm text-[var(--color-text-muted)]">רצף נוכחי · שיא אישי: {bestStreak}</p>
+        {/* Smoothed over the last few closed hits — see computePaceBpm's
+            own doc comment. Reserves its own line (rather than swapping in
+            place) so the layout above it never shifts as this appears. */}
+        <p className="min-h-5 text-sm font-semibold text-[var(--color-primary-text)]">
+          {livePaceBpm !== undefined ? `קצב: ${livePaceBpm} BPM` : ''}
+        </p>
       </div>
 
       {isRunning && (

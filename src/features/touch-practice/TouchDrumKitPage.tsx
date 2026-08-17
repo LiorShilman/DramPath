@@ -622,6 +622,11 @@ export function TouchDrumKitPage() {
         <p className="text-sm text-[var(--color-text-muted)]">
           רצף נוכחי · שיא אישי: {pedalDisciplineState.bestStreak}
         </p>
+        {pedalDisciplineState.paceBpm !== undefined && (
+          <p className="text-sm font-semibold text-[var(--color-primary-text)]">
+            קצב: {pedalDisciplineState.paceBpm} BPM
+          </p>
+        )}
         {pedalDisciplineState.isRunning && (
           <div className="flex flex-wrap items-center justify-center gap-4 text-sm text-[var(--color-text-muted)]">
             <span className="tabular-nums">{pedalDisciplineState.totalHits} הקשות</span>

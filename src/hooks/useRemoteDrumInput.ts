@@ -103,6 +103,7 @@ export interface PedalDisciplineStatePayload {
   closedHits: number
   elapsedSeconds: number
   lastHit?: 'closed' | 'open'
+  paceBpm?: number
 }
 
 export interface UseRemoteDrumInputResult {
