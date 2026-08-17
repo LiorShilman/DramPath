@@ -320,6 +320,24 @@ export function useVisualTrainer(
     stickClickTimeoutIdsRef.current.clear()
   }, [])
 
+  // A kick-triggered start/restart's own delayed catch-up resend (see
+  // scheduleRemoteCatchupResend below) — kept in its own Set, NOT
+  // stickClickTimeoutIdsRef, after a direct user report that the phone's
+  // grading mirror stopped updating for the rest of a run whenever it was
+  // restarted via a kick. Root cause: scheduleRemoteCatchupResend is called
+  // synchronously by the SAME kick that starts beginPlayback, so its
+  // setTimeout id used to land in stickClickTimeoutIdsRef just before
+  // beginPlayback's own clearStickClickTimeouts() (called once
+  // audioContext.resume() settles) unconditionally cleared that whole set —
+  // silently cancelling the one-shot resend the kick restart itself had just
+  // scheduled, every single time, on every kick-triggered restart.
+  const remoteCatchupTimeoutIdsRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set())
+
+  const clearRemoteCatchupTimeouts = useCallback(() => {
+    for (const timeoutId of remoteCatchupTimeoutIdsRef.current) clearTimeout(timeoutId)
+    remoteCatchupTimeoutIdsRef.current.clear()
+  }, [])
+
   const pendingRef = useRef<PendingDrumEvent[]>([])
   const hitResultsRef = useRef<HitResult[]>([])
   const extraHitsRef = useRef<ExtraHitEvent[]>([])
@@ -416,10 +434,11 @@ export function useVisualTrainer(
     return () => {
       stopLoops()
       clearStickClickTimeouts()
+      clearRemoteCatchupTimeouts()
       engineRef.current?.dispose()
       void audioContextRef.current?.close()
     }
-  }, [clearStickClickTimeouts, stopLoops])
+  }, [clearRemoteCatchupTimeouts, clearStickClickTimeouts, stopLoops])
 
   const recomputeScoring = useCallback(() => {
     setScoring(summarizeScoring(hitResultsRef.current, extraHitsRef.current, totalExpectedEventsRef.current))
@@ -863,12 +882,13 @@ export function useVisualTrainer(
   // same couple of seconds of round-trip time "for free". A one-shot
   // delayed catch-up resend gives whatever needs to settle the same head
   // start, without waiting for the regular 2s heartbeat (startBarInterval)
-  // to get there on its own. Reuses stickClickTimeoutIdsRef's own
-  // cleanup lifecycle (cleared on unmount/exit/beginPlayback) rather than
-  // a dedicated ref, since it's just "a pending timeout tied to this run".
+  // to get there on its own. Uses its own remoteCatchupTimeoutIdsRef (see
+  // its own doc comment) — NOT stickClickTimeoutIdsRef, which
+  // beginPlayback's own clearStickClickTimeouts() clears unconditionally
+  // every time, including for the very kick that scheduled this resend.
   const scheduleRemoteCatchupResend = useCallback(() => {
     const timeoutId = setTimeout(() => {
-      stickClickTimeoutIdsRef.current.delete(timeoutId)
+      remoteCatchupTimeoutIdsRef.current.delete(timeoutId)
       if (lastNotationPayloadRef.current) sendNotationStateRef.current(lastNotationPayloadRef.current)
       sendPlaybackStatusRef.current({
         exerciseId: exercise.id,
@@ -878,7 +898,7 @@ export function useVisualTrainer(
         routineProgress: routineProgressRef.current,
       })
     }, 500)
-    stickClickTimeoutIdsRef.current.add(timeoutId)
+    remoteCatchupTimeoutIdsRef.current.add(timeoutId)
   }, [exercise])
 
   const handleMidiHit = useCallback(
@@ -1192,11 +1212,12 @@ export function useVisualTrainer(
     engineRef.current?.stop()
     stopLoops()
     clearStickClickTimeouts()
+    clearRemoteCatchupTimeouts()
     setPhaseBoth('idle')
     lastNotationPayloadRef.current = null
     sendNotationState(null)
     sendPlaybackStatus({ exerciseId: null, title: null, bpm: null, phase: 'none' })
-  }, [clearStickClickTimeouts, sendNotationState, sendPlaybackStatus, setPhaseBoth, stopLoops])
+  }, [clearRemoteCatchupTimeouts, clearStickClickTimeouts, sendNotationState, sendPlaybackStatus, setPhaseBoth, stopLoops])
 
   // Re-asserts THIS session's real current status (and, if a real MIDI run
   // is mirroring notation, its current notation too) on demand — not the

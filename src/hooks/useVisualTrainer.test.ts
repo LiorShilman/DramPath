@@ -755,8 +755,13 @@ describe('useVisualTrainer', () => {
     vi.stubGlobal('AudioContext', FakeAudioContext)
     const input = new FakeMIDIInput()
     stubMidiAccess(input)
+    // The note sits far in the future (bar 1000) — this run must still be
+    // mid-count-in when the assertion window closes, so a MISSED-note send
+    // (runGradingTick's own detectMissedEvents path, also calls
+    // sendNotationState) can't be what satisfies this test instead of the
+    // catch-up resend it's actually meant to verify.
     const exercise = {
-      ...makeExercise([{ id: createId(), bar: 1, beat: 1, subdivisionIndex: 0, instrument: 'kick', velocity: 100 }]),
+      ...makeExercise([{ id: createId(), bar: 1000, beat: 1, subdivisionIndex: 0, instrument: 'kick', velocity: 100 }]),
       displayMode: 'staff_cursor' as const,
     }
     const { result } = renderHook(() => useVisualTrainer(exercise, noHighwayRef))
@@ -778,6 +783,10 @@ describe('useVisualTrainer', () => {
       },
       { timeout: 1500 },
     )
+    // Confirms the run is still genuinely mid-flight (not finished) when the
+    // above resolves — the only thing that could have sent is the catch-up
+    // resend or the natural count-in->running transition, never a miss.
+    expect(result.current.phase).not.toBe('finished')
   })
 
   it('two kick hits landing before beginPlayback catches up only start the exercise once (no re-entrant double-start)', async () => {
@@ -945,12 +954,20 @@ describe('useVisualTrainer', () => {
   it('a double-kick restart also schedules a delayed catch-up resend to the phone', async () => {
     // Same reasoning/fix as the kick-to-start catch-up resend test above —
     // direct user report that this reproduced on a double-kick restart too,
-    // not just the very first kick-to-start.
+    // not just the very first kick-to-start. The note is far in the future
+    // (bar 1000) for the same reason as that test: nothing else must be able
+    // to send within the assertion window, or a coincidental miss-detection
+    // send could pass this even with the catch-up resend itself broken —
+    // exactly what happened before this test was tightened (confirmed
+    // directly: the original version of this test passed even when the
+    // resend's own setTimeout was silently cancelled by beginPlayback's
+    // clearStickClickTimeouts(), because the snare note at bar 1/beat 1 got
+    // marked missed within the same window and sent on its own).
     vi.stubGlobal('AudioContext', FakeAudioContext)
     const input = new FakeMIDIInput()
     stubMidiAccess(input)
     const exercise = {
-      ...makeExercise([{ id: createId(), bar: 1, beat: 1, subdivisionIndex: 0, instrument: 'snare', velocity: 100 }]),
+      ...makeExercise([{ id: createId(), bar: 1000, beat: 1, subdivisionIndex: 0, instrument: 'snare', velocity: 100 }]),
       displayMode: 'staff_cursor' as const,
     }
     const { result } = renderHook(() => useVisualTrainer(exercise, noHighwayRef))
@@ -974,6 +991,7 @@ describe('useVisualTrainer', () => {
       },
       { timeout: 1500 },
     )
+    expect(result.current.phase).not.toBe('finished')
   })
 
   it('two extra kick hits further apart than the double-click window do not restart the exercise', async () => {
