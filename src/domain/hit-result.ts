@@ -45,5 +45,10 @@ export const extraHitEventSchema = z.object({
   id: uuidSchema,
   instrument: drumInstrumentSchema,
   hitTimeMs: z.number().nonnegative(),
+  // Same "real MIDI velocity, undefined for keyboard/phone" convention as
+  // HitResult.actualVelocity — added for render-recording.ts, which needs
+  // every real hit's actual loudness, extra hits included, to reproduce a
+  // faithful recording.
+  velocity: z.number().int().min(0).max(127).optional(),
 })
 export type ExtraHitEvent = z.infer<typeof extraHitEventSchema>

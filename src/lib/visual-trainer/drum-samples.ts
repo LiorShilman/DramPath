@@ -15,10 +15,13 @@ function candidatePaths(instrument: DrumInstrument): string[] {
   return SAMPLE_EXTENSIONS.map((extension) => withBaseUrl(`audio/drums/${instrument}.${extension}`))
 }
 
-const sampleCache = new WeakMap<AudioContext, Map<DrumInstrument, AudioBuffer>>()
-const loadingStarted = new WeakSet<AudioContext>()
+// BaseAudioContext (not AudioContext) so an OfflineAudioContext — used by
+// render-recording.ts to render a finished run's real hits back to audio —
+// can share this exact same loading/caching path, not a parallel one.
+const sampleCache = new WeakMap<BaseAudioContext, Map<DrumInstrument, AudioBuffer>>()
+const loadingStarted = new WeakSet<BaseAudioContext>()
 
-function getCacheFor(audioContext: AudioContext): Map<DrumInstrument, AudioBuffer> {
+function getCacheFor(audioContext: BaseAudioContext): Map<DrumInstrument, AudioBuffer> {
   let cache = sampleCache.get(audioContext)
   if (!cache) {
     cache = new Map()
@@ -27,7 +30,7 @@ function getCacheFor(audioContext: AudioContext): Map<DrumInstrument, AudioBuffe
   return cache
 }
 
-async function loadSample(audioContext: AudioContext, instrument: DrumInstrument): Promise<void> {
+async function loadSample(audioContext: BaseAudioContext, instrument: DrumInstrument): Promise<void> {
   for (const path of candidatePaths(instrument)) {
     try {
       const response = await fetch(path)
@@ -55,17 +58,33 @@ const ALL_INSTRUMENTS: DrumInstrument[] = [
   'tom_floor',
 ]
 
+async function loadAllSamples(audioContext: BaseAudioContext): Promise<void> {
+  await Promise.all(ALL_INSTRUMENTS.map((instrument) => loadSample(audioContext, instrument)))
+}
+
 // Fire-and-forget, idempotent per AudioContext (safe to call on every hit).
 // Instruments whose file appears later — after this has already run — are
 // not retried; reload the page to pick up newly-added sample files.
-export function ensureDrumSamplesLoading(audioContext: AudioContext): void {
+export function ensureDrumSamplesLoading(audioContext: BaseAudioContext): void {
   if (loadingStarted.has(audioContext)) return
   loadingStarted.add(audioContext)
-  for (const instrument of ALL_INSTRUMENTS) {
-    void loadSample(audioContext, instrument)
-  }
+  void loadAllSamples(audioContext)
 }
 
-export function getDrumSample(audioContext: AudioContext, instrument: DrumInstrument): AudioBuffer | undefined {
+// Offline rendering (render-recording.ts) can't rely on the live-playback
+// fire-and-forget + synchronous-fallback-to-synthesis path — every sample
+// must be fully decoded before any hit is scheduled into the
+// OfflineAudioContext, since there's no "wait for the network" luxury once
+// startRendering() has been called. Shares loadingStarted with
+// ensureDrumSamplesLoading so a later live-style call on the same context
+// (playDrumSound calls it unconditionally) becomes a no-op instead of a
+// redundant re-fetch.
+export async function loadDrumSamplesEagerly(audioContext: BaseAudioContext): Promise<void> {
+  if (loadingStarted.has(audioContext)) return
+  loadingStarted.add(audioContext)
+  await loadAllSamples(audioContext)
+}
+
+export function getDrumSample(audioContext: BaseAudioContext, instrument: DrumInstrument): AudioBuffer | undefined {
   return sampleCache.get(audioContext)?.get(instrument)
 }

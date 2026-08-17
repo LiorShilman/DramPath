@@ -103,6 +103,27 @@ class FakeAudioContext {
   }
 }
 
+// Recording (render/encode/save) is real Web-Audio + lamejs work with its
+// own dedicated unit tests (render-recording.test.ts, encode-mp3.test.ts,
+// recording-hits.test.ts) — mocked here so this file only has to verify
+// useVisualTrainer calls them correctly on a finished run, not re-exercise
+// their own internals through jsdom's fake AudioContext.
+const recordingMocks = vi.hoisted(() => ({
+  renderRecording: vi.fn().mockResolvedValue({} as AudioBuffer),
+  encodeMp3: vi.fn().mockReturnValue(new Blob(['fake-mp3'], { type: 'audio/mp3' })),
+  createRecording: vi.fn().mockResolvedValue(undefined),
+}))
+
+vi.mock('../lib/visual-trainer/render-recording', () => ({
+  renderRecording: recordingMocks.renderRecording,
+}))
+vi.mock('../lib/visual-trainer/encode-mp3', () => ({
+  encodeMp3: recordingMocks.encodeMp3,
+}))
+vi.mock('../data/repositories', () => ({
+  practiceRecordingRepository: { create: recordingMocks.createRecording },
+}))
+
 // Same hand-rolled test doubles as useMidiDrumInput.test.ts.
 class FakeMIDIInput {
   onmidimessage: ((event: { data: Uint8Array }) => void) | null = null
@@ -155,6 +176,9 @@ describe('useVisualTrainer', () => {
     remoteHostMocks.sendPlaybackStatus.mockClear()
     remoteHostMocks.registerSession.mockClear()
     remoteHostMocks.capturedSessionHolder.current = undefined
+    recordingMocks.renderRecording.mockClear()
+    recordingMocks.encodeMp3.mockClear()
+    recordingMocks.createRecording.mockClear()
   })
 
   it('starts idle with empty scoring', () => {
@@ -262,6 +286,58 @@ describe('useVisualTrainer', () => {
     await waitFor(() => expect(result.current.phase).toBe('finished'), { timeout: 3000 })
     expect(result.current.lastGrade).toBe('miss')
     expect(result.current.scoring.accuracyPercent).toBe(0)
+  })
+
+  it('renders, encodes, and saves a recording when a real run finishes with at least one real hit', async () => {
+    vi.stubGlobal('AudioContext', FakeAudioContext)
+    const exercise = makeExercise([
+      { id: createId(), bar: 1, beat: 1, subdivisionIndex: 0, instrument: 'kick', velocity: 100 },
+    ])
+    const { result } = renderHook(() => useVisualTrainer(exercise, noHighwayRef))
+
+    await act(() => result.current.start())
+    await waitFor(() => expect(result.current.phase).toBe('running'), { timeout: 3000 })
+    act(() => {
+      fireEvent.keyDown(window, { code: 'KeyJ' })
+    })
+
+    await waitFor(() => expect(result.current.phase).toBe('finished'), { timeout: 3000 })
+
+    await waitFor(() => expect(recordingMocks.createRecording).toHaveBeenCalledTimes(1))
+    expect(recordingMocks.renderRecording).toHaveBeenCalledWith(
+      [expect.objectContaining({ instrument: 'kick' })],
+      expect.any(Number),
+    )
+    expect(recordingMocks.encodeMp3).toHaveBeenCalledTimes(1)
+    expect(recordingMocks.createRecording).toHaveBeenCalledWith(
+      expect.objectContaining({ exerciseId: exercise.id, exerciseTitle: exercise.title }),
+    )
+  })
+
+  it('does not save a recording for a demo run — nothing was actually played', async () => {
+    vi.stubGlobal('AudioContext', FakeAudioContext)
+    const exercise = makeExercise([
+      { id: createId(), bar: 1, beat: 1, subdivisionIndex: 0, instrument: 'kick', velocity: 100 },
+    ])
+    const { result } = renderHook(() => useVisualTrainer(exercise, noHighwayRef))
+
+    await act(() => result.current.startDemo())
+    await waitFor(() => expect(result.current.phase).toBe('finished'), { timeout: 3000 })
+
+    expect(recordingMocks.createRecording).not.toHaveBeenCalled()
+  })
+
+  it('does not save a recording when every note was missed — nothing audible happened', async () => {
+    vi.stubGlobal('AudioContext', FakeAudioContext)
+    const exercise = makeExercise([
+      { id: createId(), bar: 1, beat: 1, subdivisionIndex: 0, instrument: 'kick', velocity: 100 },
+    ])
+    const { result } = renderHook(() => useVisualTrainer(exercise, noHighwayRef))
+
+    await act(() => result.current.start())
+    await waitFor(() => expect(result.current.phase).toBe('finished'), { timeout: 3000 })
+
+    expect(recordingMocks.createRecording).not.toHaveBeenCalled()
   })
 
   it('stops the playback engine as soon as the exercise finishes, instead of letting its metronome click schedule run out on its own', async () => {

@@ -8,7 +8,11 @@ import { GRADING_THRESHOLDS, detectMissedEvents, findMatchingEvent, gradeDynamic
 import type { PendingDrumEvent } from '../domain/calculations/hit-matcher'
 import { calculateAccuracy, summarizeScoring, summarizeDynamics } from '../domain/calculations/scoring-engine'
 import type { DynamicsSummary } from '../domain/calculations/scoring-engine'
+import { buildRecordingHits } from '../domain/calculations/recording-hits'
 import { markHit } from '../lib/visual-trainer/active-hits'
+import { renderRecording } from '../lib/visual-trainer/render-recording'
+import { encodeMp3 } from '../lib/visual-trainer/encode-mp3'
+import { practiceRecordingRepository } from '../data/repositories'
 import { useKeyboardDrums } from './useKeyboardDrums'
 import type { NotationStatePayload, PlaybackStatusPayload, RemoteDrumInputStatus } from './useRemoteDrumInput'
 import { useRemoteHost } from '../features/visual-trainer/remote-host-context'
@@ -598,6 +602,11 @@ export function useVisualTrainer(
         // beginPlayback (restart, or a routine's next/previous step)
         // naturally overwrites it with a fresh payload; nothing here needs
         // its own separate "now clear it" path.
+        const finishedAccuracyPercent = summarizeScoring(
+          hitResultsRef.current,
+          extraHitsRef.current,
+          totalExpectedEventsRef.current,
+        ).accuracyPercent
         sendPlaybackStatusRef.current({
           exerciseId: exercise.id,
           title: exercise.title,
@@ -605,8 +614,7 @@ export function useVisualTrainer(
           phase: 'finished',
           routineProgress: routineProgressRef.current,
           resultsSummary: {
-            accuracyPercent: summarizeScoring(hitResultsRef.current, extraHitsRef.current, totalExpectedEventsRef.current)
-              .accuracyPercent,
+            accuracyPercent: finishedAccuracyPercent,
             gradeCounts: countGrades(hitResultsRef.current, extraHitsRef.current),
           },
         })
@@ -616,6 +624,36 @@ export function useVisualTrainer(
         // — without this, the metronome keeps ticking through the rest of its
         // queue (up to a bar or two) after the last note has already resolved.
         engineRef.current?.stop()
+
+        // Demo mode plays itself (every note auto-resolves 'perfect') — not
+        // a real practice run, so nothing worth recording. A run with zero
+        // real hits (everything missed) has nothing audible to render
+        // either. Fire-and-forget: a failed render/encode/save should never
+        // surface as a practice-run error — the run itself already finished
+        // successfully regardless of whether its recording could be made.
+        if (!isDemoRef.current) {
+          const recordingHits = buildRecordingHits(hitResultsRef.current, extraHitsRef.current)
+          if (recordingHits.length > 0) {
+            const recordingExerciseId = exercise.id
+            const recordingExerciseTitle = exercise.title
+            const recordingDurationMs = elapsedMs
+            void (async () => {
+              try {
+                const buffer = await renderRecording(recordingHits, recordingDurationMs)
+                const audioBlob = encodeMp3(buffer)
+                await practiceRecordingRepository.create({
+                  exerciseId: recordingExerciseId,
+                  exerciseTitle: recordingExerciseTitle,
+                  durationMs: recordingDurationMs,
+                  accuracyPercent: finishedAccuracyPercent,
+                  audioBlob,
+                })
+              } catch {
+                // Best-effort, see comment above.
+              }
+            })()
+          }
+        }
       }
     },
     [autoHit, exercise.bpm, exercise.id, exercise.title, noteHighwayRef, recomputeScoring, setPhaseBoth, stopLoops, thresholds],
@@ -720,7 +758,7 @@ export function useVisualTrainer(
         recomputeScoring()
         return grade
       }
-      const extraHit: ExtraHitEvent = { id: createId(), instrument, hitTimeMs: elapsedMs }
+      const extraHit: ExtraHitEvent = { id: createId(), instrument, hitTimeMs: elapsedMs, velocity }
       extraHitsRef.current.push(extraHit)
       setExtraHits((prev) => [...prev, extraHit])
       if (lastNotationPayloadRef.current) {

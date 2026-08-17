@@ -13,6 +13,7 @@ import { TransportControls } from '../../components/visual-trainer/TransportCont
 import { HitFeedback } from '../../components/visual-trainer/HitFeedback'
 import { KeyboardGuide } from '../../components/visual-trainer/KeyboardGuide'
 import { SessionResults } from '../../components/visual-trainer/SessionResults'
+import { RecordingsPanel } from '../../components/visual-trainer/RecordingsPanel'
 import { useVisualTrainer } from '../../hooks/useVisualTrainer'
 import { useResolveExercise } from './resolve-exercise'
 import { GRADING_THRESHOLDS } from '../../domain/calculations/hit-matcher'
@@ -394,6 +395,7 @@ export function VisualTrainerRunner({
           </label>
         </div>
       )}
+      {trainer.phase === 'idle' && <RecordingsPanel exerciseId={exercise.id} />}
     </>
   )
 

@@ -17,9 +17,9 @@ import { ensureDrumSamplesLoading, getDrumSample } from './drum-samples'
 // its own buffer; AudioBuffers aren't portable across contexts) and reused
 // by every noise-based hit's own AudioBufferSourceNode (source nodes are
 // single-use, but the underlying buffer data can be read by many of them).
-const noiseBufferCache = new WeakMap<AudioContext, AudioBuffer>()
+const noiseBufferCache = new WeakMap<BaseAudioContext, AudioBuffer>()
 
-function getNoiseBuffer(audioContext: AudioContext): AudioBuffer {
+function getNoiseBuffer(audioContext: BaseAudioContext): AudioBuffer {
   const cached = noiseBufferCache.get(audioContext)
   if (cached) return cached
 
@@ -45,7 +45,7 @@ function scheduleGainEnvelope(gain: GainNode, time: number, peakGain: number, du
 }
 
 function playPitchedHit(
-  audioContext: AudioContext,
+  audioContext: BaseAudioContext,
   outputNode: AudioNode,
   time: number,
   startFrequency: number,
@@ -79,10 +79,10 @@ function playPitchedHit(
 // already brief, and a fast legitimate repeated hit (e.g. a snare roll)
 // should keep overlapping naturally rather than getting voice-stolen.
 const CHOKE_GROUP_INSTRUMENTS: ReadonlySet<DrumInstrument> = new Set(['crash', 'ride', 'hihat_open'])
-const activeChokedSources = new WeakMap<AudioContext, Map<DrumInstrument, AudioBufferSourceNode>>()
+const activeChokedSources = new WeakMap<BaseAudioContext, Map<DrumInstrument, AudioBufferSourceNode>>()
 
 function playSampleHit(
-  audioContext: AudioContext,
+  audioContext: BaseAudioContext,
   outputNode: AudioNode,
   time: number,
   buffer: AudioBuffer,
@@ -122,7 +122,7 @@ function playSampleHit(
 }
 
 function playNoiseHit(
-  audioContext: AudioContext,
+  audioContext: BaseAudioContext,
   outputNode: AudioNode,
   time: number,
   durationSeconds: number,
@@ -153,7 +153,7 @@ function playNoiseHit(
  * `velocity` is MIDI-style (0-127); `accent` gives a further gain boost.
  */
 export function playDrumSound(
-  audioContext: AudioContext,
+  audioContext: BaseAudioContext,
   outputNode: AudioNode,
   time: number,
   instrument: DrumInstrument,
