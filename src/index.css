@@ -391,14 +391,43 @@ input[type='radio'] {
 }
 
 /* PedalDisciplinePage's live-pace pulse ring — fires once per closed hit
-   (never on an open/leak one), so its own firing RATE is itself a visual
-   read of the player's current pace, alongside the separate numeric BPM
-   readout. Same remount-on-new-token technique as the glow above. */
-.pedal-pace-ring {
-  animation: pedal-pace-pulse 500ms ease-out;
+   (never on an open/leak one), so its own firing RATE (and, via
+   animation-duration below, its own speed) is itself a visual read of the
+   player's current pace, alongside the separate numeric BPM readout.
+   Always mounted (never conditionally inserted/removed, and never
+   key-remounted) — direct user report that the streak number's own
+   key-remount caused a brief layout jump elsewhere on this same screen;
+   retriggering via an alternating animation-name (pulse-a/pulse-b, two
+   identical keyframes under different names) on a permanent DOM node
+   sidesteps that class of bug entirely. animation-duration is deliberately
+   NOT set here (longhand animation-name/timing-function/fill-mode only) so
+   the element's own inline style (set from the live pace) can override
+   just the duration without a shorthand fighting it. */
+.pedal-pace-ring-idle {
+  opacity: 0;
+}
+.pedal-pace-ring-a {
+  animation-name: pedal-pace-pulse-a;
+  animation-timing-function: ease-out;
+  animation-fill-mode: forwards;
+}
+.pedal-pace-ring-b {
+  animation-name: pedal-pace-pulse-b;
+  animation-timing-function: ease-out;
+  animation-fill-mode: forwards;
 }
 
-@keyframes pedal-pace-pulse {
+@keyframes pedal-pace-pulse-a {
+  0% {
+    transform: scale(0.85);
+    opacity: 0.7;
+  }
+  100% {
+    transform: scale(1.35);
+    opacity: 0;
+  }
+}
+@keyframes pedal-pace-pulse-b {
   0% {
     transform: scale(0.85);
     opacity: 0.7;
@@ -430,12 +459,33 @@ input[type='radio'] {
   }
 }
 
-/* The streak number itself pops on every increment. */
-.pedal-streak-number.pop {
-  animation: pedal-streak-pop 220ms ease-out;
+/* The streak number itself pops on every increment — alternating between
+   two identical keyframes under different names (same technique as the
+   pace ring above), applied to a PERMANENT node whose className just
+   toggles, rather than key-remounting the number on every hit. Direct user
+   report: the number visibly "jumped" position, traced to this element
+   being unmounted and a fresh one mounted in its place on every single hit
+   (a freshly-inserted node can paint one frame before its own styling —
+   including this fixed-width container — has actually taken effect). */
+.pedal-streak-number.pop-a {
+  animation: pedal-streak-pop-a 220ms ease-out;
+}
+.pedal-streak-number.pop-b {
+  animation: pedal-streak-pop-b 220ms ease-out;
 }
 
-@keyframes pedal-streak-pop {
+@keyframes pedal-streak-pop-a {
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(1.25);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+@keyframes pedal-streak-pop-b {
   0% {
     transform: scale(1);
   }

@@ -615,6 +615,7 @@ export function TouchDrumKitPage() {
               ? { kind: pedalDisciplineState.lastHit, token: String(pedalDisciplineState.totalHits) }
               : null
           }
+          paceBpm={pedalDisciplineState.paceBpm}
         />
         <div className="min-w-[8rem] text-center text-7xl font-black tabular-nums">
           {pedalDisciplineState.streak}

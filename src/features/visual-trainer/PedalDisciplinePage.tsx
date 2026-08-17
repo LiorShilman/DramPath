@@ -89,6 +89,23 @@ export function PedalDisciplinePage() {
   const hasBeatenBestThisSessionRef = useRef(false)
   const recentHitTimestampsRef = useRef<number[]>([])
 
+  // Alternates which of two identical (but distinctly-named) keyframe
+  // animations plays the streak number's own "pop" on every hit —
+  // "adjust state during render", React's own documented pattern for
+  // deriving state from a prop/value change, not an effect. Direct user
+  // report: key-remounting this element (the previous approach) made the
+  // number visibly jump position — a freshly-inserted node can paint one
+  // frame before its own styling (including its fixed min-width) has
+  // actually taken effect. A permanent node whose className just toggles
+  // can't do that. See HiHatVisual's own pulse ring for the identical
+  // technique, used there for the same reason.
+  const [streakPopParity, setStreakPopParity] = useState<0 | 1>(0)
+  const [lastStreakPopToken, setLastStreakPopToken] = useState<string | undefined>(undefined)
+  if (feedback && feedback.token !== lastStreakPopToken) {
+    setLastStreakPopToken(feedback.token)
+    setStreakPopParity((previous) => (previous === 0 ? 1 : 0))
+  }
+
   const { sendPedalDisciplineState } = useRemoteHost()
 
   // Mirrors this screen to a paired phone (ADR 0007) — a completely
@@ -245,7 +262,7 @@ export function PedalDisciplinePage() {
       <Badge variant={MIDI_STATUS_BADGE_VARIANT[midiStatus]}>{MIDI_STATUS_LABELS[midiStatus]}</Badge>
 
       <div className="relative flex flex-col items-center gap-2">
-        <HiHatVisual isRunning={isRunning} feedback={feedback} />
+        <HiHatVisual isRunning={isRunning} feedback={feedback} paceBpm={livePaceBpm} />
         {/* Always mounted (never conditionally inserted/removed) — direct
             user report: a conditionally-mounted absolutely-positioned banner
             could paint one frame before position:absolute fully applied,
@@ -261,13 +278,14 @@ export function PedalDisciplinePage() {
 
       <div className="flex flex-col items-center gap-1">
         <div
-          key={feedback?.token ?? 'streak-idle'}
           // Fixed min-width so the number stays visually anchored in place
           // — without it, centered text of a changing digit count (e.g. 9
           // -> 10) shifts the whole element sideways every time, on top of
           // the pop animation's own scale, reading as "jumping around"
-          // instead of a clean in-place pulse (direct user report).
-          className="pedal-streak-number pop min-w-[8rem] text-center text-7xl font-black tabular-nums"
+          // instead of a clean in-place pulse (direct user report). No
+          // `key` here — see streakPopParity's own doc comment above for
+          // why this must be a permanent node, not a remounted one.
+          className={`pedal-streak-number ${streakPopParity === 0 ? 'pop-a' : 'pop-b'} min-w-[8rem] text-center text-7xl font-black tabular-nums`}
         >
           {streak}
         </div>
