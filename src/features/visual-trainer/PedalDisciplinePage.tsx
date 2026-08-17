@@ -212,7 +212,15 @@ export function PedalDisciplinePage() {
       </div>
 
       <div className="flex flex-col items-center gap-1">
-        <div key={feedback?.token ?? 'streak-idle'} className="pedal-streak-number pop text-7xl font-black tabular-nums">
+        <div
+          key={feedback?.token ?? 'streak-idle'}
+          // Fixed min-width so the number stays visually anchored in place
+          // — without it, centered text of a changing digit count (e.g. 9
+          // -> 10) shifts the whole element sideways every time, on top of
+          // the pop animation's own scale, reading as "jumping around"
+          // instead of a clean in-place pulse (direct user report).
+          className="pedal-streak-number pop min-w-[8rem] text-center text-7xl font-black tabular-nums"
+        >
           {streak}
         </div>
         <p className="text-sm text-[var(--color-text-muted)]">רצף נוכחי · שיא אישי: {bestStreak}</p>
